@@ -1,8 +1,8 @@
 # Envisioning: WodBuster Booking Scheduler
 
-> **Status:** In Discovery
+> **Status:** Phase 0 complete (GO drafted). Production feature scope expanded.
 > **Last updated:** 2026-06-29
-> **Version:** 1.0
+> **Version:** 1.1
 
 ---
 
@@ -15,15 +15,15 @@
 | **Company/Team** | Personal project. The owner is also the primary user. |
 | **Domain** | Personal automation for fitness class booking (CrossFit / box classes via the WodBuster platform). |
 | **Team scale** | Solo developer. Designed so that 1 or 2 additional friends can be onboarded trivially later. |
-| **Channels** | Background scheduler on Azure. Notifications via email and Telegram. Configuration via a Git tracked file. |
+| **Channels** | Background scheduler on Azure. Web UI for full management (scheduler rule CRUD, cookie paste-and-validate, booking history, worker health). Telegram bot for read and act on the go (list bookings, cancel, acknowledge alerts) and for all notifications (success, failure, cookie-expiry warning, heartbeat anomaly). |
 
 ### 1.2 End Client
 
 | Aspect | Information |
 |--------|-------------|
-| **Profile** | Individual athlete who attends a CrossFit box managed through WodBuster. Tech literate enough to edit a YAML file or accept a PR. |
+| **Profile** | Individual athlete who attends a CrossFit box managed through WodBuster. Comfortable with a small web UI and a Telegram bot. No CLI or YAML editing required. |
 | **Volume** | Between 1 and 10 users for the foreseeable future. Initial rollout targets a single user. |
-| **Usage context** | The athlete configures preferred class types and time slots once. The bot then runs unattended and books the slot the instant the booking window opens. The athlete only interacts with the system to read notifications or update preferences. |
+| **Usage context** | The athlete configures scheduler rules (preferred class types + time slots, ordered fallbacks) through the web UI once. The bot then runs unattended and books each slot the instant its booking window opens. The athlete uses the web UI for rule changes and the Telegram bot for quick actions (cancel a class, check next booking) and to receive notifications. Manual intervention required only when the WodBuster session cookie eventually expires, at which point the operator is alerted hours in advance with a one-click paste-and-validate flow. |
 
 ### 1.3 Additional Context
 
@@ -41,8 +41,8 @@ Popular classes at the user's box open at a fixed time and fill in under 10 seco
 |--------|----------|
 | **Chosen focus** | Reliably book a preferred class within the first second of the booking window opening, with no manual intervention. |
 | **Justification** | Latency is the dominant constraint. Any solution that requires human action at booking time will keep losing spots. The remaining requirements (preferences, notifications, multi user) are secondary to closing the latency gap. |
-| **Initial scope** | Single user. API only client against WodBuster. Recurring weekly preference model with ordered fallback slots per day. Email and Telegram notifications on success and on failure. Credentials in Azure Key Vault. |
-| **Out of initial scope** | Cancellations (handled manually by the user in WodBuster). HTML scraping or DOM automation as a fallback. Real time UI for editing preferences. Multi box or multi tenant management. Booking strategies that exceed one request per attempt. |
+| **Initial scope** | Single user. Stock HTTP client against WodBuster (no SignalR, no browser at booking time, confirmed by Phase 0). Recurring weekly scheduler rule model with ordered fallback slots per day. Full rule CRUD via web UI. Cancellation in two flavors: single manual cancel via UI or Telegram, plus bulk cancel for a date range (vacation mode). Telegram bot for read, act, and notify. Notifications on success, failure, cookie-expiry warning, and heartbeat anomaly. Auth via single `.WBAuth` cookie pasted once by the operator into the web UI, with sliding-session auto-renewal and a proactive heartbeat probe that alerts hours in advance when the cookie nears expiry. |
+| **Out of initial scope** | HTML scraping or DOM automation. Automated browser login (Playwright). Storage of WodBuster credentials (only the session cookie is persisted). Rule-based auto-cancel triggered by complex conditions. Multi-box or multi-tenant management. Booking strategies that exceed one request per attempt. Onboarding of additional users beyond the operator. |
 
 ---
 
@@ -59,14 +59,14 @@ The athlete who owns the project and runs the bot for himself.
 - Receive a clear confirmation or failure notification on every attempt.
 - Trust that a missed run will not fail silently.
 
-### 3.2 Secondary User: Invited Friend (1 to 2 people)
+### 3.2 Secondary User: Invited Friend (1 to 2 people, post-MVP)
 
-A friend at the same or compatible WodBuster box who is added later by the owner.
+A friend at the same or compatible WodBuster box who could be added in a later phase. Out of scope for the initial MVP.
 
 **Key needs:**
 
-- Have personal preferences and credentials kept isolated from the owner's.
-- Be onboarded without requiring code changes beyond editing a config file and adding credentials to Key Vault.
+- Have personal scheduler rules and cookie kept isolated from the owner's.
+- Be onboarded without code changes (web UI self-service).
 
 ---
 
@@ -92,10 +92,10 @@ A friend at the same or compatible WodBuster box who is added later by the owner
 
 | Category | Problem | Impact |
 |----------|---------|--------|
-| Performance | Booking must complete within a 10 second budget from window open to confirmed reservation. Any cold start or extra round trip can cause a miss. | Defines the entire hosting and warmup strategy. Cheap serverless tiers may not meet the budget. |
-| Integration | WodBuster API availability and stability are unknown. The auth flow appears to require username and password against a web form, then a session cookie or token reused for booking calls. | Project feasibility depends on the outcome of an API discovery spike. If no usable API exists, the project stops because scraping is excluded by hard constraint. |
-| Security | WodBuster credentials must be stored safely and rotated when needed. Session tokens may need to be refreshed periodically by the bot. | Requires a managed identity plus Azure Key Vault integration from day one, even for a single user. |
-| Observability | A single point of failure exists. If the Azure region, the timer, or the scheduler has an incident, booking misses are silent unless the system actively reports that it did not run. | Requires a heartbeat or dead man's switch pattern so that "no notification" is itself treated as an anomaly. |
+| Performance | Booking must complete within a 10 second budget from window open to confirmed reservation. Phase 0 measured 336 ms warm scripted booking call against WodBuster; cold connection adds ~1.3 s for DNS + TLS. Pre-warming the connection ahead of the window collapses cold cost. | Budget is met with >96% headroom on warm calls. Pre-warm pattern is the design default. |
+| Integration | Confirmed by Phase 0 spike (2026-06-29). WodBuster exposes the booking action as a plain `GET` to `Calendario_Inscribir.ashx` with three query parameters (`id`, `ticks`, `idu`) and a single `.WBAuth` auth cookie. No SignalR, no browser, no anti-bot signal observed on the authenticated subdomain. See `docs/features/phase-0-api-discovery/feasibility-report.md`. | Architecturally lowest-cost runtime: stock Python `requests` client. Booking call ~336 ms warm. |
+| Security | No WodBuster credentials are stored. Only the `.WBAuth` session cookie is persisted (encrypted at rest in the chosen store). The cookie has sliding expiration; the worker's routine polls keep it alive. A heartbeat probe runs every hour to detect natural expiry and alerts the operator hours in advance via Telegram, with a one-click paste-and-validate flow in the web UI. | Lower blast radius than credential storage. Operator intervention is rare (weeks between paste events) and never time-pressured. |
+| Observability | A single point of failure exists. If the Azure region, the timer, or the scheduler has an incident, booking misses are silent unless the system actively reports that it did not run. | Requires a heartbeat or dead man's switch pattern so that "no notification" is itself treated as an anomaly. Heartbeat is also the cookie-validity probe. |
 
 ---
 
@@ -104,27 +104,36 @@ A friend at the same or compatible WodBuster box who is added later by the owner
 ```mermaid
 flowchart LR
     subgraph Setup[Phase 1: Setup]
-        S1[User edits YAML preferences file] --> S2[User stores WodBuster credentials in Key Vault]
-        S2 --> S3[Configuration deployed via PR or az CLI]
+        S1[Operator opens web UI] --> S2[Operator pastes .WBAuth cookie from real browser session]
+        S2 --> S3[UI validates cookie against WodBuster]
+        S3 --> S4[Operator defines scheduler rules: class type, time, weekday, ordered fallbacks]
     end
 
     subgraph Schedule[Phase 2: Scheduled Run]
-        R1[Timer fires shortly before booking window opens] --> R2[Worker warms up and loads preferences and credentials]
-        R2 --> R3[Worker authenticates against WodBuster and obtains session token]
+        R1[Worker pre-warms HTTP connection 30s before window] --> R2[Worker polls SegundosHastaPublicacion to align with t=0]
+        R2 --> R3[At t=0, send booking request for top fallback]
     end
 
-    subgraph Booking[Phase 3: Booking Attempt]
-        B1[At t=0 of booking window, send booking request for top preference] --> B2{Slot granted?}
-        B2 -- Yes --> B3[Send success notification email plus Telegram]
-        B2 -- No --> B4[Try next ordered fallback slot for that day]
-        B4 --> B2
-        B2 -- All fallbacks exhausted --> B5[Send failure notification email plus Telegram]
+    subgraph Outcome[Phase 3: Outcome and Ongoing]
+        O1{Booking response} -- Granted --> O2[Send Telegram success notification]
+        O1 -- Slot full --> O3[Try next ordered fallback]
+        O3 --> O1
+        O1 -- All fallbacks exhausted --> O4[Send Telegram failure notification]
+        O5[Hourly heartbeat probe] --> O6{Cookie healthy?}
+        O6 -- Yes --> O7[Update TTL countdown in web UI]
+        O6 -- Expiring or expired --> O8[Send Telegram alert + web UI banner with lead time]
+        O8 --> S1
     end
 
-    Setup --> Schedule --> Booking
+    subgraph OnDemand[On-demand actions]
+        D1[Operator cancels a booking via UI button or Telegram /cancel] --> D2[Worker calls Calendario_Borrar.ashx]
+        D3[Operator enables vacation mode for date range via UI] --> D4[Worker cancels all bookings in range]
+    end
+
+    Setup --> Schedule --> Outcome
 ```
 
-The journey is deliberately linear. Each scheduled run is independent. The setup phase happens once per user, with rare edits afterwards.
+Each scheduled run is independent. The setup phase happens once per operator and is revisited only when the cookie naturally expires (estimated cadence: weeks). Cancellation and vacation mode are operator-initiated and do not require scheduled triggers.
 
 ---
 
@@ -141,7 +150,8 @@ Make booking deterministic for the user. Configure preferred class type and time
 | End to end latency from window open to confirmed booking | Under 10 seconds in the steady state. |
 | Booking success rate for the top preferred slot when the gym has capacity | Greater than 95 percent over a rolling 4 week window. |
 | Silent failures (run did not execute and no notification was emitted) | Zero. Every scheduled run must produce either a success notification, a failure notification, or a heartbeat alarm. |
-| Onboarding effort for an additional user | A single PR adding the user's YAML file plus one secret added to Key Vault. No code changes. |
+| Onboarding effort for an additional user (post-MVP) | Operator creates a new isolated user record through the web UI and the new operator pastes their own cookie. No code changes. | Post-MVP; not a release criterion for the initial scope. |
+| Cookie-expiry surprise (operator forced to react under time pressure) | Zero. The heartbeat probe must detect expiry and alert the operator at least N hours before the next scheduled booking window (N to be set in the spec, recommended >= 12 hours). |
 
 ---
 
@@ -152,6 +162,9 @@ These constraints are foundational. They cannot be revisited in the planning pha
 1. **API only client.** The solution must consume WodBuster's API endpoints directly. HTML scraping, DOM clicking, and style or CSS parsing are excluded.
 2. **Latency budget under 10 seconds.** From the booking window opening instant to a confirmed booking response.
 3. **Polite client behavior.** The client rate limits itself, performs a single request per booking attempt, and does not issue parallel requests. The WodBuster Terms of Service risk is acknowledged.
+4. **No silent degradation.** Every scheduled run produces a positive notification (success, failure, or heartbeat anomaly). "No notification" is itself an alarm condition.
+5. **No time-pressured manual intervention.** Cookie expiry must never first surface as a booking-time failure. The operator must be alerted with at least 12 hours of lead time before the next scheduled booking window (target lead time to be confirmed in the spec phase).
+6. **No automated WodBuster credential handling.** WodBuster username and password are never stored, sent, or processed by the system. The operator authenticates manually in a real browser and pastes only the resulting session cookie.
 
 ---
 
@@ -159,25 +172,36 @@ These constraints are foundational. They cannot be revisited in the planning pha
 
 | Area | Choice | Notes |
 |------|--------|-------|
-| Language | Python | Locked. |
+| Language | Python | Locked. Phase 0 reproduction script already in Python. |
 | Cloud | Azure | Locked. |
-| Hosting shape | Azure serverless with timer trigger (Functions or Container Apps Jobs) | Exact service to be chosen in the planning phase based on cold start versus latency trade off. |
-| Secrets | Azure Key Vault | Locked. Includes WodBuster credentials and any derived session tokens that need to persist. |
-| Cost tolerance | Unlimited | Optimize for reliability and latency. Cost is not a tiebreaker. |
+| Hosting shape | Long-running service with internal scheduler (Container Apps, App Service Linux, or container on a small VM) | The web UI + Telegram bot webhook + scheduler runtime + heartbeat probe + state persistence collectively rule out pure timer-trigger Functions Consumption. Exact service selection deferred to planning ADR. |
+| Auth and session | `.WBAuth` cookie paste-and-store. No WodBuster credentials at rest. | Operator pastes the cookie once via the web UI. Sliding expiration plus routine polls keep it alive. Heartbeat probe detects natural expiry and alerts hours in advance. |
+| Persistence | Small relational store (Postgres, SQLite, or equivalent) | For scheduler rules, booking history, and the encrypted cookie blob. Exact engine deferred to planning ADR. |
+| Scheduler management surface | Web UI (full CRUD + cookie paste + observability) AND Telegram bot (read, act, notify) | Both surfaces are in scope for the MVP. |
+| Secrets | Azure Key Vault for the cookie encryption key, the Telegram bot token, and any internal API tokens | Locked. Note: WodBuster credentials are NOT stored. |
+| Cost tolerance | Optimize for reliability and latency first. Cost is not a tiebreaker but should be reasonable for a personal project (~ tens of euros per month is acceptable; ~ hundreds is not). |
 
 ---
 
 ## 9. Open Questions and Items to Decide Later
 
-These items are deliberately not resolved here. They belong in the planning phase or in a Phase 0 discovery spike.
+Most initial open questions were resolved by the Phase 0 spike. The remaining items belong in the planning phase.
 
 | Item | Why it is open | Where it should be resolved |
 |------|----------------|-----------------------------|
-| Does WodBuster expose a usable API? Is it documented? Is it stable? | Unknown today. The whole project depends on the answer. | Phase 0 discovery spike before any production work. |
-| Exact authentication flow against WodBuster. | Likely username and password to a web form, then a session cookie or JWT reused for booking calls. Needs confirmation. | Phase 0 discovery spike. |
-| Hosting service selection between Azure Functions Premium with always ready instances, Container Apps Jobs with min replicas 1, or a Consumption plan with a pre warm timer. | Cold start behavior under the 10 second budget must be measured. | Planning phase, captured as an ADR. |
-| Exact booking window offset for the user's box (for example 48 hours before class start). | Supplied by the user later. | Configuration time. Recorded in the user's preferences file. |
-| Configuration interface for preferences. | Recommendation in section 11 is a Git tracked YAML file per user. Final decision is deferred. | Planning phase, captured as an ADR. |
+| Hosting service selection (Container Apps vs App Service Linux vs small VM) | Need a runtime that supports a long-lived web app + Telegram webhook + internal scheduler + persistence. Cost and operational complexity differ. | Planning phase, captured as the `hosting-service` ADR. |
+| Persistence engine (Postgres Flexible Server vs SQLite-on-disk vs Cosmos DB Free Tier) | The schema is small and single-tenant; the simplest reliable store wins. | Planning phase, captured as the `persistence` ADR. |
+| Exact booking window offset for the user's box (for example 48 hours before class start) | Supplied by the user later. | Configuration time, entered through the web UI. |
+| Cookie-expiry alert lead time (recommendation: at least 12 hours) | Operator workflow constraint; needs a single numeric default. | Spec phase. |
+| WodBuster `.WBAuth` cookie absolute lifetime (does sliding session never expire, or is there a hard ceiling?) | Unknown until a 2-3 day passive observation test runs. Does not block the design (heartbeat + alert + paste covers the worst case) but informs the operator's expected paste frequency. | Spike during early implementation. |
+
+### Resolved by Phase 0 spike
+
+| Original question | Resolution | Reference |
+|-------------------|------------|-----------|
+| Does WodBuster expose a usable API? | Yes. `GET /athlete/handlers/Calendario_Inscribir.ashx` with 3 query params and 1 cookie. | feasibility-report.md, Booking request section |
+| Authentication flow | Single `.WBAuth` Forms Authentication cookie on `.wodbuster.com`. Pasted once from a real browser session. No credentials needed. | feasibility-report.md, Authentication flow section |
+| Configuration interface for preferences | Web UI for full CRUD (single source of truth), Telegram bot for read and act on the go. | Decided in envisioning v1.1 (this section, replacing the YAML-in-Git recommendation). |
 
 ---
 
@@ -185,23 +209,34 @@ These items are deliberately not resolved here. They belong in the planning phas
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| WodBuster API does not exist or is undocumented and unstable. | Medium to high. | Project may be unfeasible because scraping is excluded. | Run a Phase 0 discovery spike. Treat its outcome as a go or no go gate. |
-| Automating bookings may breach the WodBuster Terms of Service. | Known. | Account suspension. | Polite client by design: rate limited, single request per attempt, no parallel hammering. Behavior reviewed during planning. |
-| Cold start latency on cheaper Azure tiers exceeds the 10 second budget. | Medium. | Booking misses despite the system being healthy. | Evaluate Premium Functions with always ready, Container Apps Jobs with min replicas 1, or pre warm timers. Measure before committing. |
-| Credential handling complexity (storing WodBuster username and password, plus possible session token refresh). | Medium. | Security exposure if mishandled. Operational toil if refresh is fragile. | Azure Key Vault from day one with managed identity. Token refresh logic isolated and observable. |
-| Single point of failure. If the Azure region, the timer, or the scheduler has an incident, a missed booking can go silent. | Low to medium. | User loses trust in the system. | Heartbeat or dead man's switch pattern. "No notification" is itself treated as an anomaly and surfaces an alert. |
+| Automating bookings may breach the WodBuster Terms of Service. | Known. Phase 0 ToS analysis verdict: soft restriction, leaning permissive for personal use. | Account suspension. | Polite client by design: rate limited, single request per attempt, no parallel hammering. Reuses a real browser-established session, never bypasses Cloudflare programmatically. Single-user scope. |
+| `.WBAuth` cookie has a hard absolute lifetime (not pure sliding) and expires unexpectedly. | Unknown until observed. | Operator must paste a new cookie within the alert lead time. | Heartbeat probe alerts hours in advance via Telegram, web UI shows expiry countdown, one-click paste-and-validate. |
+| Cold start latency on cheaper Azure tiers exceeds the 10 second budget. | Low (Phase 0 measured 336 ms warm; 1.3 s cold including DNS+TLS). | Booking misses despite the system being healthy. | Pre-warm connection 30 seconds before booking window. Connection-warming poll already part of the design (the `SegundosHastaPublicacion` countdown poll). |
+| Single point of failure. If the Azure region, the timer, or the scheduler has an incident, a missed booking can go silent. | Low to medium. | User loses trust in the system. | Heartbeat or dead man's switch pattern. "No notification" is itself treated as an anomaly and surfaces an alert. Heartbeat doubles as the cookie-validity probe. |
+| Web UI exposed to the public internet without proper auth. | Low if designed carefully. | Anyone could read the cookie or trigger bookings. | Web UI gated by operator-only credentials (or restricted to a private network / VPN). Cookie blob encrypted at rest. Decided in the planning phase. |
+| Telegram bot token leaked. | Low. | Attacker could spoof notifications or impersonate the bot. | Token in Key Vault. Bot validates that incoming commands come from the operator's known chat ID. |
 
 ---
 
 ## 11. Recommendations (To Be Validated in Planning)
 
-The following recommendation is surfaced here to give the planning phase a clear starting point. It is not a final decision.
+The following recommendation is surfaced here to give the planning phase a clear starting point. It reflects decisions taken in envisioning v1.1 after the Phase 0 spike and the scope expansion conversation.
 
-**Configuration and notification interface for 1 to 3 users:**
+**Production worker architecture:**
 
-- One Git tracked YAML file per user describing the recurring weekly schedule and the ordered fallback slots per day.
-- WodBuster credentials per user stored in Azure Key Vault.
-- Updates applied via Pull Request or the az CLI. Git history acts as an audit log.
-- Telegram bot is notification only. It does not accept commands.
+- Long-running service hosting (a) a web UI for full CRUD on scheduler rules + cookie paste + observability, (b) a Telegram bot webhook for read/act/notify, (c) the internal scheduler runtime that fires booking calls, and (d) the heartbeat probe.
+- Single `.WBAuth` cookie pasted by the operator once via the web UI, persisted encrypted at rest. No WodBuster username or password is ever stored.
+- Sliding-session keep-alive via routine `SegundosHastaPublicacion` polls. Hourly dedicated heartbeat probe that detects natural cookie expiry early. Proactive Telegram alert and web UI banner with at least 12 hours of lead time before the next scheduled booking window.
+- Booking call: stock HTTP client, three query parameters (`id`, `ticks`, `idu`), pre-warmed connection. No SignalR, no browser.
+- Cancellation: single-cancel via UI button or Telegram `/cancel` command; bulk-cancel by date range (vacation mode) via UI.
 
-Rationale: simplest path for a small group of technical or semi technical users. Avoids building a UI. Provides an audit trail naturally. Aligns with the chosen notification channels. The final decision and any alternatives (for example a minimal admin UI, or a Telegram command interface) belong in the planning phase and should be captured as an ADR.
+**Rationale:** Phase 0 evidence eliminates SignalR, browser automation, and credential storage from the runtime. The most expensive thing the worker does is poll a JSON endpoint and fire a single GET. The remaining design weight is in the management surfaces (web UI + Telegram) and the alerting pipeline. Hosting choice, persistence engine, and observability stack are all deferred to ADRs in the planning phase.
+
+---
+
+## 12. Revision History
+
+| Version | Date | Change |
+|---------|------|--------|
+| 1.0 | 2026-06-29 | Initial envisioning. Project entered Phase 0 discovery. |
+| 1.1 | 2026-06-29 | Updated after Phase 0 spike completion and scope-expansion conversation. Phase 0 outcomes folded into sections 4.2, 8, 9, 10, 11. Scope expanded to include cancellation (manual single + bulk by date range), full scheduler rule CRUD via web UI, Telegram bot as read/act/notify channel, and cookie-handoff auth with heartbeat probe + proactive alert + one-click paste refresh. Removed YAML-in-Git configuration model. Removed Azure Key Vault for WodBuster credentials (no credentials are stored). Hosting shape narrowed from Functions/Jobs to long-running service. |
