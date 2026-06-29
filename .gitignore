@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.python-version
+
+# Editor and OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Spike artifacts that may contain credentials, session material, or PII.
+# See docs/features/phase-0-api-discovery/scripts/README.md for the rationale.
+# These patterns are intentionally broad. When in doubt, do not commit.
+.env
+.env.*
+!.env.example
+cookies.txt
+*.cookiejar
+*.session
+*.har
+booking-payload.json
+booking-payload.*.json
+spike-capture-*.txt
+spike-output-*.log
