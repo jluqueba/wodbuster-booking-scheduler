@@ -46,6 +46,14 @@ WORKDIR /app
 # Copy the resolved environment from the builder stage.
 COPY --from=builder /install /install
 
+# Alembic needs its config plus the migration scripts at runtime. The
+# entrypoint runs `alembic upgrade head` before starting uvicorn.
+COPY alembic.ini ./
+COPY alembic ./alembic
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh \
+    && chown -R worker:worker /app
+
 USER worker
 
 EXPOSE 8000
@@ -56,4 +64,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request, sys; \
 sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"
 
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["uvicorn", "wodbuster_worker.app:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -7,6 +7,12 @@ venv/
 env/
 .python-version
 
+# Local SQLite artifacts (WAL, SHM, journal, and hand-run ad-hoc DBs).
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # Editor and OS noise
 .vscode/
 .idea/
