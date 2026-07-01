@@ -9,9 +9,8 @@
 //   ADR-0006  Log Analytics + Application Insights + external dead-man
 //   ADR-0007  Bicep + azd, single environment `prod`, single resource group
 //
-// This file only creates the resource group and propagates the azd-standard
-// outputs that the resource-group-scoped modules produce (added incrementally
-// in F3.3 and F3.4).
+// This file creates the resource group and delegates all resource-group-scoped
+// work to resources.bicep. The azd-standard outputs are forwarded up.
 
 targetScope = 'subscription'
 
@@ -38,10 +37,31 @@ resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   tags: tags
 }
 
-// Placeholder reference so the compiler treats the parameter as used until
-// F3.3 wires it into role assignments for local developer access.
-var _principalIdUnused = principalId
+module resources 'resources.bicep' = {
+  name: 'resources'
+  scope: rg
+  params: {
+    location: location
+    resourceToken: resourceToken
+    tags: tags
+    principalId: principalId
+  }
+}
 
 output AZURE_LOCATION string = location
 output AZURE_RESOURCE_GROUP string = rg.name
-output AZURE_PRINCIPAL_ID string = _principalIdUnused
+output AZURE_PRINCIPAL_ID string = principalId
+
+output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.registryName
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.registryLoginServer
+
+output AZURE_KEY_VAULT_NAME string = resources.outputs.keyVaultName
+output AZURE_KEY_VAULT_ENDPOINT string = resources.outputs.keyVaultUri
+
+output AZURE_APPLICATION_INSIGHTS_CONNECTION_STRING string = resources.outputs.appInsightsConnectionString
+
+output AZURE_STORAGE_ACCOUNT_NAME string = resources.outputs.storageAccountName
+output AZURE_STORAGE_FILE_SHARE_NAME string = resources.outputs.fileShareName
+
+output AZURE_USER_ASSIGNED_IDENTITY_CLIENT_ID string = resources.outputs.identityClientId
+output AZURE_USER_ASSIGNED_IDENTITY_PRINCIPAL_ID string = resources.outputs.identityPrincipalId
