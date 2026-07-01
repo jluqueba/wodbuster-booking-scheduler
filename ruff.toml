@@ -1,0 +1,28 @@
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+extend-exclude = [
+    "docs",
+    ".venv",
+    "build",
+    "dist",
+]
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+    "C4",   # flake8-comprehensions
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",  # line length is enforced by formatter
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["B011"]

@@ -1,0 +1,50 @@
+[project]
+name = "wodbuster-worker"
+version = "0.1.0"
+description = "Unattended WodBuster booking worker (FastAPI + APScheduler + SQLite on Azure Container Apps)."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "WodBuster Booking Worker contributors" }]
+
+dependencies = [
+    "fastapi>=0.115,<1.0",
+    "uvicorn[standard]>=0.32,<1.0",
+    "jinja2>=3.1,<4.0",
+    "apscheduler>=3.10,<4.0",
+    "sqlalchemy>=2.0,<3.0",
+    "alembic>=1.13,<2.0",
+    "httpx>=0.27,<1.0",
+    "structlog>=24.1,<26.0",
+    "azure-identity>=1.19,<2.0",
+    "azure-keyvault-secrets>=4.9,<5.0",
+    "authlib>=1.3,<2.0",
+    "python-telegram-bot>=21.0,<23.0",
+    "cryptography>=43.0,<46.0",
+    "pydantic-settings>=2.5,<3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3,<9.0",
+    "pytest-asyncio>=0.24,<1.0",
+    "ruff>=0.7,<1.0",
+    "mypy>=1.11,<2.0",
+    "types-requests",
+]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wodbuster_worker"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+asyncio_mode = "auto"
+markers = [
+    "live_contract: hits the real WodBuster API; gated by RUN_LIVE_WODBUSTER=1",
+]

@@ -1,0 +1,87 @@
+# Secrets and Identity Access
+
+**Status**: Proposed
+**Date**: 2026-06-29
+
+## Context
+
+This ADR covers two concerns that are easiest to decide together because both ride the same Azure identity surface:
+
+1. **Worker access to secrets**: cookie encryption key (ADR-0003), Telegram bot token, OAuth client secrets for the operator sign-in flow, session encryption secret for Starlette `SessionMiddleware`. None of these can live in the repository, environment variables baked at deploy time, or container image layers.
+2. **Operator authentication to the web UI**: FR-028 mandates federated identity via personal Microsoft, GitHub, or Google account. FR-029 forbids local password storage. FR-030 mandates an allow-list of operator identities.
+
+Locked technical choices from envisioning section 8: Azure Key Vault for the cookie encryption key, Telegram bot token, and any internal API tokens. WodBuster credentials are NOT stored (envisioning constraint 6, ADR-0003).
+
+## Priorities and Requirements (ordered)
+
+1. **No secrets in repository, environment files, or container image**. All secret material lives in a managed vault.
+2. **No service principal client secrets for the worker**. The worker's identity to Azure is keyless.
+3. **Federated identity for the operator with multi-provider choice**. The operator picks Microsoft personal, GitHub, or Google at sign-in (FR-028). No local password handling (FR-029).
+4. **Allow-list enforcement** after federated sign-in (FR-030). Identities outside the allow-list are denied without leaking operator data.
+5. **Auditable secret access** and **negligible cost** at single-user MVP scale.
+
+## Options Considered
+
+### Option 1: Azure Key Vault with user-assigned managed identity, multi-provider federated operator login
+
+The Container App is assigned a user-assigned managed identity (UAMI). The UAMI holds RBAC role `Key Vault Secrets User` on a single Key Vault. At startup the worker reads four secrets via Azure SDK: `wodbuster-cookie-encryption-key`, `telegram-bot-token`, `session-encryption-secret`, and one OAuth client-secret triple `oauth-{provider}-client-secret` for each of Microsoft, GitHub, Google. The OAuth client IDs are non-secret and live in app configuration. Operator sign-in offers all three providers; the operator picks one at sign-in. After the callback completes, the federated subject identifier is matched against an allow-list configured in the worker's database (one row per allowed `(provider, subject_id, display_name)`).
+
+**Evaluation against priorities**:
+- **No secrets in repository or image**: Meets. All secrets read at startup via managed identity. The image is generic.
+- **No service principal client secrets for the worker**: Meets. UAMI authenticates to Key Vault via the IMDS endpoint. No client secret material on the worker side.
+- **Federated identity with multi-provider choice**: Meets. Three providers, operator chooses, matching FR-028 verbatim.
+- **Allow-list enforcement**: Meets. The allow-list lives in the SQLite database (ADR-0002) and is checked in the OAuth callback handler. Mismatched identities receive a generic denial.
+- **Auditable secret access and negligible cost**: Meets. Key Vault standard tier secret reads cost approximately 0.03 EUR per 10,000 operations; the worker reads four secrets at startup and caches them for the process lifetime. Diagnostic logs to App Insights record every secret access. Total cost is well under 1 EUR per month.
+
+### Option 2: Environment variables baked as Container App secrets at deploy time
+
+ACA's "secrets" feature stores secret values per environment. `azd deploy` writes them. The application reads them as environment variables.
+
+**Evaluation against priorities**:
+- **No secrets in repository or image**: Meets at the image layer but fails at the configuration layer. Secret values pass through the deployment pipeline and end up in environment-variable metadata visible to anyone with Reader on the Container App.
+- **No service principal client secrets for the worker**: Partially meets at runtime but the deployment pipeline still needs to hold the values to inject them.
+- **Federated identity with multi-provider choice**: Independent of this option.
+- **Allow-list enforcement**: Independent of this option.
+- **Auditable secret access**: Fails. Environment variables do not produce per-read audit events. Key Vault does.
+
+### Option 3: Single-provider federated identity (Microsoft only) plus Azure Key Vault for the rest
+
+Same Key Vault and UAMI as Option 1, but the operator sign-in flow is wired only to Microsoft personal accounts. GitHub and Google are dropped to reduce OAuth client-secret count by two.
+
+**Evaluation against priorities**:
+- **No secrets in repository or image**: Meets, same as Option 1.
+- **No service principal client secrets for the worker**: Meets, same as Option 1.
+- **Federated identity with multi-provider choice**: Fails. FR-028 explicitly names Microsoft, GitHub, and Google. Restricting to one provider contradicts the spec.
+- **Allow-list enforcement**: Meets, same as Option 1.
+- **Auditable secret access and negligible cost**: Meets, same as Option 1.
+
+## Decision
+
+Option 1: Azure Key Vault for secrets (cookie encryption key, Telegram bot token, session encryption secret, OAuth client secrets for Microsoft personal plus GitHub plus Google), accessed by the Container App via a user-assigned managed identity holding the `Key Vault Secrets User` RBAC role. Operator authentication via federated OAuth with all three providers offered at sign-in; the operator picks one. The allow-list lives in the SQLite database (ADR-0002), one row per allowed `(provider, subject_id, display_name)`. Mismatched identities receive a generic denial.
+
+This option uniquely meets every priority. Environment-variable baking (Option 2) fails the audit requirement. A single-provider restriction (Option 3) contradicts FR-028.
+
+## Implementation Notes
+
+- The UAMI is provisioned by the Bicep template (ADR-0007) and assigned to the Container App. Role assignment is scoped to the Key Vault.
+- Key Vault standard tier with RBAC authorization (not access policies). Soft delete enabled.
+- Secret names are stable and committed in configuration: `wodbuster-cookie-encryption-key`, `telegram-bot-token`, `session-encryption-secret`, `oauth-microsoft-client-secret`, `oauth-github-client-secret`, `oauth-google-client-secret`.
+- OAuth client IDs are non-secret and live in app configuration; only the client secrets live in Key Vault.
+- The OAuth flow uses Authlib or equivalent against:
+  - Microsoft personal accounts: tenant `consumers`, scopes `openid profile email`.
+  - GitHub: standard OAuth app, scope `read:user`.
+  - Google: scopes `openid email profile`.
+- The federated subject identifier used for matching is the provider-stable, opaque `sub` claim (Microsoft, Google) or the numeric user ID (GitHub).
+- The allow-list is seeded at first-run via a one-time bootstrap command that adds the operator's chosen identity. Subsequent additions are gated by the existing operator's authenticated session.
+- The Telegram bot token is one-time set up via BotFather. The token value is pasted into the Key Vault secret `telegram-bot-token` by the operator at provisioning time. This is documented as a manual step in `plan.md`.
+- Secret rotation is operator-initiated. Application caches secrets in memory for the process lifetime; a container revision restart picks up rotated values.
+- Cost ballpark: under 1 EUR per month for Key Vault standard at this read cadence. No additional cost for the UAMI itself.
+
+## References
+
+- `docs/features/wodbuster-booking-worker/spec.md` FR-028 through FR-031, Invariants on cookie encryption key custody.
+- `docs/envisioning/wodbuster-booking-scheduler.md` section 8 (secrets entry).
+- `docs/architecture/decisions/0001-hosting-service.md` for the Container App identity attachment.
+- `docs/architecture/decisions/0002-persistence.md` for the allow-list storage.
+- `docs/architecture/decisions/0003-auth-and-session.md` for the cookie encryption key consumer.
+- `docs/architecture/decisions/0004-configuration-interface.md` for the OAuth-callback routes.

@@ -1,0 +1,38 @@
+# Keep the build context small. Only what the Dockerfile COPYs is needed.
+.git
+.github
+.venv
+.vscode
+.idea
+.pytest_cache
+.mypy_cache
+.ruff_cache
+__pycache__
+*.pyc
+*.pyo
+build
+dist
+*.egg-info
+
+# Tests are not shipped in the runtime image.
+tests
+
+# Local development artifacts.
+.env
+.env.local
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Documentation and infra are not needed inside the runtime image.
+docs
+infra
+*.md
+!README.md
+
+# Tooling configuration not needed at runtime.
+Makefile
+check.ps1
+ruff.toml
+mypy.ini

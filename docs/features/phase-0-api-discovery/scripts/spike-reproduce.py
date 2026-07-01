@@ -61,7 +61,6 @@ from typing import Any
 
 import requests  # pip install requests
 
-
 CONNECT_TIMEOUT_S = 5
 READ_TIMEOUT_S = 10
 
@@ -132,11 +131,13 @@ def _build_session(cookies: dict[str, str]) -> requests.Session:
     # user-agent; using a clearly non-default value here makes the
     # spike's footprint distinguishable in any access log inspection
     # the operator may need to do.
-    session.headers.update({
-        "User-Agent": "wodbuster-booking-scheduler/0.1 (phase-0 spike; contact: operator)",
-        "Accept": "application/json, text/json, */*",
-        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-    })
+    session.headers.update(
+        {
+            "User-Agent": "wodbuster-booking-scheduler/0.1 (phase-0 spike; contact: operator)",
+            "Accept": "application/json, text/json, */*",
+            "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+        }
+    )
     return session
 
 
@@ -152,7 +153,9 @@ def _cachebuster() -> int:
     return int(time.time() * 1000)
 
 
-SIGNALR_NEGOTIATE_URL = "https://sr-3-4.wodbuster.com/bookinghub/negotiate?negotiateVersion=1"
+SIGNALR_NEGOTIATE_URL = (
+    "https://sr-3-4.wodbuster.com/bookinghub/negotiate?negotiateVersion=1"
+)
 
 
 def negotiate_signalr(session: requests.Session, gym: str) -> str | None:
@@ -223,7 +226,9 @@ def negotiate_signalr(session: requests.Session, gym: str) -> str | None:
     return chosen
 
 
-def load_class(session: requests.Session, gym: str, idu: str, ticks: int) -> dict[str, Any] | None:
+def load_class(
+    session: requests.Session, gym: str, idu: str, ticks: int
+) -> dict[str, Any] | None:
     """
     Phase 1: read-only sanity check.
 
@@ -238,12 +243,16 @@ def load_class(session: requests.Session, gym: str, idu: str, ticks: int) -> dic
         "_": _cachebuster(),
     }
     start = time.perf_counter()
-    response = session.get(url, params=params, timeout=(CONNECT_TIMEOUT_S, READ_TIMEOUT_S))
+    response = session.get(
+        url, params=params, timeout=(CONNECT_TIMEOUT_S, READ_TIMEOUT_S)
+    )
     elapsed_ms = (time.perf_counter() - start) * 1000
 
     print(f"\n[phase 1] LoadClass.ashx")
     print(f"  url:         {url}")
-    print(f"  ticks:       {ticks}  ({datetime.fromtimestamp(ticks, tz=timezone.utc).isoformat()})")
+    print(
+        f"  ticks:       {ticks}  ({datetime.fromtimestamp(ticks, tz=timezone.utc).isoformat()})"
+    )
     print(f"  status:      {response.status_code}")
     print(f"  latency_ms:  {elapsed_ms:.0f}")
     print(f"  resp_mime:   {response.headers.get('Content-Type', '')}")
@@ -258,9 +267,11 @@ def load_class(session: requests.Session, gym: str, idu: str, ticks: int) -> dic
     try:
         data = response.json()
     except Exception as exc:
-        print(f"  -> response is not JSON ({exc.__class__.__name__}). "
-              f"This is unexpected and indicates the auth replay may have failed. "
-              f"If the response is HTML, the server probably served a login page.")
+        print(
+            f"  -> response is not JSON ({exc.__class__.__name__}). "
+            f"This is unexpected and indicates the auth replay may have failed. "
+            f"If the response is HTML, the server probably served a login page."
+        )
         return None
 
     if isinstance(data, list):
@@ -300,7 +311,9 @@ def book(
     print(f"\n[phase 2] Calendario_Inscribir.ashx")
     print(f"  url:           {url}")
     print(f"  class_id:      {class_id}")
-    print(f"  ticks:         {ticks}  ({datetime.fromtimestamp(int(ticks), tz=timezone.utc).isoformat()})")
+    print(
+        f"  ticks:         {ticks}  ({datetime.fromtimestamp(int(ticks), tz=timezone.utc).isoformat()})"
+    )
     print(f"  connectionId:  {'<set>' if connection_id else '<omitted>'}")
 
     if os.environ.get("WB_BOOK") != "1":
@@ -309,14 +322,18 @@ def book(
         return
 
     start = time.perf_counter()
-    response = session.get(url, params=params, timeout=(CONNECT_TIMEOUT_S, READ_TIMEOUT_S))
+    response = session.get(
+        url, params=params, timeout=(CONNECT_TIMEOUT_S, READ_TIMEOUT_S)
+    )
     elapsed_ms = (time.perf_counter() - start) * 1000
     print(f"  status:        {response.status_code}")
     print(f"  latency_ms:    {elapsed_ms:.0f}")
     print(f"  resp_mime:     {response.headers.get('Content-Type', '')}")
     print(f"  resp_size:     {len(response.content)} bytes")
     if response.status_code != 200:
-        print(f"  -> non-200 response. Inspect the WodBuster UI to confirm no booking was made.")
+        print(
+            f"  -> non-200 response. Inspect the WodBuster UI to confirm no booking was made."
+        )
         return
     try:
         data = response.json()
@@ -326,7 +343,9 @@ def book(
             print(f"  -> JSON list, length={len(data)}")
     except Exception:
         print(f"  -> response is not JSON.")
-    print(f"  -> booking call returned. Verify in the WodBuster UI that the booking is registered.")
+    print(
+        f"  -> booking call returned. Verify in the WodBuster UI that the booking is registered."
+    )
 
 
 def main() -> int:
@@ -360,8 +379,10 @@ def main() -> int:
         if not connection_id and os.environ.get("WB_USE_SIGNALR") == "1":
             connection_id = negotiate_signalr(session, gym)
             if not connection_id:
-                print("\nSignalR negotiate did not return a connection id. "
-                      "Proceeding to phase 2 without one.")
+                print(
+                    "\nSignalR negotiate did not return a connection id. "
+                    "Proceeding to phase 2 without one."
+                )
         book(session, gym, idu, class_id, int(class_ticks), connection_id)
     else:
         print(
