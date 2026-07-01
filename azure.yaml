@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+#
+# azd project descriptor for the WodBuster booking worker.
+# Implements ADR-0007 (Bicep + azd, single environment `prod`, single resource group).
+#
+# One service `worker` running as a Container App (ADR-0001). Image is built locally
+# via `azd deploy` (or the future GitHub Actions workflow F2.2) and pushed to ACR.
+
+name: wodbuster-worker
+metadata:
+  template: wodbuster-worker@0.1.0
+
+services:
+  worker:
+    project: .
+    language: python
+    host: containerapp
+    resourceName: worker
+    docker:
+      context: .
+      path: Dockerfile
+      remoteBuild: false
