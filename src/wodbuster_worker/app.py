@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .config import get_settings
+from .observability import configure_logging
 from .security.keyvault import load_secrets
 
 
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     manager on startup, yields to the app, and re-enters on shutdown.
     """
     settings = get_settings()
+    configure_logging(settings.log_level)
     app.state.settings = settings
     app.state.secrets = load_secrets(settings)
     try:
