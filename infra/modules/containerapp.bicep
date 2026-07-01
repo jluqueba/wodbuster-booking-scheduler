@@ -128,19 +128,13 @@ resource containerApp 'Microsoft.App/containerApps@2024-10-02-preview' = {
           name: 'applicationinsights-connection-string'
           value: appInsightsConnectionString
         }
-        // TODO(F3.8+F2.2): add Key-Vault-backed secretRefs for the seven
-        // operator secrets once F3.8 seeds them:
-        //   wodbuster-cookie-encryption-key, session-encryption-secret,
-        //   telegram-bot-token, oauth-microsoft-client-secret,
-        //   oauth-github-client-secret, oauth-google-client-secret,
-        //   healthchecks-ping-url.
-        // Pattern (Container Apps native Key Vault reference):
-        //   {
-        //     name: '<secret-name>'
-        //     keyVaultUrl: '${keyVaultUri}secrets/<secret-name>'
-        //     identity: identityId
-        //   }
-        // Then reference each via secretRef in the env block below.
+        // The seven operator secrets (cookie_encryption_key,
+        // session_encryption_secret, telegram_bot_token, three oauth
+        // client secrets, healthchecks_ping_url) are intentionally NOT
+        // exposed as Container Apps secretRefs. Per ADR-0005 the worker
+        // fetches them from Key Vault at startup with DefaultAzureCredential
+        // (see security/keyvault.py). Only KEY_VAULT_URL and the UAMI
+        // binding are required here.
       ]
     }
     template: {
