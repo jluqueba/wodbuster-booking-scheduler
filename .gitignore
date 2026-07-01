@@ -19,6 +19,10 @@ env/
 .DS_Store
 Thumbs.db
 
+# Bicep build artifacts (produced by `az bicep build`).
+# main.parameters.json is a real source file; only main.json is generated.
+infra/main.json
+
 # Spike artifacts that may contain credentials, session material, or PII.
 # See docs/features/phase-0-api-discovery/scripts/README.md for the rationale.
 # These patterns are intentionally broad. When in doubt, do not commit.
