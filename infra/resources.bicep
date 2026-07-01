@@ -67,6 +67,23 @@ module identity 'modules/identity.bicep' = {
   }
 }
 
+module containerApp 'modules/containerapp.bicep' = {
+  name: 'containerapp'
+  params: {
+    location: location
+    resourceToken: resourceToken
+    tags: tags
+    logAnalyticsWorkspaceId: observability.outputs.logAnalyticsWorkspaceId
+    identityId: identity.outputs.identityId
+    registryLoginServer: registry.outputs.registryLoginServer
+    storageAccountName: storage.outputs.storageAccountName
+    fileShareName: storage.outputs.fileShareName
+    storageAccountKey: storage.outputs.storageAccountKey
+    appInsightsConnectionString: observability.outputs.appInsightsConnectionString
+    keyVaultUri: keyVault.outputs.keyVaultUri
+  }
+}
+
 // Placeholder reference so the compiler treats the parameter as used until
 // local developer role assignments are wired in a later task.
 var _principalIdUnused = principalId
@@ -83,3 +100,5 @@ output fileShareName string = storage.outputs.fileShareName
 output identityId string = identity.outputs.identityId
 output identityPrincipalId string = identity.outputs.identityPrincipalId
 output identityClientId string = identity.outputs.identityClientId
+output containerAppName string = containerApp.outputs.containerAppName
+output containerAppEndpoint string = containerApp.outputs.containerAppEndpoint

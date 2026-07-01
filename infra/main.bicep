@@ -65,3 +65,6 @@ output AZURE_STORAGE_FILE_SHARE_NAME string = resources.outputs.fileShareName
 
 output AZURE_USER_ASSIGNED_IDENTITY_CLIENT_ID string = resources.outputs.identityClientId
 output AZURE_USER_ASSIGNED_IDENTITY_PRINCIPAL_ID string = resources.outputs.identityPrincipalId
+
+output SERVICE_WORKER_ENDPOINT string = resources.outputs.containerAppEndpoint
+output SERVICE_WORKER_NAME string = resources.outputs.containerAppName
