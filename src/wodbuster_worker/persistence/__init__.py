@@ -9,6 +9,7 @@ factory once wired.
 from __future__ import annotations
 
 from .base import Base
+from .engine import build_engine, get_engine, get_session, reset_engine
 from .models import (
     Alert,
     BookingOutcome,
@@ -34,4 +35,8 @@ __all__ = [
     "OperatorProfile",
     "SchedulerRule",
     "VacationWindow",
+    "build_engine",
+    "get_engine",
+    "get_session",
+    "reset_engine",
 ]
