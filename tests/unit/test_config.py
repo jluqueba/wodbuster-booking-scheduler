@@ -1,8 +1,8 @@
 """Unit tests for `wodbuster_worker.config`.
 
-Seeds the F4.T3 test surface. Only the `local` mode is exercised here:
-the `prod`-mode Key Vault fake lives under F4.4 / F4.T3, after the real
-loader exists.
+Covers the environment-switching and default-path behaviour of the
+``Settings`` model. The Key Vault loader itself lives in
+``tests/unit/test_config_keyvault.py`` (task F4.T3).
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from wodbuster_worker.config import Settings, _load_from_keyvault
+from wodbuster_worker.config import Settings
 
 _ENV_VARS = ("WODBUSTER_ENV", "SQLITE_PATH", "LOG_LEVEL", "APP_BASE_URL")
 
@@ -64,8 +64,3 @@ def test_prod_mode_constructs_without_touching_keyvault(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="APP_BASE_URL"):
         settings.require_app_base_url()
-
-
-def test_keyvault_loader_is_stubbed_until_f4_4() -> None:
-    with pytest.raises(NotImplementedError, match=r"F4\.4"):
-        _load_from_keyvault("telegram-bot-token")

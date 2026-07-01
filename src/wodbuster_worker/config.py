@@ -50,6 +50,22 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     app_base_url: AnyHttpUrl | None = None
 
+    # Key Vault coordinates. Optional locally (secrets come from ``.env``),
+    # required in prod (see :func:`security.keyvault.load_secrets`).
+    key_vault_url: AnyHttpUrl | None = None
+
+    # Local-mode secret passthrough. In prod these stay ``None`` and the
+    # real values arrive via ``security.keyvault.load_secrets``. Naming
+    # deliberately mirrors the fields on ``security.keyvault.Secrets`` so
+    # the passthrough is a straight attribute copy.
+    cookie_encryption_key: str | None = None
+    session_encryption_secret: str | None = None
+    telegram_bot_token: str | None = None
+    oauth_microsoft_client_secret: str | None = None
+    oauth_github_client_secret: str | None = None
+    oauth_google_client_secret: str | None = None
+    healthchecks_ping_url: str | None = None
+
     @model_validator(mode="after")
     def _apply_env_defaults(self) -> Settings:
         """Fill mode-dependent defaults.
@@ -84,21 +100,6 @@ class Settings(BaseSettings):
                 "deep links)."
             )
         return self.app_base_url
-
-
-def _load_from_keyvault(secret_name: str) -> str:
-    """Resolve a secret from Azure Key Vault.
-
-    Stub for F1.6. The real implementation lands in F4.4
-    (`src/wodbuster_worker/security/keyvault.py`) and uses
-    `DefaultAzureCredential` (UAMI in prod, `AzureCliCredential`
-    locally) per ADR-0005. Calling this function today is a programmer
-    error.
-    """
-    raise NotImplementedError(
-        f"Key Vault secret resolution is not implemented yet "
-        f"(requested: {secret_name!r}). Tracked in task F4.4."
-    )
 
 
 @lru_cache(maxsize=1)
