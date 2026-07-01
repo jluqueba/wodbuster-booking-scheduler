@@ -1,4 +1,4 @@
-.PHONY: check lint type test install
+.PHONY: check lint type test install db-upgrade
 
 PYTHON ?= python
 
@@ -13,5 +13,8 @@ type:
 
 test:
 	pytest -m "not live_contract"
+
+db-upgrade:
+	alembic upgrade head
 
 check: lint type test

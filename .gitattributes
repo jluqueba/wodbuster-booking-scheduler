@@ -1,0 +1,6 @@
+# Shell scripts and Dockerfile assets must stay LF-only. When these are
+# executed inside the Linux container (docker/entrypoint.sh via
+# /usr/local/bin) a CR byte on the shebang line makes the kernel refuse
+# the interpreter with a cryptic "no such file or directory" error.
+*.sh text eol=lf
+Dockerfile text eol=lf
