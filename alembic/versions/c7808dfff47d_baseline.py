@@ -70,7 +70,9 @@ def upgrade() -> None:
         ),
         sa.Column("acknowledged_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.ForeignKeyConstraint(["operator_id"], ["operator_profile.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["operator_id"], ["operator_profile.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     with op.batch_alter_table("alert", schema=None) as batch_op:
@@ -109,7 +111,9 @@ def upgrade() -> None:
             ),
             nullable=True,
         ),
-        sa.ForeignKeyConstraint(["operator_id"], ["operator_profile.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["operator_id"], ["operator_profile.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("operator_id", name="uq_cookie_credential_operator"),
     )
@@ -119,7 +123,9 @@ def upgrade() -> None:
         sa.Column("operator_id", sa.Integer(), nullable=False),
         sa.Column(
             "provider",
-            sa.Enum("microsoft", "github", "google", name="provider_enum", native_enum=False),
+            sa.Enum(
+                "microsoft", "github", "google", name="provider_enum", native_enum=False
+            ),
             nullable=False,
         ),
         sa.Column("subject_id", sa.String(length=256), nullable=False),
@@ -132,7 +138,9 @@ def upgrade() -> None:
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(["operator_id"], ["operator_profile.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["operator_id"], ["operator_profile.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "provider", "subject_id", name="uq_federated_identity_provider_subject"
@@ -151,7 +159,9 @@ def upgrade() -> None:
         sa.Column("operator_id", sa.Integer(), nullable=False),
         sa.Column(
             "kind",
-            sa.Enum("telegram", "banner", name="notification_kind_enum", native_enum=False),
+            sa.Enum(
+                "telegram", "banner", name="notification_kind_enum", native_enum=False
+            ),
             nullable=False,
         ),
         sa.Column("target", sa.String(length=200), nullable=False),
@@ -166,7 +176,9 @@ def upgrade() -> None:
         sa.Column(
             "attempt_count", sa.Integer(), server_default=sa.text("0"), nullable=False
         ),
-        sa.ForeignKeyConstraint(["operator_id"], ["operator_profile.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["operator_id"], ["operator_profile.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     with op.batch_alter_table("notification_outbox", schema=None) as batch_op:
@@ -195,7 +207,9 @@ def upgrade() -> None:
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(["operator_id"], ["operator_profile.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["operator_id"], ["operator_profile.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     with op.batch_alter_table("scheduler_rule", schema=None) as batch_op:
@@ -216,7 +230,9 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.ForeignKeyConstraint(["operator_id"], ["operator_profile.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["operator_id"], ["operator_profile.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     with op.batch_alter_table("vacation_window", schema=None) as batch_op:
@@ -254,8 +270,12 @@ def upgrade() -> None:
         sa.Column("granted_fallback_index", sa.Integer(), nullable=True),
         sa.Column("response_payload", sa.Text(), nullable=True),
         sa.Column("notified_at", sa.DateTime(timezone=True), nullable=True),
-        sa.ForeignKeyConstraint(["operator_id"], ["operator_profile.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["rule_id"], ["scheduler_rule.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["operator_id"], ["operator_profile.id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["rule_id"], ["scheduler_rule.id"], ondelete="SET NULL"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     with op.batch_alter_table("booking_outcome", schema=None) as batch_op:
@@ -272,7 +292,9 @@ def upgrade() -> None:
         sa.Column("target_time_slot", sa.String(length=5), nullable=False),
         sa.ForeignKeyConstraint(["rule_id"], ["scheduler_rule.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("rule_id", "order_index", name="uq_class_preference_rule_order"),
+        sa.UniqueConstraint(
+            "rule_id", "order_index", name="uq_class_preference_rule_order"
+        ),
     )
     with op.batch_alter_table("class_preference", schema=None) as batch_op:
         batch_op.create_index(
@@ -292,19 +314,27 @@ def upgrade() -> None:
         sa.Column(
             "result",
             sa.Enum(
-                "valid", "rejected", "unknown", name="heartbeat_result_enum", native_enum=False
+                "valid",
+                "rejected",
+                "unknown",
+                name="heartbeat_result_enum",
+                native_enum=False,
             ),
             nullable=False,
         ),
         sa.Column("projected_ttl_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("alert_id", sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(["alert_id"], ["alert.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["operator_id"], ["operator_profile.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["operator_id"], ["operator_profile.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     with op.batch_alter_table("heartbeat_reading", schema=None) as batch_op:
         batch_op.create_index(
-            batch_op.f("ix_heartbeat_reading_operator_id"), ["operator_id"], unique=False
+            batch_op.f("ix_heartbeat_reading_operator_id"),
+            ["operator_id"],
+            unique=False,
         )
 
 
