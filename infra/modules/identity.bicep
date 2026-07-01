@@ -23,8 +23,12 @@ param keyVaultName string
 param registryName string
 
 // Well-known Azure built-in role definition IDs (documented, stable GUIDs).
+// Note: AcrPull's ID is `7f951dda-4ed3-4680-a7ca-43fe172d538d` in our tenant,
+// not the widely-quoted `7f951dda-4ed3-11e8-8f5f-5ba03cf5c85e`. Verify with
+// `az role definition list --name AcrPull --query "[0].name" -o tsv` before
+// deploying to a new tenant.
 var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
-var acrPullRoleId = '7f951dda-4ed3-11e8-8f5f-5ba03cf5c85e'
+var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
 resource uami 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'id-${resourceToken}'
