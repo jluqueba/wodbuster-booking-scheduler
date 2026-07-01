@@ -35,6 +35,7 @@ module keyVault 'modules/keyvault.bicep' = {
     location: location
     resourceToken: resourceToken
     tags: tags
+    operatorPrincipalId: principalId
   }
 }
 
@@ -84,11 +85,6 @@ module containerApp 'modules/containerapp.bicep' = {
   }
 }
 
-// Placeholder reference so the compiler treats the parameter as used until
-// local developer role assignments are wired in a later task.
-var _principalIdUnused = principalId
-
-output principalIdEcho string = _principalIdUnused
 output logAnalyticsWorkspaceId string = observability.outputs.logAnalyticsWorkspaceId
 output appInsightsConnectionString string = observability.outputs.appInsightsConnectionString
 output keyVaultName string = keyVault.outputs.keyVaultName

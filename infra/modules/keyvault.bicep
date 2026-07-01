@@ -18,6 +18,13 @@ param resourceToken string
 @description('Resource tags.')
 param tags object
 
+@description('Optional object ID of an Entra principal (typically the operator running azd) to grant Key Vault Secrets Officer for seeding F3.8 secrets. Empty in CI.')
+param operatorPrincipalId string = ''
+
+// Key Vault Secrets Officer role: set and read secret values. Required for F3.8
+// (`az keyvault secret set ...`). Scoped to the vault, not the subscription.
+var keyVaultSecretsOfficerRoleId = 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
+
 resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
   name: 'kv-${resourceToken}'
   location: location
@@ -43,3 +50,13 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
 output keyVaultId string = keyVault.id
 output keyVaultName string = keyVault.name
 output keyVaultUri string = keyVault.properties.vaultUri
+
+resource operatorSecretsOfficer 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(operatorPrincipalId)) {
+  name: guid(keyVault.id, operatorPrincipalId, keyVaultSecretsOfficerRoleId)
+  scope: keyVault
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultSecretsOfficerRoleId)
+    principalId: operatorPrincipalId
+    principalType: 'User'
+  }
+}
