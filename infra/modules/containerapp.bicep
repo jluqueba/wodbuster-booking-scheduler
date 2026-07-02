@@ -3,9 +3,12 @@
 // Container Apps environment + the single Container App revision that runs
 // the WodBuster worker. Implements:
 //   ADR-0001  min-replicas=1, max-replicas=1, single revision, no scale-to-zero.
-//   ADR-0002  Azure Files share mounted at /data for the SQLite database.
-//   ADR-0005  User-assigned managed identity for Key Vault reads and ACR pull;
-//             no admin credentials on the registry, no client secrets anywhere.
+//   ADR-0002  Postgres 16 Flexible Server for state (amended 2026-07-02, was
+//             SQLite on Azure Files). Connection is passwordless: the runtime
+//             UAMI authenticates to Postgres via Entra; only host/port/db/user
+//             are injected as env vars here.
+//   ADR-0005  User-assigned managed identity for Key Vault reads, ACR pull,
+//             and Postgres login; no admin credentials on any dependency.
 //
 // COST: ~10-12 EUR/mo for one always-on 0.25 vCPU / 0.5 GiB replica on the
 //       Consumption profile in westeurope.
@@ -26,21 +29,20 @@ param logAnalyticsWorkspaceId string
 @description('User-assigned managed identity resource ID (bound to the app for KV + ACR).')
 param identityId string
 
+@description('Name of the runtime user-assigned managed identity. Used as the `POSTGRES_USER` value so the worker can bind to a matching Postgres role that was pre-provisioned by the operator (see ADR-0002 amendment). This is the UAMI *name*, not its clientId.')
+param identityName string
+
 @description('Container Registry login server (used for image pull via UAMI + AcrPull).')
 param registryLoginServer string
 
 @description('Container image tag to run. Defaults to the hello-world image so the very first azd up succeeds before the real image is pushed. Overridden by azd deploy.')
 param containerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
-@description('Storage account name backing the Azure Files share for SQLite (ADR-0002).')
-param storageAccountName string
+@description('Fully qualified DNS name of the Postgres Flexible Server (e.g. `pg-<token>.postgres.database.azure.com`). Injected as `POSTGRES_HOST`. TLS is enforced server-side; no client-side sslmode override is needed.')
+param postgresServerFqdn string
 
-@description('Azure Files share name (typically "data"). Mounted at /data in the container.')
-param fileShareName string
-
-@description('Storage account primary key. Passed via @secure so it never leaks into deployment logs or outputs. Consumed only by the managed environment SMB bind.')
-@secure()
-param storageAccountKey string
+@description('Postgres database name. Injected as `POSTGRES_DB`.')
+param postgresDatabase string
 
 @description('Application Insights connection string. Injected into the container as a Container Apps secret referenced from env.')
 @secure()
@@ -53,9 +55,6 @@ param keyVaultUri string
 @minValue(1)
 @maxValue(65535)
 param targetPort int = 8000
-
-// Named alias for the managed environment storage entry that the volume binds to.
-var envStorageName = 'data'
 
 resource managedEnvironment 'Microsoft.App/managedEnvironments@2024-10-02-preview' = {
   name: 'cae-${resourceToken}'
@@ -72,19 +71,6 @@ resource managedEnvironment 'Microsoft.App/managedEnvironments@2024-10-02-previe
     // NOTE: zone redundancy off (single-region, no zone budget for the
     // 15-20 EUR/mo target per ADR-0001).
     zoneRedundant: false
-  }
-}
-
-resource envStorage 'Microsoft.App/managedEnvironments/storages@2024-10-02-preview' = {
-  parent: managedEnvironment
-  name: envStorageName
-  properties: {
-    azureFile: {
-      accountName: storageAccountName
-      accountKey: storageAccountKey
-      shareName: fileShareName
-      accessMode: 'ReadWrite'
-    }
   }
 }
 
@@ -153,16 +139,33 @@ resource containerApp 'Microsoft.App/containerApps@2024-10-02-preview' = {
               value: 'prod'
             }
             {
-              name: 'SQLITE_PATH'
-              value: '/data/wodbuster.db'
-            }
-            {
               name: 'LOG_LEVEL'
               value: 'INFO'
             }
             {
               name: 'KEY_VAULT_URL'
               value: keyVaultUri
+            }
+            {
+              name: 'POSTGRES_HOST'
+              value: postgresServerFqdn
+            }
+            {
+              // Literal 5432: Flexible Server does not support port overrides,
+              // and the worker's psycopg config expects a string here.
+              name: 'POSTGRES_PORT'
+              value: '5432'
+            }
+            {
+              name: 'POSTGRES_DB'
+              value: postgresDatabase
+            }
+            {
+              // Postgres role name that the runtime UAMI logs in as. Set to
+              // the UAMI name (not clientId) — the operator's post-provision
+              // SQL bootstrap CREATE ROLE uses the same string.
+              name: 'POSTGRES_USER'
+              value: identityName
             }
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
@@ -175,25 +178,12 @@ resource containerApp 'Microsoft.App/containerApps@2024-10-02-preview' = {
               value: 'https://ca-${resourceToken}.${managedEnvironment.properties.defaultDomain}'
             }
           ]
-          volumeMounts: [
-            {
-              volumeName: 'data'
-              mountPath: '/data'
-            }
-          ]
         }
       ]
       scale: {
         minReplicas: 1
         maxReplicas: 1
       }
-      volumes: [
-        {
-          name: 'data'
-          storageType: 'AzureFile'
-          storageName: envStorage.name
-        }
-      ]
     }
   }
 }
@@ -203,3 +193,8 @@ output containerAppName string = containerApp.name
 output containerAppFqdn string = containerApp.properties.configuration.ingress.fqdn
 output containerAppEndpoint string = 'https://${containerApp.properties.configuration.ingress.fqdn}'
 output managedEnvironmentId string = managedEnvironment.id
+
+// Static outbound IP of the managed environment (Consumption profile: single
+// stable IP per env). resources.bicep pipes this into the Postgres firewall so
+// the worker's egress is allow-listed without opening AllowAzureServices.
+output managedEnvironmentStaticIp string = managedEnvironment.properties.staticIp

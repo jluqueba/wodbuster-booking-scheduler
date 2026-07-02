@@ -10,6 +10,18 @@
     },
     "operatorPrincipalId": {
       "value": "${AZURE_OPERATOR_PRINCIPAL_ID=}"
+    },
+    "operatorPrincipalUpn": {
+      "value": "${AZURE_OPERATOR_PRINCIPAL_UPN}"
+    },
+    "deployPrincipalId": {
+      "value": "${AZURE_DEPLOY_PRINCIPAL_ID=}"
+    },
+    "operatorFirewallCidr": {
+      "value": "${AZURE_OPERATOR_FIREWALL_CIDR=}"
+    },
+    "acaOutboundIps": {
+      "value": "${AZURE_ACA_ENVIRONMENT_OUTBOUND_IPS=[]}"
     }
   }
 }
