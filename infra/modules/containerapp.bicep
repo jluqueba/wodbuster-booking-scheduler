@@ -32,6 +32,9 @@ param identityId string
 @description('Name of the runtime user-assigned managed identity. Used as the `POSTGRES_USER` value so the worker can bind to a matching Postgres role that was pre-provisioned by the operator (see ADR-0002 amendment). This is the UAMI *name*, not its clientId.')
 param identityName string
 
+@description('Client ID (application/appId) of the runtime UAMI. Injected as `AZURE_CLIENT_ID` so azure-identity SDK`s ManagedIdentityCredential can disambiguate which identity to request a token for. Container Apps does not set this automatically.')
+param identityClientId string
+
 @description('Container Registry login server (used for image pull via UAMI + AcrPull).')
 param registryLoginServer string
 
@@ -166,6 +169,17 @@ resource containerApp 'Microsoft.App/containerApps@2024-10-02-preview' = {
               // SQL bootstrap CREATE ROLE uses the same string.
               name: 'POSTGRES_USER'
               value: identityName
+            }
+            {
+              // Client ID of the runtime UAMI. Required by
+              // `DefaultAzureCredential` / `ManagedIdentityCredential` to
+              // disambiguate which identity to use for IMDS token
+              // acquisition. Container Apps binds the UAMI to the revision
+              // but does not expose AZURE_CLIENT_ID automatically, so the
+              // Python azure-identity SDK falls back to system-assigned
+              // (which we do not have) and fails without this hint.
+              name: 'AZURE_CLIENT_ID'
+              value: identityClientId
             }
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
