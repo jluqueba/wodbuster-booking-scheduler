@@ -1,0 +1,137 @@
+# Infrastructure preview workflow (F2.4, ADR-0005, ADR-0007).
+#
+# Runs `azd provision --preview` on pull requests that touch infra code or
+# `azure.yaml`, and posts the what-if diff as a sticky PR comment. Read-only;
+# never mutates Azure state. Authenticates via OIDC against the deploy
+# user-assigned managed identity's `pull_request` federated credential
+# (ADR-0005, F3.10). Mutating provision on `main` is handled by `infra.yml`
+# (F2.3); container image deployment is handled by a separate workflow (F2.2).
+
+name: infra-preview
+
+on:
+  pull_request:
+    paths:
+      - infra/**
+      - azure.yaml
+
+concurrency:
+  group: infra-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write        # OIDC federation to Azure
+  contents: read         # checkout the PR head
+  pull-requests: write   # post/update the sticky preview comment
+
+jobs:
+  preview:
+    name: azd provision --preview (prod)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AZURE_ENV_NAME: prod
+      AZURE_LOCATION: spaincentral
+      AZURE_RESOURCE_GROUP: rg-prod-yrv2tv7mfjvma
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      # Do NOT set AZURE_PRINCIPAL_ID: azd overwrites it with the OIDC caller
+      # (the deploy UAMI, ServicePrincipal type), which then fails the
+      # keyvault.bicep operator role assignment that expects principalType:
+      # 'User'. Use AZURE_OPERATOR_PRINCIPAL_ID (mapped in main.parameters.json).
+      AZURE_OPERATOR_PRINCIPAL_ID: ${{ vars.AZURE_OPERATOR_PRINCIPAL_ID }}
+
+    steps:
+      - name: Checkout PR head
+        # pull_request events default to the ephemeral merge ref; check out the
+        # actual PR head so the preview reflects what will be merged, not the
+        # transient merge commit.
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Install azd
+        uses: Azure/setup-azd@v2
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: azd auth login (OIDC)
+        run: |
+          azd auth login \
+            --client-id "${{ vars.AZURE_CLIENT_ID }}" \
+            --federated-credential-provider github \
+            --tenant-id "${{ vars.AZURE_TENANT_ID }}"
+
+      - name: azd provision --preview
+        id: preview
+        # Read-only. Capture stdout+stderr and the exit code without failing
+        # the step: a failing preview is still information the PR author needs,
+        # and we fail the workflow later after the comment has been posted.
+        run: |
+          set +e
+          azd provision --preview --no-prompt 2>&1 | tee preview.txt
+          exit_code=${PIPESTATUS[0]}
+          set -e
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare comment body
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PREVIEW_EXIT_CODE: ${{ steps.preview.outputs.exit_code }}
+        run: |
+          # GitHub caps issue comments at 65,536 characters. Truncate the raw
+          # preview output to 60 KB to leave room for the marker, header, and
+          # code fences.
+          MAX_BYTES=61440
+          if [ "$(wc -c < preview.txt)" -gt "${MAX_BYTES}" ]; then
+            head -c "${MAX_BYTES}" preview.txt > preview.head.txt
+            {
+              cat preview.head.txt
+              echo ''
+              echo '(truncated, see workflow run for full output)'
+            } > preview.trunc.txt
+            mv preview.trunc.txt preview.txt
+            rm preview.head.txt
+          fi
+          SHORT_SHA="${PR_HEAD_SHA:0:7}"
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          {
+            echo '<!-- azd-provision-preview -->'
+            echo '## azd provision --preview'
+            echo ''
+            echo "- Workflow run: ${RUN_URL}"
+            echo "- Commit: \`${SHORT_SHA}\`"
+            echo "- Exit code: \`${PREVIEW_EXIT_CODE}\`"
+            echo ''
+            echo '```'
+            cat preview.txt
+            echo '```'
+          } > comment-body.md
+
+      - name: Find existing preview comment
+        id: find
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '<!-- azd-provision-preview -->'
+
+      - name: Create or update preview comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body-path: comment-body.md
+          edit-mode: replace
+
+      - name: Fail if preview errored
+        if: steps.preview.outputs.exit_code != '0'
+        env:
+          EXIT_CODE: ${{ steps.preview.outputs.exit_code }}
+        run: |
+          echo "azd provision --preview exited with ${EXIT_CODE}"
+          exit "${EXIT_CODE}"
