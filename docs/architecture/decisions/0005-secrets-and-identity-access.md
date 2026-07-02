@@ -30,7 +30,7 @@ The Container App is assigned a user-assigned managed identity (UAMI). The UAMI 
 - **No secrets in repository or image**: Meets. All secrets read at startup via managed identity. The image is generic.
 - **No service principal client secrets for the worker**: Meets. UAMI authenticates to Key Vault via the IMDS endpoint. No client secret material on the worker side.
 - **Federated identity with multi-provider choice**: Meets. Three providers, operator chooses, matching FR-028 verbatim.
-- **Allow-list enforcement**: Meets. The allow-list lives in the SQLite database (ADR-0002) and is checked in the OAuth callback handler. Mismatched identities receive a generic denial.
+- **Allow-list enforcement**: Meets. The allow-list lives in the Postgres database (ADR-0002) and is checked in the OAuth callback handler. Mismatched identities receive a generic denial.
 - **Auditable secret access and negligible cost**: Meets. Key Vault standard tier secret reads cost approximately 0.03 EUR per 10,000 operations; the worker reads four secrets at startup and caches them for the process lifetime. Diagnostic logs to App Insights record every secret access. Total cost is well under 1 EUR per month.
 
 ### Option 2: Environment variables baked as Container App secrets at deploy time
@@ -57,7 +57,7 @@ Same Key Vault and UAMI as Option 1, but the operator sign-in flow is wired only
 
 ## Decision
 
-Option 1: Azure Key Vault for secrets (cookie encryption key, Telegram bot token, session encryption secret, OAuth client secrets for Microsoft personal plus GitHub plus Google), accessed by the Container App via a user-assigned managed identity holding the `Key Vault Secrets User` RBAC role. Operator authentication via federated OAuth with all three providers offered at sign-in; the operator picks one. The allow-list lives in the SQLite database (ADR-0002), one row per allowed `(provider, subject_id, display_name)`. Mismatched identities receive a generic denial.
+Option 1: Azure Key Vault for secrets (cookie encryption key, Telegram bot token, session encryption secret, OAuth client secrets for Microsoft personal plus GitHub plus Google, plus the `postgres-admin-password` break-glass secret introduced by the 2026-07-02 persistence pivot), accessed by the Container App via a user-assigned managed identity holding the `Key Vault Secrets User` RBAC role. Operator authentication via federated OAuth with all three providers offered at sign-in; the operator picks one. The allow-list lives in the Postgres database (ADR-0002), one row per allowed `(provider, subject_id, display_name)`. Mismatched identities receive a generic denial.
 
 This option uniquely meets every priority. Environment-variable baking (Option 2) fails the audit requirement. A single-provider restriction (Option 3) contradicts FR-028.
 
@@ -98,6 +98,38 @@ No environment-scoped federated credential is configured. Fork PRs are unsupport
 The deploy UAMI is deliberately excluded from the Bicep template: it is a prerequisite for the provisioning workflow, so it cannot be provisioned by that workflow (chicken-and-egg). Resource-group creation and deploy-UAMI creation both stay one-time laptop steps during bootstrap. The runtime UAMI stays inside the Bicep template.
 
 The deploy UAMI holds no client secret. All GitHub-to-Azure authentication uses the OIDC token exchange, with `AZURE_CLIENT_ID`, `AZURE_SUBSCRIPTION_ID`, and `AZURE_TENANT_ID` published as GitHub Actions repository variables (non-secret). This preserves the "no service principal client secrets" priority for the CI/CD path as well as the runtime path.
+
+### Postgres connection identity
+
+The persistence pivot in ADR-0002 introduces a Postgres server that carries three principals with disjoint responsibilities. The identity plumbing lives here; the in-database privilege set lives in ADR-0002.
+
+| Principal | Type | Where the identity lives | Who provisions it |
+|-----------|------|-------------------------|-------------------|
+| `wodbadmin` | Postgres password login (server admin). | Password in Key Vault secret `postgres-admin-password`. Never mounted into the Container App. | Bicep creates the server with this login and password (from the `@secure()` parameter sourced from the KV secret). Operator seeds the KV secret before the first provision (F3.13). |
+| Operator's Entra user | Microsoft Entra ID user or group. | Operator's Azure account. No secret material. | Operator, one time, via `az postgres flexible-server ad-admin create` (F3.12). Also declared as the server's Entra admin in Bicep so the same value round-trips through IaC. |
+| Runtime UAMI (`id-{token}`) | Microsoft Entra managed identity. | Provisioned by Bicep alongside the Container Registry and Key Vault role assignments (unchanged from the original design). Attached to the Container App revision. | Bicep. The in-database `GRANT` on schema `public` is a manual step (F3.12) run by the operator using the Entra DBA path, because Postgres does not accept role grants at the Azure control-plane level. |
+
+Runtime connection flow:
+
+1. Container App revision starts. `DefaultAzureCredential` resolves to the runtime UAMI via IMDS.
+2. SQLAlchemy engine acquires a Postgres connection. The custom connection callback calls `credential.get_token("https://ossrdbms-aad.database.windows.net/.default")` and passes the resulting access token as the `password` field of the libpq connection string, with the UAMI's principal name as the `user`.
+3. Postgres validates the token against Entra ID and authorises the connection under the role name equal to the UAMI's principal name.
+4. Alembic runs `upgrade head` under the same connection identity. It succeeds only if the operator has previously executed the F3.12 grant.
+
+Rationale for the split:
+
+- The Container App holds no password. The `postgres-admin-password` secret exists solely for the case where Entra auth is broken (identity provider outage, federation misconfiguration). Cover story, not an operational path.
+- The runtime UAMI holds strictly less than the Entra DBA. DDL executed at container start is bounded to schema `public` (Alembic's target). Schema-level catastrophes (`DROP SCHEMA`) require the DBA session, not the runtime session.
+- The operator's Entra user, not the runtime UAMI, owns the schema. This inversion means restoring from a bad migration does not require the app to be running: the operator connects with psql via the Entra token and repairs.
+
+Firewall rule policy: the Postgres server keeps public network access enabled with two rule sets:
+
+| Rule | Source | Purpose |
+|------|--------|---------|
+| Container Apps environment outbound IPs | The static outbound IP ranges published for the ACA environment. | Runtime traffic from the worker. |
+| Operator's home IP (or dynamic set) | Operator-managed. Documented in the README as an operator-owned step. | psql access from the DBA laptop. |
+
+`AllowAzureServices` is deliberately not enabled: leaving it on would grant any Azure tenant on the platform the ability to reach the server through the firewall, which defeats the purpose of the rule set at the single-user scale.
 
 ## References
 
