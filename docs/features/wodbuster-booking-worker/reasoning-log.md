@@ -4,6 +4,40 @@ Amendments and non-trivial decisions logged during implementation of this featur
 
 ---
 
+## 2026-07-02 — SQLite journal mode changed from WAL to DELETE (ADR-0002 amendment)
+
+**Trigger**: first end-to-end deploy from GitHub Actions (F2.2) succeeded through the image-push stage, but the new Container App revision crashed on startup during Alembic bootstrap with `sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) database is locked` on `CREATE TABLE alembic_version`. Root cause: `PRAGMA journal_mode=WAL` requires POSIX shared memory (a `.db-shm` file with proper `mmap` semantics), and the Azure Files share mounted by Container Apps uses SMB/CIFS which does not reliably support that. The very first write attempt on a fresh database therefore deadlocks. ADR-0002 documented WAL as a considered decision but did not anticipate the SMB constraint.
+
+**Scope classification**: low-to-medium impact amendment. One ADR (0002) implementation-notes bullet reworded; one code change (`src/wodbuster_worker/persistence/engine.py` pragma); no schema change; no task additions; no external contract change. Not a supersede — the tool choice (SQLite on Azure Files with application-layer AES-256-GCM cookie encryption) stands. Whole-feature escalation check: no signal tripped.
+
+**Cascade check**: one prior 2026-07-02 amendment on this feature (GitHub Actions provisioning). Different area; no compounding pattern.
+
+**Fix**:
+
+1. `engine.py`: `PRAGMA journal_mode=WAL` → `PRAGMA journal_mode=DELETE`. Kept `foreign_keys=ON` and `synchronous=NORMAL`.
+2. ADR-0002 "Implementation Notes" bullet rewritten to reflect the new journal mode and the SMB rationale.
+
+**Trade-off**: DELETE mode has higher write latency than WAL because every commit rewrites the rollback journal. Acceptable for our workload — a handful of transactions per booking cycle (roughly one per minute at peak) — and further mitigated by the `max-replicas=1` single-writer invariant that guarantees no read-writer or writer-writer contention.
+
+**Alternatives rejected**:
+
+- **Add `nobrl` mount option to the Azure Files share**: Container Apps does not expose CIFS mount options in its `managedEnvironments/storages` resource; this is not a configurable knob for us.
+- **Move to `journal_mode=MEMORY`**: crash-unsafe, would lose the last transaction on any container kill.
+- **Move SQLite off Azure Files (to a Container App emptyDir volume)**: violates ADR-0002's persistence priority. The DB must survive revision rollovers.
+
+**Propagation checklist**:
+
+| Artifact | Present? | Invalidated? | Follow-up |
+|----------|----------|--------------|-----------|
+| ADR-0002 | Yes | Yes, one bullet. Amended in same pass. | None. |
+| `plan.md` | Yes | No, no reference to WAL specifically. | None. |
+| `spec.md` | Yes | No. | None. |
+| `tasks.md` | Yes | No, F4.2 wording is generic ("configure the SQLite engine"). | None. |
+| Other ADRs | Yes | No. | None. |
+| Tests | Yes | No test asserts `journal_mode=WAL` today. | None. |
+
+---
+
 ## 2026-07-02 — GitHub Actions as provisioning source of record (amendment)
 
 **Trigger**: agent classification `spec` — CD deployment surface described in `plan.md` and referenced from ADR-0007 did not match the operator's decision to run both `azd provision` and `azd deploy` from GitHub Actions after bootstrap. Detected during `devsquad.refine` health analysis (turn 1). No task had started implementation on F2.2 or F3.5 yet, so no in-flight rework.
