@@ -15,7 +15,6 @@ services:
     project: .
     language: python
     host: containerapp
-    resourceName: worker
     docker:
       context: .
       path: Dockerfile
