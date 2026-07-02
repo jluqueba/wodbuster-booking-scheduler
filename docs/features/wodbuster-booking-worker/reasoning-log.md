@@ -4,6 +4,32 @@ Amendments and non-trivial decisions logged during implementation of this featur
 
 ---
 
+## 2026-07-02 — Runtime UAMI granted Postgres Entra admin (ADR-0005 minor amendment, platform-driven)
+
+**Trigger**: F3.12 (operator manual role grant) attempted to enrol the runtime UAMI as a non-admin Entra principal in Postgres. The Azure Database for PostgreSQL Flexible Server we provisioned (API `2024-08-01`, PG 16, Spain Central, Burstable B1ms) does not expose the `pgaadauth` extension: it is missing from both `pg_available_extensions` schemas that user roles can install, and the `azure.extensions` allow-list rejects `pgaadauth` with "not allow-listed for `azure_pg_admin` users". No user-callable function `pgaadauth_create_principal(...)` exists on the server. The only working path to enrol an Entra principal is `az postgres flexible-server microsoft-entra-admin create --type ServicePrincipal`, which promotes the principal to `azure_pg_admin` group membership (server admin).
+
+**Scope classification**: low-impact amendment. Touches ADR-0005 "Postgres connection identity" subsection only. No new tasks, no code change, no cost change. The runtime UAMI simply carries broader privileges than the ADR originally allowed. Cascade check: none — no downstream artifact assumed the specific privilege set at code level yet.
+
+**Options considered**:
+
+- **A. Runtime UAMI as Entra admin (chosen)**. One `az` command. Preserves the Entra token / no-secrets-at-runtime posture from ADR-0005. Trade-off: the runtime UAMI has superuser-equivalent rights on the `wodbuster` database, so a compromised container revision could rewrite or delete anything in it. Blast radius bounded by the UAMI's Azure scoping (assigned to one Container App only).
+- **B. Runtime uses `wodbadmin` password from Key Vault**. Would keep the password in KV, never in repo or image, but re-introduces a password on the runtime path. Same effective DB privileges as A. Rejected because it undermines the "no secrets at runtime" priority in ADR-0005 for no security gain over A.
+- **C. Reprovision under a different tier / region / API version until `pgaadauth` is exposed**. Uncertain outcome (`pgaadauth` may have been removed platform-wide), non-trivial rework, delays end-to-end validation. Rejected as speculative.
+
+**Decision**: apply option A. ADR-0005 "Postgres connection identity" section updated with the platform-limitation note. Runtime privilege set is accepted at superuser level for the MVP. The `wodbadmin` password login stays as a break-glass path (already in KV) but is no longer strictly needed for schema recovery. If Azure later re-exposes `pgaadauth`, revisit and reduce privileges via the `pgaadauth_create_principal(name, false, false)` path plus schema-scoped `GRANT`s.
+
+**Propagation checklist**:
+
+| Artifact | Present? | Invalidated? | Follow-up |
+|----------|----------|--------------|-----------|
+| ADR-0005 | Yes | Yes, one row + new "Platform limitation" note. Amended in same pass. | None. |
+| ADR-0002 | Yes | No: the privilege posture referenced there ("`GRANT USAGE, CREATE ON SCHEMA public`") is now moot because the UAMI has broader rights, but the ADR body reads as aspirational and does not need textual change. | None. |
+| tasks.md F3.12 | Yes | Partially: the F3.12 wording described a `pgaadauth_create_principal` + `GRANT` sequence. Replaced with the `microsoft-entra-admin create` command. | Updated in same pass. |
+| plan.md | Yes | No. | None. |
+| Code (`engine.py`, `models.py`) | Not yet implemented (F4.1/F4.2). | No. | Runtime connection logic in F4.2 does not need to change: it still uses `DefaultAzureCredential` + Entra token as `password`; the DB just accepts a broader set of DDL from that connection. |
+
+---
+
 ## 2026-07-02 — Persistence pivot from SQLite-on-Azure-Files to Azure Database for PostgreSQL (ADR-0002 in-place rewrite)
 
 **Trigger**: the WAL-to-DELETE amendment earlier the same day (see entry below) resolved the immediate `database is locked` crash but exposed that the whole SQLite-on-SMB substrate was fragile in ways the original ADR-0002 priority sweep had not anticipated: Alembic bootstrap is brittle on SMB, `journal_mode=DELETE` costs write latency, correctness is hard-coupled to `max-replicas=1`, backups are a hand-rolled snapshot script, and there is no PITR. The operator triaged the option space with the freshly-discovered constraints and chose to pivot to managed Postgres despite the cost delta from roughly 0.30 EUR per month to roughly 13-15 EUR per month. Discovery happened during the same `devsquad.refine` session that produced the WAL-to-DELETE amendment; no in-flight branch on F4.1/F4.2/F4.3 (the persistence code has not been implemented yet), so the pivot rewrites the plan cleanly without invalidating merged work.
