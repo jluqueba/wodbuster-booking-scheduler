@@ -73,6 +73,15 @@ jobs:
         # otherwise handle this transparently.
         run: az acr login --name cryrv2tv7mfjvma
 
+      - name: azd env refresh
+        # Pull the current provisioning outputs (registry endpoint, container
+        # app name, key vault URI, etc.) into the ephemeral azd env so that
+        # `azd deploy` knows where to push the image and which revision to
+        # roll. Without this step, azd fails with "could not determine
+        # container registry endpoint" because the runner has no `.azure/`
+        # state cached from a previous provision.
+        run: azd env refresh --no-prompt
+
       - name: azd deploy worker
         # Builds the image locally from the repo Dockerfile, pushes it to ACR,
         # and updates the Container App revision to the new tag. Does NOT run
