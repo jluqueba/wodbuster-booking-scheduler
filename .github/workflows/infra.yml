@@ -1,0 +1,60 @@
+# Infrastructure provisioning workflow (F2.3, ADR-0007).
+#
+# Runs `azd provision` against the `prod` environment whenever infra code or
+# `azure.yaml` changes on `main`, and on manual dispatch. There is no approval
+# gate for MVP (see reasoning-log.md 2026-07-02, Q3=b). Authenticates via OIDC
+# against the deploy user-assigned managed identity (ADR-0005). Container image
+# deployment is handled by a separate workflow (F2.2).
+
+name: infra
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - infra/**
+      - azure.yaml
+  workflow_dispatch:
+
+concurrency:
+  group: infra-prod
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  provision:
+    name: azd provision (prod)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AZURE_ENV_NAME: prod
+      AZURE_LOCATION: spaincentral
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_PRINCIPAL_ID: ${{ vars.AZURE_OPERATOR_PRINCIPAL_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install azd
+        uses: Azure/setup-azd@v2
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: azd auth login (OIDC)
+        run: |
+          azd auth login \
+            --client-id "${{ vars.AZURE_CLIENT_ID }}" \
+            --federated-credential-provider github \
+            --tenant-id "${{ vars.AZURE_TENANT_ID }}"
+
+      - name: azd provision
+        run: azd provision --no-prompt
