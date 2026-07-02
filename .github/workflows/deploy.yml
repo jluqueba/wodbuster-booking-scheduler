@@ -1,0 +1,81 @@
+# Application deployment workflow (F2.2, ADR-0001, ADR-0005, ADR-0007).
+#
+# Builds the worker container image from the repo `Dockerfile`, pushes it to
+# ACR, and updates the single Container App revision via `azd deploy`. Runs on
+# push to `main` when app code (`src/**`) or the `Dockerfile` changes, and on
+# manual dispatch. This workflow deploys app code only; infrastructure changes
+# are handled by `infra.yml` (F2.3). Authenticates via OIDC against the deploy
+# user-assigned managed identity (ADR-0005). No client secrets in GitHub.
+
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/**
+      - Dockerfile
+  workflow_dispatch:
+
+concurrency:
+  # Serialize deploys but do not cancel in progress: interrupting a partial
+  # revision rollout can leave the Container App in an inconsistent state.
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: azd deploy worker (prod)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      AZURE_ENV_NAME: prod
+      AZURE_LOCATION: spaincentral
+      AZURE_RESOURCE_GROUP: rg-prod-yrv2tv7mfjvma
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      # Do NOT set AZURE_PRINCIPAL_ID: azd overwrites it with the OIDC caller
+      # (the deploy UAMI, ServicePrincipal type), which then fails the
+      # keyvault.bicep operator role assignment that expects principalType:
+      # 'User'. Use AZURE_OPERATOR_PRINCIPAL_ID (mapped in main.parameters.json).
+      AZURE_OPERATOR_PRINCIPAL_ID: ${{ vars.AZURE_OPERATOR_PRINCIPAL_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install azd
+        uses: Azure/setup-azd@v2
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: azd auth login (OIDC)
+        run: |
+          azd auth login \
+            --client-id "${{ vars.AZURE_CLIENT_ID }}" \
+            --federated-credential-provider github \
+            --tenant-id "${{ vars.AZURE_TENANT_ID }}"
+
+      - name: ACR login
+        # Explicit `az acr login` so a token/permission failure surfaces here
+        # rather than inside `azd deploy`'s docker push. `azd deploy` would
+        # otherwise handle this transparently.
+        run: az acr login --name cryrv2tv7mfjvma
+
+      - name: azd deploy worker
+        # Builds the image locally from the repo Dockerfile, pushes it to ACR,
+        # and updates the Container App revision to the new tag. Does NOT run
+        # `azd provision`; infra provisioning belongs to F2.3. Requires the
+        # Container App and ACR to already exist.
+        run: azd deploy worker --no-prompt
