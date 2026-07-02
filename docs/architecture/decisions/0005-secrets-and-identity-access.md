@@ -129,14 +129,18 @@ Rationale for the split:
 - The runtime UAMI holds strictly less than the Entra DBA. DDL executed at container start is bounded to schema `public` (Alembic's target). Schema-level catastrophes (`DROP SCHEMA`) require the DBA session, not the runtime session.
 - The operator's Entra user, not the runtime UAMI, owns the schema. This inversion means restoring from a bad migration does not require the app to be running: the operator connects with psql via the Entra token and repairs.
 
-Firewall rule policy: the Postgres server keeps public network access enabled with two rule sets:
+Firewall rule policy: the Postgres server keeps public network access enabled with three rule sets:
 
 | Rule | Source | Purpose |
 |------|--------|---------|
-| Container Apps environment outbound IPs | The static outbound IP ranges published for the ACA environment. | Runtime traffic from the worker. |
+| `AllowAllAzureServices` (0.0.0.0-0.0.0.0) | The special Azure rule granting inbound traffic from any Azure-internal IP. | Runtime traffic from the Container Apps Consumption environment. See platform-limitation note below. |
 | Operator's home IP (or dynamic set) | Operator-managed. Documented in the README as an operator-owned step. | psql access from the DBA laptop. |
 
-`AllowAzureServices` is deliberately not enabled: leaving it on would grant any Azure tenant on the platform the ability to reach the server through the firewall, which defeats the purpose of the rule set at the single-user scale.
+**Platform limitation (2026-07-02 amendment)**: the original design specified allowlisting only the Container Apps environment's stable outbound IP(s). In practice, an ACA **Consumption** environment does not have a stable outbound IP — the `staticIp` property on the managed environment is the *inbound* ingress IP (verified in Spain Central: env `staticIp=158.158.80.169`, observed outbound to Key Vault `addr=158.158.84.228`). Stable outbound IPs are only available on **Workload Profiles** environments, which cost ~15 EUR/month more than Consumption and were explicitly rejected in the 2026-07-02 Postgres pivot amendment (Q1 answer, per reasoning-log). We therefore fall back to `AllowAllAzureServices`, which leans on Entra ID authentication and server-side TLS as the security boundary against the entire Azure tenant fleet. Consequences accepted for the MVP:
+
+- Any Azure customer's tenant can *reach* port 5432 on the server. They still need a valid Entra ID token bound to a `pg_roles` entry (only the operator and the runtime UAMI qualify) to authenticate.
+- The `wodbadmin` password login is disabled at connect time by the firewall in exchange for a slightly larger public attack surface; the offset is that password auth would need the KV-stored secret anyway.
+- Revisit this if we move to Workload Profiles for other reasons, or if Azure introduces a documented stable outbound IP for Consumption envs.
 
 ## References
 

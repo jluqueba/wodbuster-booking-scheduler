@@ -127,6 +127,22 @@ resource acaOutboundRules 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRul
   }
 }]
 
+// Special Azure firewall rule: startIp=endIp=0.0.0.0 means "allow traffic
+// from any Azure-internal IP", NOT "allow the whole internet". Required for
+// the runtime path because Container Apps Consumption envs do not have a
+// stable outbound IP (staticIp is inbound only; the actual egress rotates
+// within a nearby subnet). See ADR-0005 "Platform limitation" note. The
+// security boundary is Entra ID authentication + server-side TLS, not the
+// firewall. Revisit if we ever adopt Workload Profiles envs.
+resource allowAzureServices 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = {
+  parent: postgres
+  name: 'AllowAllAzureServices'
+  properties: {
+    startIpAddress: '0.0.0.0'
+    endIpAddress: '0.0.0.0'
+  }
+}
+
 // Optional operator home-IP rule. Split into a separate deployment because
 // `if (!empty(...))` on array items is not supported: we fake it by only
 // emitting the resource when the string is non-empty. Wider CIDRs must be
