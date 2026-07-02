@@ -47,6 +47,11 @@ jobs:
       # provision call from the same env block doesn't fail with unbound params.
       AZURE_OPERATOR_PRINCIPAL_UPN: ${{ vars.AZURE_OPERATOR_PRINCIPAL_UPN }}
       AZURE_DEPLOY_PRINCIPAL_ID: ${{ vars.AZURE_DEPLOY_PRINCIPAL_ID }}
+      # OAuth client IDs mirrored from infra.yml so a stray provision
+      # call from the same env block does not fail with unbound params.
+      OAUTH_MICROSOFT_CLIENT_ID: ${{ vars.OAUTH_MICROSOFT_CLIENT_ID }}
+      OAUTH_GITHUB_CLIENT_ID: ${{ vars.OAUTH_GITHUB_CLIENT_ID }}
+      OAUTH_GOOGLE_CLIENT_ID: ${{ vars.OAUTH_GOOGLE_CLIENT_ID }}
 
     steps:
       - name: Checkout

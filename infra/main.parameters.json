@@ -22,6 +22,15 @@
     },
     "acaOutboundIps": {
       "value": "${AZURE_ACA_ENVIRONMENT_OUTBOUND_IPS=[]}"
+    },
+    "oauthMicrosoftClientId": {
+      "value": "${OAUTH_MICROSOFT_CLIENT_ID=}"
+    },
+    "oauthGithubClientId": {
+      "value": "${OAUTH_GITHUB_CLIENT_ID=}"
+    },
+    "oauthGoogleClientId": {
+      "value": "${OAUTH_GOOGLE_CLIENT_ID=}"
     }
   }
 }

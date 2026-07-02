@@ -41,6 +41,15 @@ param operatorFirewallCidr string = ''
 @description('Static outbound IPs of the Container Apps managed environment, one per array entry. Populated after the first provision (chicken-and-egg with `managedEnvironment.properties.staticIp`). Bound to `AZURE_ACA_ENVIRONMENT_OUTBOUND_IPS` with an empty default; the operator reads `managedEnvironmentStaticIp` from run 1 outputs and sets the GH variable before run 2.')
 param acaOutboundIps array = []
 
+@description('OAuth 2.0 client ID for Microsoft (personal accounts). Non-secret; bound to `OAUTH_MICROSOFT_CLIENT_ID` GH variable with an empty fallback. Empty is accepted so the container still boots when OAuth is not fully configured.')
+param oauthMicrosoftClientId string = ''
+
+@description('OAuth 2.0 client ID for GitHub. Non-secret; bound to `OAUTH_GITHUB_CLIENT_ID` GH variable with an empty fallback.')
+param oauthGithubClientId string = ''
+
+@description('OAuth 2.0 client ID for Google. Non-secret; bound to `OAUTH_GOOGLE_CLIENT_ID` GH variable with an empty fallback.')
+param oauthGoogleClientId string = ''
+
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = {
   'azd-env-name': environmentName
@@ -66,6 +75,9 @@ module resources 'resources.bicep' = {
     postgresAdminPassword: kv.getSecret('postgres-admin-password')
     acaOutboundIps: acaOutboundIps
     operatorFirewallCidr: operatorFirewallCidr
+    oauthMicrosoftClientId: oauthMicrosoftClientId
+    oauthGithubClientId: oauthGithubClientId
+    oauthGoogleClientId: oauthGoogleClientId
   }
 }
 

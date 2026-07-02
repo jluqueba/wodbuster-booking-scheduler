@@ -54,6 +54,15 @@ param appInsightsConnectionString string
 @description('Key Vault URI. Passed to the worker as KEY_VAULT_URL so the app can resolve secrets at startup via DefaultAzureCredential.')
 param keyVaultUri string
 
+@description('OAuth 2.0 client ID for Microsoft (personal accounts). Non-secret; the paired client secret lives in Key Vault as `oauth-microsoft-client-secret`. Empty string if OAuth is not yet configured — the worker still boots.')
+param oauthMicrosoftClientId string = ''
+
+@description('OAuth 2.0 client ID for GitHub. Non-secret; the paired client secret lives in Key Vault as `oauth-github-client-secret`. Empty string if OAuth is not yet configured.')
+param oauthGithubClientId string = ''
+
+@description('OAuth 2.0 client ID for Google. Non-secret; the paired client secret lives in Key Vault as `oauth-google-client-secret`. Empty string if OAuth is not yet configured.')
+param oauthGoogleClientId string = ''
+
 @description('Target port the container listens on.')
 @minValue(1)
 @maxValue(65535)
@@ -184,6 +193,24 @@ resource containerApp 'Microsoft.App/containerApps@2024-10-02-preview' = {
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
               secretRef: 'applicationinsights-connection-string'
+            }
+            {
+              // OAuth 2.0 client IDs for the three identity providers wired
+              // in US-009. Non-secret (paired secrets live in Key Vault and
+              // are loaded at startup by security/keyvault.py). Empty
+              // strings are accepted so a partial provider setup still
+              // boots the worker; only the login path for the unconfigured
+              // provider fails at request time.
+              name: 'OAUTH_MICROSOFT_CLIENT_ID'
+              value: oauthMicrosoftClientId
+            }
+            {
+              name: 'OAUTH_GITHUB_CLIENT_ID'
+              value: oauthGithubClientId
+            }
+            {
+              name: 'OAUTH_GOOGLE_CLIENT_ID'
+              value: oauthGoogleClientId
             }
             {
               // Predictable Container Apps FQDN pattern: <appName>.<env defaultDomain>.
