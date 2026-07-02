@@ -9,12 +9,20 @@ Pragmas applied on every connection via a ``connect`` event listener:
 
 - ``foreign_keys=ON`` — SQLite requires this per connection; foreign
   key declarations are otherwise ignored.
-- ``journal_mode=WAL`` — write-ahead log, required by ADR-0002 for
-  reasonable write latency on Azure Files.
-- ``synchronous=NORMAL`` — the WAL companion setting recommended by
-  the SQLite docs for WAL mode. Full ``FULL`` synchronicity is not
-  needed because the operating system fsync on WAL commit already
-  provides crash safety for our use.
+- ``journal_mode=DELETE`` — the classic rollback journal. We would
+  prefer WAL for lower write latency, but Container Apps mounts the
+  Azure Files share as SMB/CIFS and SMB does not reliably support the
+  POSIX shared-memory (``mmap``) semantics that WAL requires for its
+  ``.db-shm`` file. The concrete failure mode is a `database is locked`
+  error on the very first ``CREATE TABLE`` from Alembic. ``DELETE``
+  mode uses only a plain ``.db-journal`` file (regular POSIX I/O),
+  which SMB handles correctly. Trade-off: slightly higher write
+  latency; acceptable for our write cadence (a handful of transactions
+  per booking cycle) and reinforced by ADR-0001's ``max-replicas=1``
+  single-writer guarantee.
+- ``synchronous=NORMAL`` — kept from the WAL era. With ``DELETE`` mode
+  SQLite promotes this internally where needed; setting it explicitly
+  keeps the pragma sequence stable and self-documenting.
 
 The engine is intentionally *not* constructed at import time. Tests
 that need a private database call ``build_engine(path)`` with an
@@ -51,7 +59,7 @@ def _install_pragmas(engine: Engine) -> None:
         cursor = dbapi_connection.cursor()
         try:
             cursor.execute("PRAGMA foreign_keys=ON")
-            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA journal_mode=DELETE")
             cursor.execute("PRAGMA synchronous=NORMAL")
         finally:
             cursor.close()
