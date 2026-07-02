@@ -32,6 +32,7 @@ jobs:
     env:
       AZURE_ENV_NAME: prod
       AZURE_LOCATION: spaincentral
+      AZURE_RESOURCE_GROUP: rg-prod-yrv2tv7mfjvma
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       AZURE_PRINCIPAL_ID: ${{ vars.AZURE_OPERATOR_PRINCIPAL_ID }}
 

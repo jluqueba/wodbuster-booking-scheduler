@@ -1,6 +1,6 @@
 // main.bicep
 //
-// Subscription-scoped entry point for the WodBuster booking worker infrastructure.
+// Resource-group-scoped entry point for the WodBuster booking worker infrastructure.
 //
 // ADRs implemented (or set up for later modules to implement):
 //   ADR-0001  Azure Container Apps as the hosting service
@@ -9,21 +9,24 @@
 //   ADR-0006  Log Analytics + Application Insights + external dead-man
 //   ADR-0007  Bicep + azd, single environment `prod`, single resource group
 //
-// This file creates the resource group and delegates all resource-group-scoped
-// work to resources.bicep. The azd-standard outputs are forwarded up.
+// Resource-group scope (not subscription) because after F3.10 the deploy UAMI
+// used by GitHub Actions holds Contributor + User Access Administrator on the
+// resource group only. The resource group itself is created once, from the
+// operator's laptop, as part of the F3.5 bootstrap. `azd` picks up the target
+// resource group from the AZURE_RESOURCE_GROUP env var.
 
-targetScope = 'subscription'
+targetScope = 'resourceGroup'
 
 @minLength(1)
 @maxLength(64)
-@description('Name of the azd environment (drives the resource group name). Typical value: prod.')
+@description('Name of the azd environment. Kept as a param so the resourceToken formula stays stable across the subscription-scope bootstrap and the resource-group-scope steady state.')
 param environmentName string
 
 @minLength(1)
-@description('Azure region for all resources. Default westeurope (operator located in Spain).')
-param location string = 'westeurope'
+@description('Azure region for all resources. Defaults to the enclosing resource group location.')
+param location string = resourceGroup().location
 
-@description('Object ID of the azd caller (used later for local-dev role assignments). Empty in CI.')
+@description('Object ID of the operator running azd (empty in CI). Wired through to the runtime UAMI Key Vault Secrets Officer grant.')
 param principalId string = ''
 
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -31,15 +34,8 @@ var tags = {
   'azd-env-name': environmentName
 }
 
-resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
-  name: 'rg-${environmentName}-${resourceToken}'
-  location: location
-  tags: tags
-}
-
 module resources 'resources.bicep' = {
   name: 'resources'
-  scope: rg
   params: {
     location: location
     resourceToken: resourceToken
@@ -49,7 +45,7 @@ module resources 'resources.bicep' = {
 }
 
 output AZURE_LOCATION string = location
-output AZURE_RESOURCE_GROUP string = rg.name
+output AZURE_RESOURCE_GROUP string = resourceGroup().name
 output AZURE_PRINCIPAL_ID string = principalId
 
 output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.registryName
