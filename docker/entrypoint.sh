@@ -19,4 +19,14 @@ if [ "$#" -gt 0 ]; then
     exec "$@"
 fi
 
-exec uvicorn wodbuster_worker.app:app --host 0.0.0.0 --port 8000
+# --proxy-headers and --forwarded-allow-ips='*' make uvicorn honor
+# X-Forwarded-Proto / X-Forwarded-For from Container Apps' ingress so
+# `request.url_for(...)` returns the real https:// URL the browser
+# used. Without these flags the OAuth redirect_uri would be sent as
+# http:// (the internal container scheme) and Microsoft / GitHub /
+# Google would reject it because the registered redirect URI is https.
+exec uvicorn wodbuster_worker.app:app \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --proxy-headers \
+    --forwarded-allow-ips='*'
