@@ -34,7 +34,11 @@ jobs:
       AZURE_LOCATION: spaincentral
       AZURE_RESOURCE_GROUP: rg-prod-yrv2tv7mfjvma
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      AZURE_PRINCIPAL_ID: ${{ vars.AZURE_OPERATOR_PRINCIPAL_ID }}
+      # Do NOT set AZURE_PRINCIPAL_ID: azd overwrites it with the OIDC caller
+      # (the deploy UAMI, ServicePrincipal type), which then fails the
+      # keyvault.bicep operator role assignment that expects principalType: 'User'.
+      # Use AZURE_OPERATOR_PRINCIPAL_ID (mapped in main.parameters.json).
+      AZURE_OPERATOR_PRINCIPAL_ID: ${{ vars.AZURE_OPERATOR_PRINCIPAL_ID }}
 
     steps:
       - name: Checkout

@@ -17,8 +17,8 @@ param resourceToken string
 @description('Resource tags applied to every resource.')
 param tags object
 
-@description('Object ID of the azd caller (used later for local-dev role assignments). Empty in CI.')
-param principalId string = ''
+@description('Object ID of the human operator (empty in CI initial run). Used only to grant the operator Key Vault Secrets Officer on the vault so they can seed F3.8 secrets. Never assigned to a deploy identity: azd cannot be trusted to leave this value alone if it is named `principalId`, so we deliberately use `operatorPrincipalId` here and in main.bicep.')
+param operatorPrincipalId string = ''
 
 module observability 'modules/observability.bicep' = {
   name: 'observability'
@@ -35,7 +35,7 @@ module keyVault 'modules/keyvault.bicep' = {
     location: location
     resourceToken: resourceToken
     tags: tags
-    operatorPrincipalId: principalId
+    operatorPrincipalId: operatorPrincipalId
   }
 }
 
