@@ -4,6 +4,46 @@ Amendments and non-trivial decisions logged during implementation of this featur
 
 ---
 
+## 2026-07-02 — Postgres firewall opened to all Azure services (ADR-0005 minor amendment, platform-driven)
+
+**Trigger**: first end-to-end deploy against Postgres with the runtime UAMI succeeded through Alembic connection *only after* adding an `AllowAllAzureServices` firewall rule (start=end=0.0.0.0). The rule I had authored in `postgres.bicep` — one rule per entry in a `containerAppsOutboundIps` array plus an operator IP — was empty (default) for the automatic runs, so Postgres refused the connection at the TCP layer and Alembic hung with no error. Investigation showed:
+
+- The ACA managed environment's `staticIp` property is the **inbound** ingress IP (verified: `158.158.80.169` in Spain Central).
+- The **outbound** IP used by container replicas when they call Key Vault or Postgres is different (observed `158.158.84.228` in Key Vault access logs) and is not exposed as a property of the environment.
+- Stable outbound IPs on Azure Container Apps are only available on **Workload Profiles** environments (adds ~15 EUR/month on top of the current Consumption env). This price delta was explicitly rejected during the 2026-07-02 Postgres pivot (Q1 answer: keep public server + firewall, not Private Endpoint / Workload Profiles).
+- No documented API to enumerate the Consumption env's egress subnet or IP pool.
+
+Without a stable outbound IP the "allowlist only the ACA env" approach in ADR-0005 (as originally written: `AllowAzureServices is deliberately not enabled`) is not implementable on the SKU we chose. Options were: (a) accept `AllowAllAzureServices`, leaning on Entra ID auth + TLS as the boundary; (b) reprovision to Workload Profiles and pay the delta; (c) reprovision with Private Endpoint (rejected in the pivot amendment). Option (a) was chosen for the MVP.
+
+**Scope classification**: low-impact amendment. Touches ADR-0005 (one section rewritten with a "Platform limitation" note), one Bicep module (`postgres.bicep` gains the rule), one task text (F3.11 mentions the rule explicitly), and this reasoning log. No cost delta. No code change. No new operator step (the rule is now created by Bicep on every provision).
+
+**Cascade check**: this is the third 2026-07-02 platform-limitation amendment on ADR-0005 today (the first was `pgaadauth`, the second was the runtime UAMI as Entra admin, this third one is the firewall). Pattern noted: Azure PG Flexible Server on the Burstable SKU + ACA Consumption combo has multiple documented rough edges that the plan's initial priority sweep did not anticipate. Not a signal to re-envision — the design still works, it just accepts more platform-imposed compromises than expected. Any fourth compound limitation on this same slice should trigger a `devsquad.refine` health check rather than another in-place amendment.
+
+**Options considered**:
+
+- **A. `AllowAllAzureServices` in the Postgres firewall (chosen)**. One rule (0.0.0.0-0.0.0.0). Bicep-managed so the state reproduces from IaC. Security boundary = Entra ID auth + TLS.
+- **B. Reprovision to Workload Profiles + stable outbound IP**. Rejected: violates the Q1 answer of the Postgres pivot (public + firewall, ~30 EUR/month total). Would push total to ~45+ EUR/month.
+- **C. Private Endpoint on Postgres**. Rejected in the pivot amendment for the same cost reason and because Consumption ACA can't reach a Private Endpoint anyway without VNet integration.
+- **D. Firewall rule with a dynamic list refreshed by a scheduled job**. Rejected: the ACA env does not expose a query-able outbound IP set, so the "dynamic refresh" would be a guess-and-check loop.
+
+**Decision**: apply option A. ADR-0005 firewall subsection rewritten with a "Platform limitation" note. `postgres.bicep` now emits an unconditional `AllowAllAzureServices` firewall rule alongside the (still-supported) per-ACA-outbound-IP array (which is now expected to be empty in Consumption env deployments and non-empty only if we ever move to Workload Profiles). `containerAppsOutboundIps` param stays: it costs nothing when empty, and it forward-compatibilizes the module for the day we may move off Consumption. tasks.md F3.11 wording updated to make the compromise explicit.
+
+**Verification**: post-amendment, the container revision reached "Uvicorn running on http://0.0.0.0:8000" and `GET /health` returns `200 OK {"status":"ok"}` from the public FQDN.
+
+**Propagation checklist**:
+
+| Artifact | Present? | Invalidated? | Follow-up |
+|----------|----------|--------------|-----------|
+| ADR-0005 | Yes | Yes, firewall subsection. Amended in same pass. | None. |
+| ADR-0002 | Yes | No: persistence layer unchanged. | None. |
+| tasks.md F3.11 | Yes | Yes, wording refined. Amended in same pass. | None. |
+| tasks.md F3.12 | Yes | Yes, verification bullet reworded (mention AllowAllAzureServices). Amended in same pass. | None. |
+| postgres.bicep | Yes | Yes, gains the firewall rule resource. Amended in same pass. | None. |
+| plan.md | Yes | No. | None. |
+| Code | Yes | No: runtime does not care about the firewall shape. | None. |
+
+---
+
 ## 2026-07-02 — Runtime UAMI granted Postgres Entra admin (ADR-0005 minor amendment, platform-driven)
 
 **Trigger**: F3.12 (operator manual role grant) attempted to enrol the runtime UAMI as a non-admin Entra principal in Postgres. The Azure Database for PostgreSQL Flexible Server we provisioned (API `2024-08-01`, PG 16, Spain Central, Burstable B1ms) does not expose the `pgaadauth` extension: it is missing from both `pg_available_extensions` schemas that user roles can install, and the `azure.extensions` allow-list rejects `pgaadauth` with "not allow-listed for `azure_pg_admin` users". No user-callable function `pgaadauth_create_principal(...)` exists on the server. The only working path to enrol an Entra principal is `az postgres flexible-server microsoft-entra-admin create --type ServicePrincipal`, which promotes the principal to `azure_pg_admin` group membership (server admin).
