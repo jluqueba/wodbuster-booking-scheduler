@@ -1,17 +1,18 @@
 # WodBuster Booking Worker
 
-Unattended booking worker for the WodBuster platform. Single FastAPI ASGI process running on Azure Container Apps with APScheduler, SQLite on Azure Files, and dual-channel notifications (Telegram + web banner).
+Unattended booking worker for the WodBuster platform. Single FastAPI ASGI process running on Azure Container Apps with APScheduler, Postgres 16 (Azure Database for PostgreSQL Flexible Server), and dual-channel notifications (Telegram + web banner).
 
 See `docs/features/wodbuster-booking-worker/` for the feature spec, plan, and tasks, and `docs/architecture/decisions/` for the architectural decisions (ADRs 0001-0007).
 
 ## Local development
 
-Requires Python 3.12 or newer.
+Requires Python 3.12 or newer plus Docker Desktop (for the local Postgres).
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
+docker compose up -d postgres
 .\check.ps1
 ```
 
@@ -21,8 +22,11 @@ On Linux or macOS:
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
+docker compose up -d postgres
 make check
 ```
+
+`docker compose up -d postgres` brings up the local Postgres 16 container declared in `docker-compose.yml`. It listens on `localhost:5432` and matches the `POSTGRES_*` block in `.env.example`. Wipe it with `docker compose down -v` if you need a clean slate.
 
 `check` runs `ruff check`, `mypy src`, and `pytest` (excluding the `live_contract` marker).
 

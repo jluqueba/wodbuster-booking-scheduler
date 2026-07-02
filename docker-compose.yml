@@ -1,0 +1,41 @@
+# Local development Postgres for the WodBuster worker.
+#
+# Local-only. Production runs on Azure Database for PostgreSQL Flexible
+# Server (ADR-0002) with Entra ID authentication (ADR-0005): no
+# password reaches the runtime container in prod.
+#
+# The `wodbuster/wodbuster` credentials below are the developer-loop
+# convenience matching `.env.example`. Do not reuse this password
+# anywhere except this compose file and a local `.env`.
+#
+# Usage:
+#     docker compose up -d postgres
+#     # then run alembic / pytest / uvicorn against localhost:5432
+#
+# Data persists in a named Docker volume (`wodbuster-pg-data`), not in
+# the repo. Wipe it with `docker compose down -v` if you need a clean
+# slate before regenerating the Alembic baseline.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: wodbuster-postgres-local
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: wodbuster
+      POSTGRES_PASSWORD: wodbuster
+      POSTGRES_DB: wodbuster
+    volumes:
+      - wodbuster-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wodbuster -d wodbuster"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  wodbuster-pg-data:
+    name: wodbuster-pg-data
