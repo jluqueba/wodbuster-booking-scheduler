@@ -14,7 +14,7 @@ The infrastructure footprint is small and stable. The operator is also the devel
 1. **Reproducible from a clean subscription** by a single command. `azd up` against a checked-in template.
 2. **First-party Azure tooling consistency** with the rest of the stack (Container Apps, Key Vault, Azure Files, Application Insights).
 3. **Low cognitive load** for a one-person project. No second IaC language to keep current, no state-file management.
-4. **GitHub Actions compatible** for the CI build path and for `azd deploy` on PR merge to `main`.
+4. **GitHub Actions is the provisioning source of record**. Both `azd provision` (infra) and `azd deploy` (app) run from Actions after bootstrap. Laptop `azd provision` is a bootstrap-only escape hatch for a clean subscription (no deploy identity exists yet); after cutover it is forbidden by convention. See ADR-0005 for the deploy identity.
 5. **Monthly tooling cost: zero**. IaC tooling itself must not introduce a billing line item.
 
 ## Options Considered
@@ -54,7 +54,7 @@ Provisioning is documented as a sequence of `az` commands in `scripts/provision.
 
 ## Decision
 
-Bicep modules orchestrated by an `azd` template, with a single environment named `prod` deployed to a single resource group. `azd up` for first-time provisioning. `azd deploy` from GitHub Actions on PR merge to `main` for application updates. State is held by Azure Resource Manager.
+Bicep modules orchestrated by an `azd` template, with a single environment named `prod` deployed to a single resource group. First-time provisioning uses `azd up` from the operator's laptop as a one-time bootstrap on a clean subscription. After bootstrap, provisioning and application deploys both run from GitHub Actions: `.github/workflows/infra.yml` runs `azd provision` on pushes to `main` that touch `infra/**` or `azure.yaml`; `.github/workflows/deploy.yml` runs `azd deploy` on pushes to `main` that touch `src/**` or the `Dockerfile`. A third workflow runs `azd provision --preview` on pull requests touching infra and posts the what-if diff as a PR comment. Both mutating workflows authenticate to Azure via OIDC federation against a dedicated deploy user-assigned managed identity described in ADR-0005. State is held by Azure Resource Manager.
 
 This option uniquely meets every priority. Terraform adds tooling weight unjustified by the footprint. Portal plus shell scripts cannot keep up with re-provisioning hygiene.
 
@@ -76,6 +76,17 @@ This option uniquely meets every priority. Terraform adds tooling weight unjusti
 - Resource naming follows the `{kind}-{project}-{env}` convention (for example `ca-wodbuster-prod`, `kv-wodbuster-prod`, `cr-wodbuster-prod`, `st-wodbuster-prod`).
 - Drift detection: `azd` is run only against the template; the portal is read-only for the operator. Any divergence triggers a re-apply.
 - Cost ballpark: ACR Basic approximately 4 EUR per month. Container Apps environment approximately 8 to 12 EUR per month for the always-on replica. Azure Files Standard 5 GiB ZRS under 1 EUR per month. Key Vault standard under 1 EUR per month. Application Insights and Log Analytics under 1 EUR per month at single-user log volume. Total provisioned footprint approximately 15 to 20 EUR per month.
+- CI/CD topology (GitHub Actions):
+
+  | Workflow | Trigger | Action | Auth |
+  |----------|---------|--------|------|
+  | `.github/workflows/infra.yml` | Push to `main` touching `infra/**` or `azure.yaml`; `workflow_dispatch`. | `azd provision`. No approval gate for MVP; applies immediately. Operator accepts the risk. | OIDC against deploy UAMI (`main` federated credential). |
+  | `.github/workflows/deploy.yml` | Push to `main` touching `src/**` or `Dockerfile`; `workflow_dispatch`. | Build image, push to ACR, `azd deploy`. | OIDC against deploy UAMI (`main` federated credential). |
+  | `.github/workflows/infra-preview.yml` | `pull_request` touching `infra/**` or `azure.yaml`. | `azd provision --preview`; post what-if diff as PR comment. Read-only. | OIDC against deploy UAMI (`pull_request` federated credential). |
+
+- No approval gate on the mutating workflows for the MVP. The operator is the sole developer and reviewer; a gate would only slow the loop. Revisit when the surface grows or a second contributor joins.
+- Fork PRs are not supported. The `pull_request` federated credential is scoped to the repository owner. Fork contributors would need repo-owner review of the branch before the preview workflow runs.
+- Laptop `azd provision` is forbidden by convention after F3.10 (the deploy UAMI creation task) lands. Documented in `README.md`. The only sanctioned laptop provisioning is the initial bootstrap on a clean subscription where no deploy UAMI exists yet.
 
 ## References
 

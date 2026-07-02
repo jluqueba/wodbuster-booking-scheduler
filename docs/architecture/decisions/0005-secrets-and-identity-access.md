@@ -77,6 +77,28 @@ This option uniquely meets every priority. Environment-variable baking (Option 2
 - Secret rotation is operator-initiated. Application caches secrets in memory for the process lifetime; a container revision restart picks up rotated values.
 - Cost ballpark: under 1 EUR per month for Key Vault standard at this read cadence. No additional cost for the UAMI itself.
 
+### CI/CD identity (deploy UAMI)
+
+Two user-assigned managed identities exist in the subscription, with disjoint responsibilities:
+
+| Identity | Consumer | Roles | Scope | Provisioned by |
+|----------|----------|-------|-------|----------------|
+| Runtime UAMI (`id-{token}`) | Container App revision at runtime. | `Key Vault Secrets User`, `AcrPull`. | Key Vault, Container Registry. | Bicep template (ADR-0007). Unchanged by this amendment. |
+| Deploy UAMI (`id-deploy-wodbuster-prod`) | GitHub Actions workflows (`infra.yml`, `deploy.yml`, `infra-preview.yml`). | `Contributor`, `User Access Administrator`. | Resource group only. No subscription-scope permissions. | Operator manual setup (task F3.10). |
+
+The deploy UAMI carries two federated credentials, both pointing at the repository `jluqueba/wodbuster-booking-scheduler`:
+
+| Subject | Purpose |
+|---------|---------|
+| `repo:jluqueba/wodbuster-booking-scheduler:ref:refs/heads/main` | Consumed by `infra.yml` and `deploy.yml`. |
+| `repo:jluqueba/wodbuster-booking-scheduler:pull_request` | Consumed by `infra-preview.yml` for read-only what-if. |
+
+No environment-scoped federated credential is configured. Fork PRs are unsupported.
+
+The deploy UAMI is deliberately excluded from the Bicep template: it is a prerequisite for the provisioning workflow, so it cannot be provisioned by that workflow (chicken-and-egg). Resource-group creation and deploy-UAMI creation both stay one-time laptop steps during bootstrap. The runtime UAMI stays inside the Bicep template.
+
+The deploy UAMI holds no client secret. All GitHub-to-Azure authentication uses the OIDC token exchange, with `AZURE_CLIENT_ID`, `AZURE_SUBSCRIPTION_ID`, and `AZURE_TENANT_ID` published as GitHub Actions repository variables (non-secret). This preserves the "no service principal client secrets" priority for the CI/CD path as well as the runtime path.
+
 ## References
 
 - `docs/features/wodbuster-booking-worker/spec.md` FR-028 through FR-031, Invariants on cookie encryption key custody.

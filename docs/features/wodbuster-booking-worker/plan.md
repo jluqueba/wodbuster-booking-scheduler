@@ -31,7 +31,7 @@ The seven architectural decisions captured under `docs/architecture/decisions/` 
 |----------|----------|-----------|
 | Branch strategy | Trunk-based on `main`. Short-lived feature branches via PR. No `develop` branch. | Defined by the team. |
 | CI | GitHub Actions running `ruff`, `mypy`, `pytest`, and container image build plus push to ACR on PR merge to `main`. | Defined by the team. |
-| CD | `azd deploy` on green CI run against `main`. Single environment (`prod`). No staging. | ADR-0007. |
+| CD | GitHub Actions is the provisioning source of record. `.github/workflows/infra.yml` runs `azd provision` on `main` when `infra/**` or `azure.yaml` change; `.github/workflows/deploy.yml` runs `azd deploy` on `main` when `src/**` or the `Dockerfile` change; `.github/workflows/infra-preview.yml` posts a `azd provision --preview` what-if diff on PRs touching infra. All workflows authenticate to Azure via OIDC against a dedicated deploy UAMI (ADR-0005). No approval gate for MVP. Single environment (`prod`). No staging. Laptop `azd provision` is bootstrap-only after F3.10. | ADR-0005, ADR-0007. |
 | Test framework | `pytest` plus `pytest-asyncio`. Mocked WodBuster client for unit tests. One live-contract test gated by env var that hits real WodBuster with the operator's cookie. | Defined by the team. |
 | Observability | Structured logs via `structlog` to Application Insights. Request and response timing on every WodBuster call. Single Azure Monitor alert rule "no Telegram notification produced in last 24h" as a backstop to the internal heartbeat. | ADR-0006. |
 | Secret management | All secrets in Azure Key Vault, read at startup via user-assigned managed identity. No secrets in repo, environment files, or container image. | ADR-0005. |
