@@ -65,4 +65,10 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["uvicorn", "wodbuster_worker.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers + --forwarded-allow-ips='*': trust X-Forwarded-Proto
+# from Container Apps' ingress so `request.url_for(...)` returns
+# https:// URLs (OAuth redirect_uri would otherwise be http:// and
+# providers reject it). Kept in sync with the entrypoint fallback.
+CMD ["uvicorn", "wodbuster_worker.app:app", \
+     "--host", "0.0.0.0", "--port", "8000", \
+     "--proxy-headers", "--forwarded-allow-ips=*"]
