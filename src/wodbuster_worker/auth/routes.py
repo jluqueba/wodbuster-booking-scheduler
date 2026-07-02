@@ -126,20 +126,36 @@ async def callback(provider: str, request: Request) -> Response:
 
     try:
         token = await client.authorize_access_token(request)
-    except OAuthError:
+    except OAuthError as exc:
         # Authlib raises on state mismatch, denied consent, etc. We
         # deliberately do not surface the details; the operator flow
         # is fully controlled, so a failure here is almost always a
         # tampering attempt or a browser back-button retry.
+        _log.info(
+            "auth.callback.denied_oauth_error",
+            provider=provider,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
         return _render_denial(request)
 
     user_info = await _fetch_user_info(client, provider, token)
     if not user_info:
+        _log.info(
+            "auth.callback.denied_empty_user_info",
+            provider=provider,
+        )
         return _render_denial(request)
 
     try:
         _, subject_id, display_name = extract_identity(provider, user_info)
-    except ValueError:
+    except ValueError as exc:
+        _log.info(
+            "auth.callback.denied_identity_extract",
+            provider=provider,
+            error=str(exc),
+            user_info_keys=sorted(user_info.keys()) if isinstance(user_info, dict) else None,
+        )
         return _render_denial(request)
 
     operator_id = _lookup_operator(provider, subject_id)
