@@ -1,5 +1,11 @@
 // storage.bicep
 //
+// UNUSED as of ADR-0002 amendment 2026-07-02. Kept for one PR cycle; scheduled
+// for deletion. See docs/architecture/decisions/0002-persistence.md change
+// history. The state store moved to Postgres Flexible Server (see
+// infra/modules/postgres.bicep); no module in resources.bicep references this
+// file any longer, so `az bicep build` will not compile it into main.json.
+//
 // Storage account + one Azure Files share ("data") for the SQLite database.
 // Implements ADR-0002 (SQLite on Azure Files). Container Apps will mount this
 // share at /data (wired in containerapp.bicep).
