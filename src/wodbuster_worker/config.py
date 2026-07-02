@@ -77,6 +77,22 @@ class Settings(BaseSettings):
     oauth_google_client_secret: str | None = None
     healthchecks_ping_url: str | None = None
 
+    # OAuth client IDs (non-secret; env-var passthrough). Read from
+    # Container App env in prod and from ``.env`` locally. Stay ``None``
+    # until the operator seeds the corresponding GitHub Actions variables
+    # / local ``.env`` entries. ``auth.oauth.build_oauth`` raises loudly
+    # when a needed client ID is missing at wiring time.
+    oauth_microsoft_client_id: str | None = None
+    oauth_github_client_id: str | None = None
+    oauth_google_client_id: str | None = None
+
+    # Session lifetime knobs (US-009). ``idle`` closes a session that
+    # has been dormant for N minutes; ``absolute`` caps total lifetime
+    # regardless of activity. Both are enforced by the idle-timeout
+    # ASGI middleware wrapped around Starlette's ``SessionMiddleware``.
+    session_idle_minutes: int = 30
+    session_absolute_hours: int = 24
+
     @model_validator(mode="after")
     def _apply_env_defaults(self) -> Settings:
         """Fill mode-dependent Postgres defaults.
