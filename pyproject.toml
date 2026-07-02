@@ -1,7 +1,7 @@
 [project]
 name = "wodbuster-worker"
 version = "0.1.0"
-description = "Unattended WodBuster booking worker (FastAPI + APScheduler + SQLite on Azure Container Apps)."
+description = "Unattended WodBuster booking worker (FastAPI + APScheduler + Postgres on Azure Container Apps)."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -13,6 +13,7 @@ dependencies = [
     "jinja2>=3.1,<4.0",
     "apscheduler>=3.10,<4.0",
     "sqlalchemy>=2.0,<3.0",
+    "psycopg[binary]>=3.2,<4.0",
     "alembic>=1.13,<2.0",
     "httpx>=0.27,<1.0",
     "structlog>=24.1,<26.0",

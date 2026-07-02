@@ -1,19 +1,26 @@
 """Alembic environment.
 
-Reads the target database URL from the worker's ``Settings`` (which in
-turn resolves ``SQLITE_PATH`` via env or ``.env``), so the same
-migration script works locally, in tests, and in the Container Apps
-runtime without hand-editing ``alembic.ini``.
+Reads the target Postgres URL from the worker's ``Settings`` (which in
+turn reads ``POSTGRES_*`` env vars via ``.env`` or the process
+environment), so the same migration script works locally against
+docker-compose, in the component test suite against a temp schema, and
+in the Container Apps runtime against Azure Database for PostgreSQL
+Flexible Server without hand-editing ``alembic.ini``.
 
-Two override hooks are supported for tests and container startup:
+In ``prod`` mode the runtime UAMI's Entra token is injected on every
+connect via the same ``do_connect`` machinery ``persistence.engine``
+uses (see ADR-0005). In ``local`` mode the plain
+``POSTGRES_PASSWORD`` from ``.env`` is used.
+
+Two override hooks are supported:
 
 - ``sqlalchemy.url`` in ``alembic.ini`` — if set, wins over the
   Settings-derived URL. Useful for one-off migrations against an
-  arbitrary path.
+  arbitrary DSN.
 - ``config.attributes["connection"]`` — if a SQLAlchemy ``Connection``
   is passed programmatically (via ``command.upgrade(config, "head")``
   after ``config.attributes["connection"] = conn``), Alembic runs
-  against it directly. Used by the component test to migrate a temp
+  against it directly. Used by component tests to migrate a temp
   database.
 """
 
@@ -24,10 +31,14 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from wodbuster_worker.config import get_settings
+from wodbuster_worker.config import Settings, get_settings
 from wodbuster_worker.persistence import Base
 from wodbuster_worker.persistence import (
     models as _models,  # noqa: F401  (side-effect: register mappers)
+)
+from wodbuster_worker.persistence.engine import (
+    _EntraTokenProvider,
+    _install_entra_token_listener,
 )
 
 config = context.config
@@ -38,15 +49,17 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def _resolve_settings() -> Settings:
+    """Return the cached ``Settings`` instance for URL/identity."""
+    return get_settings()
+
+
 def _resolve_url() -> str:
     """Prefer an explicit ini URL; otherwise derive from ``Settings``."""
     ini_url = config.get_main_option("sqlalchemy.url")
     if ini_url:
         return ini_url
-    settings = get_settings()
-    if settings.sqlite_path is None:
-        raise RuntimeError("Settings.sqlite_path is not set; cannot run migrations.")
-    return f"sqlite:///{settings.sqlite_path.as_posix()}"
+    return _resolve_settings().require_postgres_dsn()
 
 
 def run_migrations_offline() -> None:
@@ -55,7 +68,6 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        render_as_batch=True,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -70,24 +82,50 @@ def run_migrations_online() -> None:
         context.configure(
             connection=injected,
             target_metadata=target_metadata,
-            render_as_batch=True,
         )
         with context.begin_transaction():
             context.run_migrations()
         return
 
     ini_section = config.get_section(config.config_ini_section, {}) or {}
-    ini_section["sqlalchemy.url"] = _resolve_url()
-    connectable = engine_from_config(
-        ini_section,
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    ini_url = config.get_main_option("sqlalchemy.url")
+    settings = _resolve_settings()
+
+    if ini_url:
+        # Explicit ini override: honour it verbatim, no token injection.
+        ini_section["sqlalchemy.url"] = ini_url
+        connectable = engine_from_config(
+            ini_section,
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
+        )
+    else:
+        # Settings-driven URL. NullPool for one-shot migrations, plus
+        # the token listener in prod so the connection presents an
+        # Entra token instead of a password.
+        ini_section["sqlalchemy.url"] = settings.require_postgres_dsn()
+        if settings.wodbuster_env == "prod":
+            connectable = engine_from_config(
+                ini_section,
+                prefix="sqlalchemy.",
+                poolclass=pool.NullPool,
+            )
+            _install_entra_token_listener(connectable, _EntraTokenProvider())
+        else:
+            connect_args: dict[str, object] = {}
+            if settings.postgres_password:
+                connect_args["password"] = settings.postgres_password
+            connectable = engine_from_config(
+                ini_section,
+                prefix="sqlalchemy.",
+                poolclass=pool.NullPool,
+                connect_args=connect_args,
+            )
+
     with connectable.connect() as connection:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            render_as_batch=True,
         )
         with context.begin_transaction():
             context.run_migrations()
