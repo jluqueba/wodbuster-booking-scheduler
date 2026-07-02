@@ -64,10 +64,12 @@ def build_session_middleware(settings: Settings, secrets: Secrets) -> Middleware
         max_age=None,
         same_site="lax",
         # ``https_only`` corresponds to the ``Secure`` cookie flag.
-        # Local dev over http still works because Starlette skips
-        # setting the flag when the request is not TLS; but in prod
-        # (behind Container Apps HTTPS ingress) the flag is set.
-        https_only=True,
+        # Enable it in prod (Container Apps ingress is HTTPS) so the
+        # cookie can never travel over plain HTTP; disable in local
+        # dev so ``uvicorn --reload`` on ``http://localhost`` and the
+        # pytest ``TestClient`` (which uses HTTP by default) both
+        # receive and echo the cookie back correctly.
+        https_only=settings.wodbuster_env == "prod",
         path="/",
     )
 

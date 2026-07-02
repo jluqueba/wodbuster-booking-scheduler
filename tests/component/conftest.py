@@ -117,7 +117,7 @@ def postgres_engine(monkeypatch: pytest.MonkeyPatch) -> Iterator[Engine]:
 
 @pytest.fixture
 def app_factory(
-    postgres_engine: Engine,  # noqa: ARG001 — needed to migrate DB
+    postgres_engine: Engine,
 ) -> Callable[..., FastAPI]:
     """Return a factory that builds a fresh test app.
 
