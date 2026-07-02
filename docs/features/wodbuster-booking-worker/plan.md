@@ -9,7 +9,9 @@
 
 ## Summary
 
-This plan implements the production booking worker described in the feature spec. The worker is a single Python ASGI process (FastAPI plus Jinja2 plus HTMX plus APScheduler) running in one Azure Container Apps replica with a mounted Azure Files share for SQLite state. Operator authentication uses federated identity across Microsoft personal, GitHub, and Google. Secrets live in Azure Key Vault, accessed by a user-assigned managed identity. Notifications are delivered via Telegram and a web banner; external dead-man monitoring is provided by Healthchecks.io with Application Insights as the metrics and log sink. Infrastructure is Bicep orchestrated by `azd`, a single `prod` environment in one resource group.
+This plan implements the production booking worker described in the feature spec. The worker is a single Python ASGI process (FastAPI plus Jinja2 plus HTMX plus APScheduler) running in one Azure Container Apps replica. Persistent state lives in an Azure Database for PostgreSQL Flexible Server (Burstable B1ms, Postgres 16, Spain Central AZ1), accessed via the runtime user-assigned managed identity over Microsoft Entra ID authentication. Operator authentication uses federated identity across Microsoft personal, GitHub, and Google. Secrets live in Azure Key Vault, accessed by the same user-assigned managed identity. Notifications are delivered via Telegram and a web banner; external dead-man monitoring is provided by Healthchecks.io with Application Insights as the metrics and log sink. Infrastructure is Bicep orchestrated by `azd`, a single `prod` environment in one resource group. Local development runs against a real Postgres 16 container via `docker compose` (no SQLite anywhere in the stack; see ADR-0002 change history for the pivot rationale).
+
+**Monthly cost ballpark**: roughly 13-15 EUR per month, driven by the Postgres Flexible Server (approximately 12-13 EUR for B1ms + 32 GiB + 7-day backup) plus Key Vault, Container Apps, and Application Insights (under 2 EUR combined at single-user cadence). This is up from the original 5 EUR ballpark; ADR-0002 documents the trade-off.
 
 The seven architectural decisions captured under `docs/architecture/decisions/` are the source of truth for cross-cutting choices. This plan references them rather than restating their content.
 
@@ -18,7 +20,7 @@ The seven architectural decisions captured under `docs/architecture/decisions/` 
 | ADR | Topic | Status |
 |-----|-------|--------|
 | `0001-hosting-service.md` | Azure Container Apps, `min-replicas=1`, no scale-to-zero, single container, single ASGI process. | Proposed |
-| `0002-persistence.md` | SQLite on a mounted Azure Files share, application-layer AES-256-GCM encryption for the cookie blob. | Proposed |
+| `0002-persistence.md` | Azure Database for PostgreSQL Flexible Server (Burstable B1ms, PG 16, Spain Central AZ1, 32 GiB autogrow, 7-day backup, no HA, public network + firewall + Entra ID auth). Application-layer AES-256-GCM encryption for the cookie blob. Amended 2026-07-02 (pivot from SQLite on Azure Files). | Proposed |
 | `0003-auth-and-session.md` | WodBuster session via paste-and-validate, single `.WBAuth` cookie, hourly heartbeat doubling as sliding-session refresh, 24h-lead-time alert. | Proposed |
 | `0004-configuration-interface.md` | FastAPI plus Jinja2 plus HTMX, server-rendered with partial updates, same process hosts Telegram webhook and APScheduler. | Proposed |
 | `0005-secrets-and-identity-access.md` | Azure Key Vault plus user-assigned managed identity. Federated operator login across Microsoft, GitHub, Google. Allow-list in the database. | Proposed |
@@ -49,12 +51,12 @@ flowchart LR
             wh[Telegram webhook route]
             sched[APScheduler\nbooking + heartbeat jobs]
             disp[Notification dispatcher]
-            store[SQLAlchemy + SQLite\nWAL on Azure Files]
+            store[SQLAlchemy + psycopg v3\nsync engine, Entra ID auth]
         end
     end
 
-    files[(Azure Files share\nSQLite DB file)]
-    kv[(Azure Key Vault\ncookie key, bot token,\nOAuth secrets, session secret)]
+    pg[(Azure Database for PostgreSQL\nFlexible Server\nBurstable B1ms, PG 16)]
+    kv[(Azure Key Vault\ncookie key, bot token,\nOAuth secrets, session secret,\npostgres-admin-password)]
     ai[Application Insights]
     hc[(Healthchecks.io\nfree tier)]
     tg[(Telegram Bot API)]
@@ -73,14 +75,14 @@ flowchart LR
     sched -- ping every 10 min --> hc
     disp -- send message --> tg
     asgi -- read secrets at startup --> kv
-    store --- files
+    store -- TCP 5432, Entra token --> pg
     asgi -- structured logs + metrics --> ai
     hc -- dead-man alert --> tg
 ```
 
 ## Data Model
 
-Persisted in SQLite via SQLAlchemy. Migrations via Alembic, applied on container startup.
+Persisted in Azure Database for PostgreSQL (Flexible Server, Burstable B1ms, PG 16) via SQLAlchemy with the `psycopg` v3 sync driver. Migrations via Alembic, applied on container startup under the runtime UAMI's Entra ID identity (see ADR-0002 three-principal model). Postgres-native types are used where the shape calls for them: `JSONB` for free-form payload columns (`notification_outbox.payload`, `alert.payload`, `booking_outcome.response_payload`), native `ENUM` types for enumerated status columns, `TIMESTAMPTZ` for all timestamps, and partial unique indexes via `postgresql_where=` (notably on `alert.(operator_id, kind)` restricted to open rows).
 
 | Table | Purpose | Key columns |
 |-------|---------|-------------|
@@ -282,16 +284,17 @@ These steps happen once, by the operator, outside CI:
 1. **OAuth client registrations**. Register three OAuth clients (Microsoft personal accounts, GitHub OAuth app, Google OAuth client). Set the redirect URI to `https://<container-app-fqdn>/auth/{provider}/callback`. Record the three client IDs (non-secret) and the three client secrets.
 2. **Telegram bot creation via BotFather**. Open Telegram, contact BotFather, run `/newbot`, follow prompts, record the bot token.
 3. **Healthchecks.io project**. Sign up to the free tier, create one check with the worker's expected ping cadence (every 10 minutes, grace period 20 minutes), record the check UUID, connect Telegram as a notification channel.
-4. **Paste secrets into Key Vault**. Using `az keyvault secret set` from the operator's workstation, populate `wodbuster-cookie-encryption-key` (256-bit random value, generated with `openssl rand -base64 32`), `telegram-bot-token`, `session-encryption-secret` (256-bit random value), and the three `oauth-{provider}-client-secret` entries.
-5. **Allow-list seed**. On the first deploy, the operator runs the one-time bootstrap command (`python -m wodbuster_worker.bootstrap`) which inserts the operator's chosen federated identity into the `federated_identity` table.
-6. **Operator cookie paste**. The operator opens the web UI, signs in, and pastes a fresh `.WBAuth` cookie. The system validates and stores it encrypted.
+4. **Paste secrets into Key Vault**. Using `az keyvault secret set` from the operator's workstation, populate `wodbuster-cookie-encryption-key` (256-bit random value, generated with `openssl rand -base64 32`), `telegram-bot-token`, `session-encryption-secret` (256-bit random value), the three `oauth-{provider}-client-secret` entries, and `postgres-admin-password` (break-glass Postgres server admin password, 32+ characters, generated with `openssl rand -base64 32`). See ADR-0002 and ADR-0005 for the three-principal model that motivates the admin password.
+5. **Postgres Entra admin plus role grant**. After the first `azd provision` creates the Postgres server, the operator declares themselves the Entra admin on the server (F3.12) and, connecting as that identity, grants the runtime UAMI's Entra principal `USAGE, CREATE` on schema `public`. This is the one-time bootstrap that lets Alembic run from inside the container. Documented in tasks.md and the README.
+6. **Allow-list seed**. On the first deploy, the operator runs the one-time bootstrap command (`python -m wodbuster_worker.bootstrap`) which inserts the operator's chosen federated identity into the `federated_identity` table.
+7. **Operator cookie paste**. The operator opens the web UI, signs in, and pastes a fresh `.WBAuth` cookie. The system validates and stores it encrypted.
 
 ## Test Strategy
 
 | Layer | Framework | Coverage focus |
 |-------|-----------|----------------|
-| Unit | `pytest`, `pytest-asyncio`, in-memory SQLite | Routing, state machines (alert lifecycle, vacation mode, idempotent cancel), WodBuster client behavior against a mocked HTTP transport, cipher round-trip. |
-| Component | `pytest`, file-backed SQLite, mocked WodBuster | End-to-end booking flow, end-to-end cancellation, end-to-end vacation mode, end-to-end cookie paste, end-to-end heartbeat-anomaly emission. |
+| Unit | `pytest`, `pytest-asyncio`, Postgres 16 via `docker compose` or `testcontainers` | Routing, state machines (alert lifecycle, vacation mode, idempotent cancel), WodBuster client behavior against a mocked HTTP transport, cipher round-trip. Every test runs against real Postgres; there is no SQLite substrate anywhere in the codebase after the 2026-07-02 pivot. |
+| Component | `pytest`, real Postgres 16 (same substrate as unit), mocked WodBuster | End-to-end booking flow, end-to-end cancellation, end-to-end vacation mode, end-to-end cookie paste, end-to-end heartbeat-anomaly emission. |
 | Live contract | `pytest`, real WodBuster, gated by `RUN_LIVE_WODBUSTER=1` | One booking attempt against the operator's account. Runs only when the env var is set. CI never sets it. |
 | Conformance | `pytest`, mocked WodBuster | One test per CC-001 through CC-015 from the spec. |
 
@@ -301,8 +304,10 @@ Coverage target: 80 percent line coverage on `src/wodbuster_worker/`.
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| Azure Files latency causes SQLite write delays at booking time. | Medium. | Booking latency budget consumed. | Open SQLite with `journal_mode=WAL`, `synchronous=NORMAL`. Measure write latency in Phase 4 and adjust if above 50 ms p95. If unavoidable, switch the booking-outcome write to a deferred local journal flushed after the notification. |
-| ACA revision restart loses in-flight APScheduler jobs scheduled in memory only. | Medium. | One missed run window during restart. | APScheduler `SQLAlchemyJobStore` persists jobs in the same SQLite database. Restarts rehydrate the schedule. |
+| Postgres Burstable B1ms CPU credit exhaustion during a bursty booking cycle. | Low at single-user scale. | Temporary connection latency spike. | Booking hits the database with a handful of transactions per attempt; well under the B1ms sustained baseline. If credits drain (evident in Azure Monitor), the mitigation is a size bump to B2s, not an architectural change. |
+| Runtime UAMI Entra token acquisition fails during a booking cycle. | Low. | Connection acquisition fails; the retry policy on the executor absorbs it. | `DefaultAzureCredential` caches tokens; acquisition on the hot path only when the cache is cold or expired. IMDS is a hard dependency of the entire runtime already (Key Vault reads at startup). No new failure surface introduced by this design. |
+| Operator forgets the F3.12 grant on `public` for the runtime UAMI, causing Alembic to fail at container startup. | Medium (one-time operational step). | Container revision fails to boot; app never comes up on first deploy. | F3.12 is documented in tasks.md and in the README. The Alembic failure surfaces immediately as an ACA revision provisioning failure with a clear Postgres error message. Fix is a single `GRANT USAGE, CREATE ON SCHEMA public TO "<uami-principal>";` from the operator's Entra-authenticated psql session. |
+| ACA revision restart loses in-flight APScheduler jobs scheduled in memory only. | Medium. | One missed run window during restart. | APScheduler `SQLAlchemyJobStore` persists jobs in the same Postgres database. Restarts rehydrate the schedule. |
 | `.WBAuth` cookie absolute lifetime is shorter than 30 days. | Unknown. Phase 0 did not measure. | More frequent paste cadence for the operator. | The projected-TTL ceiling is configurable. After 60 days of production observation, the default is revisited. The 24-hour alert ensures the operator is never surprised regardless of ceiling. |
 | WodBuster changes the `Res` field schema or adds an anti-automation header. | Low. | All bookings fail until adapted. | The single `live_contract` test detects shape drift on each release. Failure modes capture the full response payload in `booking_outcome.response_payload` for post-mortem (FR-012). |
 | OAuth client secrets rotation requires a deploy. | Low. | Hours of operator action. | Secrets are read at process startup; rotating a Key Vault secret requires a container revision restart, not a redeploy. Documented in the manual setup. |
@@ -379,7 +384,7 @@ The feature is releasable when:
 |----------|-----|-----------------------|
 | Codify the spec's cookie-handoff design as ADR-0003 rather than redesigning. | The spec already encodes the operator workflow that closes envisioning constraint 5. A redesign would re-open a settled constraint without new information. | Playwright-based automated refresh and a browser-extension companion. Both expand credential blast radius or add a second deliverable. |
 | Single ASGI process colocating web UI plus Telegram webhook plus APScheduler. | Single-user MVP cannot justify inter-process coordination. The cost of a coordination layer dwarfs the benefit at this scale. | Two-container split (web plus worker) and a queue between them. |
-| SQLite over a managed Postgres. | The dataset is on the order of thousands of rows over the first year. Postgres adds an order of magnitude in monthly cost and operational complexity without addressing any actual requirement. | Postgres Flexible Server Burstable B1ms; Cosmos DB free tier. |
+| Managed Postgres over SQLite (amended 2026-07-02). | Original decision was SQLite on Azure Files for cost. The first end-to-end deploy exposed that SMB-backed SQLite is unsafe for Alembic bootstrap (WAL cannot be used, DELETE journal has higher latency, single-writer correctness is hard-coupled to `max-replicas=1`, no PITR). Postgres Burstable B1ms costs about 12 EUR more per month but eliminates the substrate risk stack. ADR-0002 change-history section documents the pivot in full. | SQLite on Azure Files (original, discarded); SQLite on emptyDir volume (fails durability); SQLite on Azure Blob via BlobFuse2 (fails correctness, unsupported combination); Cosmos DB free tier (poor fit for the relational entity model). |
 | `min-replicas=1` on Container Apps. | Scale-to-zero is incompatible with the 10-second latency budget. Pre-warming a cold ACA replica reliably is harder than keeping one warm. | Scale-to-zero ACA with HTTP-triggered pre-warm; Functions Premium with always-ready. |
 | HTMX over an SPA. | The interactivity required is form-and-list. An SPA adds a Node toolchain whose maintenance cost is the highest single line item for a one-person project. | React plus Vite with a JSON backend; Streamlit. |
 | Healthchecks.io free tier as the external dead-man. | An external watchdog that shares no fate with Azure is the only credible defense against regional incidents. The free tier covers single-user traffic. | Azure Monitor scheduled log queries (same-fate); self-hosted Uptime Kuma (additional cost, less independence). |
