@@ -10,16 +10,15 @@ runs in two modes, switched by the `WODBUSTER_ENV` environment variable:
   resolution of those references is the job of the loader stubbed below
   and fully implemented under F4.4.
 
-Construction must succeed in both modes without contacting Key Vault.
-Secret access is deferred to call sites that need it, so that startup
-errors (e.g. a missing secret in Key Vault) surface as a clear runtime
-failure rather than masquerading as a configuration parse error.
+Construction must succeed in both modes without contacting Key Vault or
+Postgres. Secret access and DSN materialization are deferred to call
+sites that need them, so that startup errors surface as clear runtime
+failures rather than masquerading as configuration parse errors.
 """
 
 from __future__ import annotations
 
 from functools import lru_cache
-from pathlib import Path
 from typing import Literal
 
 from pydantic import AnyHttpUrl, model_validator
@@ -31,10 +30,11 @@ WodBusterEnv = Literal["local", "prod"]
 class Settings(BaseSettings):
     """Environment-driven configuration for the WodBuster worker.
 
-    Field defaults are intentionally minimal in F1.6. Downstream phases
-    (F2 / F3 / F4) extend this class with the additional fields they
-    need; the contract here is the env-switching behaviour and the set
-    of fields the bootstrap path touches before Key Vault is wired.
+    Field defaults are intentionally minimal. Downstream phases extend
+    this class with the additional fields they need; the contract here
+    is the env-switching behaviour, the Postgres coordinate block
+    consumed by ``persistence.engine``, and the set of fields the
+    bootstrap path touches before Key Vault is wired.
     """
 
     model_config = SettingsConfigDict(
@@ -46,9 +46,20 @@ class Settings(BaseSettings):
     )
 
     wodbuster_env: WodBusterEnv = "local"
-    sqlite_path: Path | None = None
     log_level: str = "INFO"
     app_base_url: AnyHttpUrl | None = None
+
+    # Postgres connection coordinates (ADR-0002). In ``prod`` these are
+    # wired by Container Apps and point at the Flexible Server; the
+    # password stays ``None`` because the worker authenticates with an
+    # Entra token acquired by the runtime UAMI at connect time
+    # (ADR-0005). In ``local`` they default to the docker-compose
+    # service defined in ``docker-compose.yml``.
+    postgres_host: str | None = None
+    postgres_port: int = 5432
+    postgres_db: str | None = None
+    postgres_user: str | None = None
+    postgres_password: str | None = None
 
     # Key Vault coordinates. Optional locally (secrets come from ``.env``),
     # required in prod (see :func:`security.keyvault.load_secrets`).
@@ -68,19 +79,24 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _apply_env_defaults(self) -> Settings:
-        """Fill mode-dependent defaults.
+        """Fill mode-dependent Postgres defaults.
 
-        The SQLite file lives next to the source tree in ``local`` mode
-        and on the mounted Azure Files volume (``/data``) in ``prod``
-        (ADR-0002). When the operator sets ``SQLITE_PATH`` explicitly
-        we honour the override regardless of mode.
+        In ``local`` mode we fall back to the docker-compose service
+        (``docker-compose.yml``): ``localhost:5432`` with the
+        ``wodbuster/wodbuster/wodbuster`` triplet. In ``prod`` we leave
+        every field ``None`` so misconfiguration surfaces at
+        ``require_postgres_dsn()`` rather than being masked by a bogus
+        default.
         """
-        if self.sqlite_path is None:
-            self.sqlite_path = (
-                Path("/data/wodbuster.db")
-                if self.wodbuster_env == "prod"
-                else Path("./wodbuster.db")
-            )
+        if self.wodbuster_env == "local":
+            if self.postgres_host is None:
+                self.postgres_host = "localhost"
+            if self.postgres_db is None:
+                self.postgres_db = "wodbuster"
+            if self.postgres_user is None:
+                self.postgres_user = "wodbuster"
+            if self.postgres_password is None:
+                self.postgres_password = "wodbuster"
         return self
 
     def require_app_base_url(self) -> AnyHttpUrl:
@@ -100,6 +116,49 @@ class Settings(BaseSettings):
                 "deep links)."
             )
         return self.app_base_url
+
+    def require_postgres_dsn(self) -> str:
+        """Return a fully-qualified SQLAlchemy Postgres URL.
+
+        Emits a ``postgresql+psycopg://`` DSN. ``sslmode=require`` is
+        set in ``prod`` so Azure Database for PostgreSQL Flexible
+        Server (which mandates TLS) accepts the handshake; in ``local``
+        we use ``sslmode=disable`` because the docker-compose
+        ``postgres:16-alpine`` image ships without TLS configured and
+        would otherwise reject the client with "server does not
+        support SSL, but SSL was required".
+
+        The password is intentionally omitted from the URL: in prod
+        the engine injects a fresh Entra token per connection via a
+        ``do_connect`` listener; in local mode ``engine.build_engine``
+        passes ``postgres_password`` through ``connect_args`` instead.
+        This keeps the DSN safe to log.
+        """
+        missing = [
+            name
+            for name, value in (
+                ("POSTGRES_HOST", self.postgres_host),
+                ("POSTGRES_DB", self.postgres_db),
+                ("POSTGRES_USER", self.postgres_user),
+            )
+            if value is None or value == ""
+        ]
+        if missing:
+            raise RuntimeError(
+                "Postgres configuration incomplete: missing "
+                + ", ".join(missing)
+                + ". Set the POSTGRES_* env vars (see .env.example)."
+            )
+        # mypy: the ``missing`` guard proves these are non-None.
+        assert self.postgres_host is not None
+        assert self.postgres_db is not None
+        assert self.postgres_user is not None
+        sslmode = "require" if self.wodbuster_env == "prod" else "disable"
+        return (
+            f"postgresql+psycopg://{self.postgres_user}"
+            f"@{self.postgres_host}:{self.postgres_port}"
+            f"/{self.postgres_db}?sslmode={sslmode}"
+        )
 
 
 @lru_cache(maxsize=1)
