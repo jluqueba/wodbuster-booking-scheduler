@@ -523,6 +523,15 @@ Deferrable without compromising the P1 acceptance:
 
 Per the Exit Criteria in [plan.md](plan.md): all ten phases complete, all conformance cases CC-001 through CC-015 passing, the gated `live_contract` test passing once against the operator's WodBuster account, the first end-to-end production booking succeeds and produces both a Telegram message and a web UI history entry, a manually paused worker produces the Healthchecks.io dead-man alert within 20 minutes, the cookie paste flow completes in under two minutes from a cold start, and zero secrets exist in the repository, container image, or env manifests.
 
+### F11: Comprehensive project documentation (backlog)
+
+Placeholder for the documentation pass to run once the P1 path is stable. Not scheduled; will be refined into a proper spec when picked up.
+
+| ID | Task | Size | Dependencies |
+|----|------|------|--------------|
+| F11.1 | Rewrite `README.md` as the canonical project overview. Include Mermaid architecture diagrams: (a) runtime component diagram (FastAPI + APScheduler + SQLite + Key Vault + Container App + Telegram + Healthchecks); (b) request-flow sequence for a scheduled booking attempt; (c) CI/CD topology (three GitHub Actions workflows, deploy UAMI, runtime UAMI). | M | US-001 done |
+| F11.2 | Add a "Fresh-clone bootstrap" guide to `README.md` covering everything a developer needs to reach a working prod deployment from a bare clone on a new machine: prerequisites, `az login`, laptop `azd up` (bootstrap only), F3.10 deploy UAMI creation, GitHub repo variables publish, OAuth + Telegram + Healthchecks setup, Key Vault secret seeding, cutover to Actions. Cross-links to ADRs and existing task IDs for details. | M | F11.1 |
+
 ### Next phase
 
 `devsquad.implement` against the Foundational task group, starting with F1.1.
