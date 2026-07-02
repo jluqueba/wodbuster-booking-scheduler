@@ -15,6 +15,33 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    services:
+      # Postgres 16 service container: matches the local docker-compose
+      # setup (F1.7) and the prod SKU (F3.11). Component tests in
+      # tests/component/test_migrations.py connect here to exercise the
+      # real Alembic baseline against a real Postgres.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: wodbuster
+          POSTGRES_PASSWORD: wodbuster
+          POSTGRES_DB: wodbuster
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wodbuster -d wodbuster"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: wodbuster
+      POSTGRES_USER: wodbuster
+      POSTGRES_PASSWORD: wodbuster
+      WODBUSTER_ENV: local
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
