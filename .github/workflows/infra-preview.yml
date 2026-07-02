@@ -42,6 +42,10 @@ jobs:
       # F3.11 additions: needed by main.parameters.json for `azd provision --preview`.
       AZURE_OPERATOR_PRINCIPAL_UPN: ${{ vars.AZURE_OPERATOR_PRINCIPAL_UPN }}
       AZURE_DEPLOY_PRINCIPAL_ID: ${{ vars.AZURE_DEPLOY_PRINCIPAL_ID }}
+      # OAuth client IDs needed by main.parameters.json.
+      OAUTH_MICROSOFT_CLIENT_ID: ${{ vars.OAUTH_MICROSOFT_CLIENT_ID }}
+      OAUTH_GITHUB_CLIENT_ID: ${{ vars.OAUTH_GITHUB_CLIENT_ID }}
+      OAUTH_GOOGLE_CLIENT_ID: ${{ vars.OAUTH_GOOGLE_CLIENT_ID }}
 
     steps:
       - name: Checkout PR head

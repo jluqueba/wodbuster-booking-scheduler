@@ -43,6 +43,11 @@ jobs:
       # and the keyvault deploy-UAMI Secrets User role assignment.
       AZURE_OPERATOR_PRINCIPAL_UPN: ${{ vars.AZURE_OPERATOR_PRINCIPAL_UPN }}
       AZURE_DEPLOY_PRINCIPAL_ID: ${{ vars.AZURE_DEPLOY_PRINCIPAL_ID }}
+      # OAuth 2.0 client IDs (non-secret, published as repo variables).
+      # Consumed by containerapp.bicep as env vars on the running container.
+      OAUTH_MICROSOFT_CLIENT_ID: ${{ vars.OAUTH_MICROSOFT_CLIENT_ID }}
+      OAUTH_GITHUB_CLIENT_ID: ${{ vars.OAUTH_GITHUB_CLIENT_ID }}
+      OAUTH_GOOGLE_CLIENT_ID: ${{ vars.OAUTH_GOOGLE_CLIENT_ID }}
 
     steps:
       - name: Checkout

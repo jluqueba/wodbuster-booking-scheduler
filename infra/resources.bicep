@@ -36,6 +36,15 @@ param acaOutboundIps array = []
 @description('Optional operator home IP or /32 CIDR for direct psql access. Empty disables the rule.')
 param operatorFirewallCidr string = ''
 
+@description('OAuth 2.0 client ID for Microsoft (personal accounts). Non-secret; passed through to the container as env var. Empty on early provisions before the operator publishes the GH Actions variable.')
+param oauthMicrosoftClientId string = ''
+
+@description('OAuth 2.0 client ID for GitHub. Non-secret; passed through to the container as env var. Empty until the operator publishes the GH Actions variable.')
+param oauthGithubClientId string = ''
+
+@description('OAuth 2.0 client ID for Google. Non-secret; passed through to the container as env var. Empty until the operator publishes the GH Actions variable.')
+param oauthGoogleClientId string = ''
+
 module observability 'modules/observability.bicep' = {
   name: 'observability'
   params: {
@@ -110,6 +119,9 @@ module containerApp 'modules/containerapp.bicep' = {
     postgresDatabase: postgres.outputs.databaseName
     appInsightsConnectionString: observability.outputs.appInsightsConnectionString
     keyVaultUri: keyVault.outputs.keyVaultUri
+    oauthMicrosoftClientId: oauthMicrosoftClientId
+    oauthGithubClientId: oauthGithubClientId
+    oauthGoogleClientId: oauthGoogleClientId
   }
 }
 
