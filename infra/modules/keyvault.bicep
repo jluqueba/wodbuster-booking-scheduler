@@ -47,6 +47,12 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
     enableSoftDelete: true
     softDeleteRetentionInDays: 90
     enablePurgeProtection: true
+    // Required for `kv.getSecret()` references from other Bicep modules at
+    // deploy time. Without this, ARM's first-party service principal cannot
+    // read secrets even when the deployment caller has Secrets User RBAC.
+    // Symptom without the flag: "Access denied to first party service" with
+    // caller `appid=797f4846-ba00-4fd7-ba43-dac1f8f63013` (ARM).
+    enabledForTemplateDeployment: true
     publicNetworkAccess: 'Enabled'
     networkAcls: {
       defaultAction: 'Allow'
