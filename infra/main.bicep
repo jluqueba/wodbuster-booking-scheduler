@@ -26,8 +26,8 @@ param environmentName string
 @description('Azure region for all resources. Defaults to the enclosing resource group location.')
 param location string = resourceGroup().location
 
-@description('Object ID of the operator running azd (empty in CI). Wired through to the runtime UAMI Key Vault Secrets Officer grant.')
-param principalId string = ''
+@description('Object ID of the human operator (empty in CI initial run). Wired to the runtime UAMI Key Vault Secrets Officer grant so the operator can seed F3.8 secrets. Named `operatorPrincipalId` on purpose: azd auto-populates `AZURE_PRINCIPAL_ID` with the OIDC caller (deploy UAMI when run from GitHub Actions), which would misfire the role assignment. This param binds to `AZURE_OPERATOR_PRINCIPAL_ID` instead, which azd leaves alone.')
+param operatorPrincipalId string = ''
 
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = {
@@ -40,13 +40,13 @@ module resources 'resources.bicep' = {
     location: location
     resourceToken: resourceToken
     tags: tags
-    principalId: principalId
+    operatorPrincipalId: operatorPrincipalId
   }
 }
 
 output AZURE_LOCATION string = location
 output AZURE_RESOURCE_GROUP string = resourceGroup().name
-output AZURE_PRINCIPAL_ID string = principalId
+output AZURE_OPERATOR_PRINCIPAL_ID string = operatorPrincipalId
 
 output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.registryName
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.registryLoginServer
