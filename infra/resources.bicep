@@ -104,6 +104,7 @@ module containerApp 'modules/containerapp.bicep' = {
     logAnalyticsWorkspaceId: observability.outputs.logAnalyticsWorkspaceId
     identityId: identity.outputs.identityId
     identityName: identity.outputs.identityName
+    identityClientId: identity.outputs.identityClientId
     registryLoginServer: registry.outputs.registryLoginServer
     postgresServerFqdn: postgres.outputs.serverFqdn
     postgresDatabase: postgres.outputs.databaseName
