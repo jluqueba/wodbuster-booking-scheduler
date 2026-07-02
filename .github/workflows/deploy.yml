@@ -42,6 +42,11 @@ jobs:
       # keyvault.bicep operator role assignment that expects principalType:
       # 'User'. Use AZURE_OPERATOR_PRINCIPAL_ID (mapped in main.parameters.json).
       AZURE_OPERATOR_PRINCIPAL_ID: ${{ vars.AZURE_OPERATOR_PRINCIPAL_ID }}
+      # F3.11 additions: not strictly needed by `azd deploy` (which reads outputs
+      # via `azd env refresh`), but kept in sync with infra.yml so a stray
+      # provision call from the same env block doesn't fail with unbound params.
+      AZURE_OPERATOR_PRINCIPAL_UPN: ${{ vars.AZURE_OPERATOR_PRINCIPAL_UPN }}
+      AZURE_DEPLOY_PRINCIPAL_ID: ${{ vars.AZURE_DEPLOY_PRINCIPAL_ID }}
 
     steps:
       - name: Checkout

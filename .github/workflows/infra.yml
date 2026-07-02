@@ -39,6 +39,10 @@ jobs:
       # keyvault.bicep operator role assignment that expects principalType: 'User'.
       # Use AZURE_OPERATOR_PRINCIPAL_ID (mapped in main.parameters.json).
       AZURE_OPERATOR_PRINCIPAL_ID: ${{ vars.AZURE_OPERATOR_PRINCIPAL_ID }}
+      # F3.11 additions: needed by main.parameters.json for the Postgres module
+      # and the keyvault deploy-UAMI Secrets User role assignment.
+      AZURE_OPERATOR_PRINCIPAL_UPN: ${{ vars.AZURE_OPERATOR_PRINCIPAL_UPN }}
+      AZURE_DEPLOY_PRINCIPAL_ID: ${{ vars.AZURE_DEPLOY_PRINCIPAL_ID }}
 
     steps:
       - name: Checkout
