@@ -63,7 +63,10 @@ def build_oauth(settings: Settings, secrets: Secrets) -> OAuth:
 def _maybe_register_microsoft(
     oauth: OAuth, settings: Settings, secrets: Secrets
 ) -> None:
-    if not settings.oauth_microsoft_client_id or not secrets.oauth_microsoft_client_secret:
+    if (
+        not settings.oauth_microsoft_client_id
+        or not secrets.oauth_microsoft_client_secret
+    ):
         return
     oauth.register(
         name="microsoft",
@@ -76,9 +79,7 @@ def _maybe_register_microsoft(
     )
 
 
-def _maybe_register_github(
-    oauth: OAuth, settings: Settings, secrets: Secrets
-) -> None:
+def _maybe_register_github(oauth: OAuth, settings: Settings, secrets: Secrets) -> None:
     if not settings.oauth_github_client_id or not secrets.oauth_github_client_secret:
         return
     oauth.register(
@@ -96,9 +97,7 @@ def _maybe_register_github(
     )
 
 
-def _maybe_register_google(
-    oauth: OAuth, settings: Settings, secrets: Secrets
-) -> None:
+def _maybe_register_google(oauth: OAuth, settings: Settings, secrets: Secrets) -> None:
     if not settings.oauth_google_client_id or not secrets.oauth_google_client_secret:
         return
     oauth.register(
