@@ -68,9 +68,7 @@ def _oauth(request: Request) -> OAuth:
     """Fetch the process-wide :class:`OAuth` registry from app state."""
     oauth = getattr(request.app.state, "oauth", None)
     if oauth is None:  # pragma: no cover - misconfiguration
-        raise RuntimeError(
-            "app.state.oauth is not configured; wire it in lifespan()."
-        )
+        raise RuntimeError("app.state.oauth is not configured; wire it in lifespan().")
     return oauth
 
 
@@ -154,7 +152,9 @@ async def callback(provider: str, request: Request) -> Response:
             "auth.callback.denied_identity_extract",
             provider=provider,
             error=str(exc),
-            user_info_keys=sorted(user_info.keys()) if isinstance(user_info, dict) else None,
+            user_info_keys=(
+                sorted(user_info.keys()) if isinstance(user_info, dict) else None
+            ),
         )
         return _render_denial(request)
 

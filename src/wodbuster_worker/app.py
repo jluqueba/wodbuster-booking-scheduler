@@ -79,9 +79,7 @@ def create_app(
         secrets if secrets is not None else load_secrets(effective_settings)
     )
 
-    session_middleware = build_session_middleware(
-        effective_settings, effective_secrets
-    )
+    session_middleware = build_session_middleware(effective_settings, effective_secrets)
 
     app = FastAPI(
         title="WodBuster Booking Worker",
@@ -176,4 +174,3 @@ def __getattr__(name: str) -> FastAPI:
             _APP = create_app()
         return _APP
     raise AttributeError(name)
-
