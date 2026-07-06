@@ -25,7 +25,6 @@ from __future__ import annotations
 import secrets
 from typing import Any
 
-import structlog
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
@@ -39,14 +38,6 @@ from .oauth import SUPPORTED_PROVIDERS, extract_identity
 from .session import touch_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-# Module logger. Used to record the presented identity when a callback
-# lands on the denial path so the operator can seed
-# ``federated_identity`` with the real ``subject_id`` (bootstrap CLI
-# input). REMOVE after the first operator is seeded; the log line
-# echoes provider-issued identifiers which, while not secret in the
-# OIDC sense, are best not left in structured logs long-term.
-_log = structlog.get_logger(__name__)
 
 
 def _templates(request: Request) -> Jinja2Templates:
@@ -124,38 +115,20 @@ async def callback(provider: str, request: Request) -> Response:
 
     try:
         token = await client.authorize_access_token(request)
-    except OAuthError as exc:
+    except OAuthError:
         # Authlib raises on state mismatch, denied consent, etc. We
         # deliberately do not surface the details; the operator flow
         # is fully controlled, so a failure here is almost always a
         # tampering attempt or a browser back-button retry.
-        _log.info(
-            "auth.callback.denied_oauth_error",
-            provider=provider,
-            error=str(exc),
-            error_type=type(exc).__name__,
-        )
         return _render_denial(request)
 
     user_info = await _fetch_user_info(client, provider, token)
     if not user_info:
-        _log.info(
-            "auth.callback.denied_empty_user_info",
-            provider=provider,
-        )
         return _render_denial(request)
 
     try:
         _, subject_id, display_name = extract_identity(provider, user_info)
-    except ValueError as exc:
-        _log.info(
-            "auth.callback.denied_identity_extract",
-            provider=provider,
-            error=str(exc),
-            user_info_keys=(
-                sorted(user_info.keys()) if isinstance(user_info, dict) else None
-            ),
-        )
+    except ValueError:
         return _render_denial(request)
 
     operator_id = _lookup_operator(provider, subject_id)
@@ -164,18 +137,6 @@ async def callback(provider: str, request: Request) -> Response:
         # of *providers*, but this specific identity is not on the
         # allow-list of *operators*. Do NOT create an operator_profile
         # here; that is the bootstrap command's job.
-        #
-        # TEMPORARY (until first operator is seeded): log the presented
-        # identity so the bootstrap script has the exact `subject_id`
-        # value to insert. Remove this branch's log line after
-        # `federated_identity` has at least one row. See README
-        # "Bootstrap the first operator".
-        _log.info(
-            "auth.callback.denied_unknown_identity",
-            provider=provider,
-            subject_id=subject_id,
-            display_name=display_name,
-        )
         return _render_denial(request)
 
     # Success: rotate the session (mitigate session-fixation), stamp
