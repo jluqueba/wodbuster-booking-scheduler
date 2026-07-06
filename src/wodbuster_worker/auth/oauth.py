@@ -7,11 +7,13 @@ prod, ``.env`` locally).
 
 The provider config lines are deliberate:
 
-- **Microsoft** uses the ``consumers`` tenant path so only *personal*
-  Microsoft accounts (@outlook.com, @hotmail.com, @live.com and
-  linked-account Microsoft IDs) are accepted. ``common`` or
-  ``organizations`` would let any Entra tenant sign in, which is a
-  bigger surface than this project needs.
+- **Microsoft** uses OIDC discovery against the ``consumers`` tenant so
+  only *personal* Microsoft accounts (@outlook.com, @hotmail.com,
+  @live.com and linked-account Microsoft IDs) are accepted, and
+  ``jwks_uri`` / ``userinfo_endpoint`` come from the well-known
+  metadata document. ``common`` or ``organizations`` would let any
+  Entra tenant sign in, which is a bigger surface than this project
+  needs.
 - **GitHub** uses its OAuth 2.0 endpoints; user identity ships in
   ``/user`` (numeric ``id`` field, stringified to fit the
   ``federated_identity.subject_id`` column).
@@ -67,13 +69,9 @@ def _maybe_register_microsoft(
         name="microsoft",
         client_id=settings.oauth_microsoft_client_id,
         client_secret=secrets.oauth_microsoft_client_secret,
-        access_token_url=(
-            "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
+        server_metadata_url=(
+            "https://login.microsoftonline.com/consumers/v2.0/.well-known/openid-configuration"
         ),
-        authorize_url=(
-            "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize"
-        ),
-        userinfo_endpoint="https://graph.microsoft.com/oidc/userinfo",
         client_kwargs={"scope": "openid email profile"},
     )
 
