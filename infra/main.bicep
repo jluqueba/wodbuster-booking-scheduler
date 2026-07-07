@@ -50,6 +50,9 @@ param oauthGithubClientId string = ''
 @description('OAuth 2.0 client ID for Google. Non-secret; bound to `OAUTH_GOOGLE_CLIENT_ID` GH variable with an empty fallback.')
 param oauthGoogleClientId string = ''
 
+@description('Container image reference for the worker Container App (registry/image:tag). Bound to `SERVICE_WORKER_IMAGE_NAME` (set by `azd deploy` and, in CI, discovered from the running Container App before `azd provision`). Empty on the very first bootstrap; the child module falls back to the public hello-world image so the resource can be created before anything is pushed. Preserving the tag across provisions is why F3.15 exists (previously each `azd provision` reverted the app to hello-world).')
+param containerImage string = ''
+
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = {
   'azd-env-name': environmentName
@@ -78,6 +81,7 @@ module resources 'resources.bicep' = {
     oauthMicrosoftClientId: oauthMicrosoftClientId
     oauthGithubClientId: oauthGithubClientId
     oauthGoogleClientId: oauthGoogleClientId
+    containerImage: containerImage
   }
 }
 
