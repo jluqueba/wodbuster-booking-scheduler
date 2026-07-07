@@ -27,10 +27,49 @@ from .auth.oauth import build_oauth
 from .auth.routes import router as auth_router
 from .auth.session import IdleTimeoutMiddleware, build_session_middleware
 from .config import Settings, get_settings
+from .cookie.routes import router as cookie_router
 from .observability import configure_logging
+from .persistence.cookie_store import CookieStore
+from .security.cipher import Cipher
+from .security.cookie import CookieValidator
 from .security.keyvault import Secrets, load_secrets
+from .wodbuster_client.client import WodBusterClient
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+
+
+def _build_cookie_stack(
+    settings: Settings, secrets: Secrets
+) -> tuple[Cipher | None, WodBusterClient | None, CookieValidator | None, CookieStore | None]:
+    """Build the four cookie-flow singletons if their inputs are present.
+
+    Each dependency is optional so partial local setups still boot:
+
+    - :class:`Cipher` needs ``cookie_encryption_key``. Missing = no
+      encrypted persistence; the ``/cookie`` route will 503 loudly.
+    - :class:`WodBusterClient` needs ``wodbuster_gym`` and
+      ``wodbuster_idu``. Missing = the validator has nothing to probe;
+      route also 503s.
+    - :class:`CookieValidator` and :class:`CookieStore` are wired only
+      when both of their inputs above are present.
+
+    The 503 vs 500 choice lives at the route layer. Here we simply
+    return ``None`` for the missing pieces so the wiring reflects
+    reality and tests can construct partial apps deliberately.
+    """
+    cipher: Cipher | None = None
+    if secrets.cookie_encryption_key:
+        cipher = Cipher.from_base64(secrets.cookie_encryption_key)
+
+    wodbuster_client: WodBusterClient | None = None
+    if settings.wodbuster_gym and settings.wodbuster_idu:
+        wodbuster_client = WodBusterClient(
+            gym=settings.wodbuster_gym, idu=settings.wodbuster_idu
+        )
+
+    validator = CookieValidator(wodbuster_client) if wodbuster_client else None
+    store = CookieStore(cipher) if cipher else None
+    return cipher, wodbuster_client, validator, store
 
 
 @asynccontextmanager
@@ -50,6 +89,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.oauth = build_oauth(settings, secrets)
     if not hasattr(app.state, "templates") or app.state.templates is None:
         app.state.templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+    # Cookie stack: idempotent — respect pre-seeded state so tests can
+    # inject fakes.
+    if not hasattr(app.state, "cipher") or app.state.cipher is None:
+        cipher, wb_client, validator, store = _build_cookie_stack(settings, secrets)
+        app.state.cipher = cipher
+        app.state.wodbuster_client = wb_client
+        app.state.cookie_validator = validator
+        app.state.cookie_store = store
     try:
         yield
     finally:
@@ -92,6 +139,13 @@ def create_app(
     app.state.secrets = effective_secrets
     app.state.oauth = build_oauth(effective_settings, effective_secrets)
     app.state.templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+    cipher, wb_client, validator, store = _build_cookie_stack(
+        effective_settings, effective_secrets
+    )
+    app.state.cipher = cipher
+    app.state.wodbuster_client = wb_client
+    app.state.cookie_validator = validator
+    app.state.cookie_store = store
 
     app.add_middleware(
         IdleTimeoutMiddleware,
@@ -134,6 +188,7 @@ def health() -> dict[str, str]:
 def _register_routes(app: FastAPI) -> None:
     """Register the built-in routes (health, dashboard) and mount ``/auth``."""
     app.include_router(auth_router)
+    app.include_router(cookie_router)
     app.add_api_route("/health", health, methods=["GET"])
 
     @app.get("/")
