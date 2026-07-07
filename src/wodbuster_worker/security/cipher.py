@@ -29,6 +29,8 @@ Design choices:
 
 from __future__ import annotations
 
+import base64
+import binascii
 import os
 
 from cryptography.exceptions import InvalidTag
@@ -68,6 +70,29 @@ class Cipher:
                 f"AES-256-GCM key must be {_KEY_LENGTH_BYTES} bytes; got {len(key)}"
             )
         self._aead = AESGCM(key)
+
+    @classmethod
+    def from_base64(cls, key_b64: str) -> Cipher:
+        """Build a cipher from a base64-encoded 32-byte key.
+
+        Accepts both standard and URL-safe base64 alphabets so a
+        ``openssl rand -base64 32`` output (which uses ``+`` and ``/``)
+        and a URL-safe variant (which uses ``-`` and ``_``) both work.
+        The Key Vault secret is stored as a plain string; this
+        constructor is what turns it into a usable ``Cipher``.
+
+        Raises :class:`ValueError` when the decoded key is not exactly
+        32 bytes, so a misconfigured secret fails loudly at startup
+        rather than at first paste.
+        """
+        try:
+            # ``urlsafe_b64decode`` accepts either alphabet as long as
+            # the padding is present. If padding is missing we do not
+            # silently pad: an ambiguous input is a configuration bug.
+            key = base64.urlsafe_b64decode(key_b64.encode("ascii"))
+        except (ValueError, binascii.Error) as exc:
+            raise ValueError(f"cookie_encryption_key is not valid base64: {exc}") from exc
+        return cls(key)
 
     def encrypt(
         self, plaintext: bytes, associated_data: bytes | None = None
