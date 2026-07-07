@@ -45,6 +45,9 @@ param oauthGithubClientId string = ''
 @description('OAuth 2.0 client ID for Google. Non-secret; passed through to the container as env var. Empty until the operator publishes the GH Actions variable.')
 param oauthGoogleClientId string = ''
 
+@description('Container image reference for the worker (registry/image:tag). Forwarded from `main.bicep` (which reads `SERVICE_WORKER_IMAGE_NAME`). Empty on first bootstrap; the child module substitutes a public hello-world image so the Container App can be created before anything is pushed to ACR.')
+param containerImage string = ''
+
 module observability 'modules/observability.bicep' = {
   name: 'observability'
   params: {
@@ -122,6 +125,7 @@ module containerApp 'modules/containerapp.bicep' = {
     oauthMicrosoftClientId: oauthMicrosoftClientId
     oauthGithubClientId: oauthGithubClientId
     oauthGoogleClientId: oauthGoogleClientId
+    containerImage: containerImage
   }
 }
 

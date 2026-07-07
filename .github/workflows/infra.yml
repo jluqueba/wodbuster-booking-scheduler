@@ -70,5 +70,26 @@ jobs:
             --federated-credential-provider github \
             --tenant-id "${{ vars.AZURE_TENANT_ID }}"
 
+      - name: Preserve currently-deployed image (F3.15)
+        # Prior to F3.15, running `azd provision` without a SERVICE_WORKER_IMAGE_NAME
+        # value caused Bicep to re-apply the module default (hello-world) and revert
+        # whatever tag `azd deploy` (or the F2.2 deploy workflow) had last pushed.
+        # Read the image tag currently running on the worker Container App and
+        # export it so main.parameters.json's SERVICE_WORKER_IMAGE_NAME binding
+        # picks it up. Silent no-op on the very first bootstrap when the app
+        # does not yet exist.
+        run: |
+          set -euo pipefail
+          CURRENT_IMAGE=$(az containerapp list \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --query "[?tags.\"azd-service-name\"=='worker'] | [0].properties.template.containers[0].image" \
+            -o tsv 2>/dev/null || true)
+          if [ -n "${CURRENT_IMAGE}" ] && [ "${CURRENT_IMAGE}" != "null" ]; then
+            echo "Preserving image: ${CURRENT_IMAGE}"
+            echo "SERVICE_WORKER_IMAGE_NAME=${CURRENT_IMAGE}" >> "${GITHUB_ENV}"
+          else
+            echo "No existing worker Container App found; Bicep will use the hello-world bootstrap image."
+          fi
+
       - name: azd provision
         run: azd provision --no-prompt

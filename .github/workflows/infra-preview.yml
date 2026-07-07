@@ -73,6 +73,24 @@ jobs:
             --federated-credential-provider github \
             --tenant-id "${{ vars.AZURE_TENANT_ID }}"
 
+      - name: Preserve currently-deployed image (F3.15)
+        # Mirror `infra.yml`: read the image tag currently running on the
+        # worker Container App and export it as SERVICE_WORKER_IMAGE_NAME so
+        # the preview accurately reflects what would happen on `main`, rather
+        # than showing a spurious diff that reverts the app to hello-world.
+        run: |
+          set -euo pipefail
+          CURRENT_IMAGE=$(az containerapp list \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --query "[?tags.\"azd-service-name\"=='worker'] | [0].properties.template.containers[0].image" \
+            -o tsv 2>/dev/null || true)
+          if [ -n "${CURRENT_IMAGE}" ] && [ "${CURRENT_IMAGE}" != "null" ]; then
+            echo "Previewing against image: ${CURRENT_IMAGE}"
+            echo "SERVICE_WORKER_IMAGE_NAME=${CURRENT_IMAGE}" >> "${GITHUB_ENV}"
+          else
+            echo "No existing worker Container App found; preview will use the hello-world bootstrap image."
+          fi
+
       - name: azd provision --preview
         id: preview
         # Read-only. Capture stdout+stderr and the exit code without failing

@@ -38,8 +38,14 @@ param identityClientId string
 @description('Container Registry login server (used for image pull via UAMI + AcrPull).')
 param registryLoginServer string
 
-@description('Container image tag to run. Defaults to the hello-world image so the very first azd up succeeds before the real image is pushed. Overridden by azd deploy.')
-param containerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+@description('Container image tag to run. Empty on the very first bootstrap (before `azd deploy` has pushed anything); in that case the module falls back to the public hello-world image so the resource can still be created. On subsequent provisions the caller passes the currently-deployed image (via `SERVICE_WORKER_IMAGE_NAME`) so `azd provision` no longer reverts the running image to hello-world. See F3.15.')
+param containerImage string = ''
+
+// Public bootstrap image used only when the caller has nothing to pass in.
+// Kept as a local var (not the param default) so the effective value is
+// derived deterministically and the `emptiness` check lives close to where
+// the value is consumed.
+var effectiveContainerImage = empty(containerImage) ? 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest' : containerImage
 
 @description('Fully qualified DNS name of the Postgres Flexible Server (e.g. `pg-<token>.postgres.database.azure.com`). Injected as `POSTGRES_HOST`. TLS is enforced server-side; no client-side sslmode override is needed.')
 param postgresServerFqdn string
@@ -140,7 +146,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-10-02-preview' = {
       containers: [
         {
           name: 'worker'
-          image: containerImage
+          image: effectiveContainerImage
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'
