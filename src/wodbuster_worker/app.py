@@ -40,7 +40,9 @@ _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
 def _build_cookie_stack(
     settings: Settings, secrets: Secrets
-) -> tuple[Cipher | None, WodBusterClient | None, CookieValidator | None, CookieStore | None]:
+) -> tuple[
+    Cipher | None, WodBusterClient | None, CookieValidator | None, CookieStore | None
+]:
     """Build the four cookie-flow singletons if their inputs are present.
 
     Each dependency is optional so partial local setups still boot:

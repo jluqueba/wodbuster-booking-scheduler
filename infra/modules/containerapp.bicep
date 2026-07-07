@@ -69,6 +69,12 @@ param oauthGithubClientId string = ''
 @description('OAuth 2.0 client ID for Google. Non-secret; the paired client secret lives in Key Vault as `oauth-google-client-secret`. Empty string if OAuth is not yet configured.')
 param oauthGoogleClientId string = ''
 
+@description('WodBuster gym subdomain slug (e.g. `antworktrainingcenter`). Non-secret; injected as the `WODBUSTER_GYM` env var so the `WodBusterClient` can build the gym-scoped URL for `LoadClass.ashx`. Empty string leaves the client unwired and the `/cookie` route returns 503.')
+param wodbusterGym string = ''
+
+@description('WodBuster operator identifier (Phase 0 `idu`). Non-secret; injected as the `WODBUSTER_IDU` env var. Empty string leaves the client unwired.')
+param wodbusterIdu string = ''
+
 @description('Target port the container listens on.')
 @minValue(1)
 @maxValue(65535)
@@ -217,6 +223,19 @@ resource containerApp 'Microsoft.App/containerApps@2024-10-02-preview' = {
             {
               name: 'OAUTH_GOOGLE_CLIENT_ID'
               value: oauthGoogleClientId
+            }
+            {
+              // WodBuster tenant coordinates for US-003. Non-secret;
+              // both are empty until the operator publishes the GH
+              // Actions variables. When either is empty the runtime
+              // `_build_cookie_stack` leaves `WodBusterClient` /
+              // `CookieValidator` as `None`, and `/cookie` returns 503.
+              name: 'WODBUSTER_GYM'
+              value: wodbusterGym
+            }
+            {
+              name: 'WODBUSTER_IDU'
+              value: wodbusterIdu
             }
             {
               // Predictable Container Apps FQDN pattern: <appName>.<env defaultDomain>.

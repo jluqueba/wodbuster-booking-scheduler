@@ -48,6 +48,10 @@ jobs:
       OAUTH_MICROSOFT_CLIENT_ID: ${{ vars.OAUTH_MICROSOFT_CLIENT_ID }}
       OAUTH_GITHUB_CLIENT_ID: ${{ vars.OAUTH_GITHUB_CLIENT_ID }}
       OAUTH_GOOGLE_CLIENT_ID: ${{ vars.OAUTH_GOOGLE_CLIENT_ID }}
+      # WodBuster tenant coordinates (US-003, non-secret). When either
+      # is empty the /cookie route returns 503; the container still boots.
+      WODBUSTER_GYM: ${{ vars.WODBUSTER_GYM }}
+      WODBUSTER_IDU: ${{ vars.WODBUSTER_IDU }}
 
     steps:
       - name: Checkout

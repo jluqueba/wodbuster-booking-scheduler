@@ -7,6 +7,11 @@ venv/
 env/
 .python-version
 
+# Ephemeral tooling artifacts created by the agent when it prepares
+# multi-line PR bodies or commit messages. Never intended for VCS.
+.pr-body.md
+.commit-msg.txt
+
 # Local SQLite artifacts (WAL, SHM, journal, and hand-run ad-hoc DBs).
 *.db
 *.db-journal
