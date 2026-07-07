@@ -93,6 +93,16 @@ class Settings(BaseSettings):
     session_idle_minutes: int = 30
     session_absolute_hours: int = 24
 
+    # WodBuster tenant coordinates (US-003, US1.1). ``gym`` is the
+    # subdomain slug (``antworktrainingcenter``); ``idu`` is the
+    # operator's stable identifier that Phase 0 discovered in every
+    # ``/athlete/handlers/*`` URL. Both are non-secret and passed
+    # through env vars. They stay ``None`` until the operator seeds
+    # them, and the client construction site fails loudly if a
+    # WodBuster call is attempted before that happens.
+    wodbuster_gym: str | None = None
+    wodbuster_idu: str | None = None
+
     @model_validator(mode="after")
     def _apply_env_defaults(self) -> Settings:
         """Fill mode-dependent Postgres defaults.
