@@ -19,6 +19,9 @@
   <body hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
     <h1>WodBuster Booking Worker</h1>
     <p>Welcome, operator <code>{{ operator_id }}</code>.</p>
+    <ul>
+      <li><a href="/cookie">Cookie</a> — paste and validate the <code>.WBAuth</code> session cookie</li>
+    </ul>
     <form method="post" action="/auth/logout">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <button type="submit">Log out</button>
