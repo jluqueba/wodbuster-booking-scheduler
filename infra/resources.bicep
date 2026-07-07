@@ -45,6 +45,12 @@ param oauthGithubClientId string = ''
 @description('OAuth 2.0 client ID for Google. Non-secret; passed through to the container as env var. Empty until the operator publishes the GH Actions variable.')
 param oauthGoogleClientId string = ''
 
+@description('WodBuster gym subdomain slug. Non-secret; forwarded to the container as `WODBUSTER_GYM`. Empty until the operator publishes the GH Actions variable; the `/cookie` route returns 503 in that state.')
+param wodbusterGym string = ''
+
+@description('WodBuster operator identifier (Phase 0 `idu`). Non-secret; forwarded to the container as `WODBUSTER_IDU`. Empty until the operator publishes the GH Actions variable.')
+param wodbusterIdu string = ''
+
 @description('Container image reference for the worker (registry/image:tag). Forwarded from `main.bicep` (which reads `SERVICE_WORKER_IMAGE_NAME`). Empty on first bootstrap; the child module substitutes a public hello-world image so the Container App can be created before anything is pushed to ACR.')
 param containerImage string = ''
 
@@ -125,6 +131,8 @@ module containerApp 'modules/containerapp.bicep' = {
     oauthMicrosoftClientId: oauthMicrosoftClientId
     oauthGithubClientId: oauthGithubClientId
     oauthGoogleClientId: oauthGoogleClientId
+    wodbusterGym: wodbusterGym
+    wodbusterIdu: wodbusterIdu
     containerImage: containerImage
   }
 }

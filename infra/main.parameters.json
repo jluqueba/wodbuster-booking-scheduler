@@ -32,6 +32,12 @@
     "oauthGoogleClientId": {
       "value": "${OAUTH_GOOGLE_CLIENT_ID=}"
     },
+    "wodbusterGym": {
+      "value": "${WODBUSTER_GYM=}"
+    },
+    "wodbusterIdu": {
+      "value": "${WODBUSTER_IDU=}"
+    },
     "containerImage": {
       "value": "${SERVICE_WORKER_IMAGE_NAME=}"
     }

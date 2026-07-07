@@ -50,6 +50,12 @@ param oauthGithubClientId string = ''
 @description('OAuth 2.0 client ID for Google. Non-secret; bound to `OAUTH_GOOGLE_CLIENT_ID` GH variable with an empty fallback.')
 param oauthGoogleClientId string = ''
 
+@description('WodBuster gym subdomain slug (e.g. `antworktrainingcenter`). Non-secret; bound to `WODBUSTER_GYM` GH variable. Empty on the first bootstrap; the worker still boots and the `/cookie` route returns 503 until this is set.')
+param wodbusterGym string = ''
+
+@description('WodBuster operator identifier discovered in every `/athlete/handlers/*` URL during Phase 0. Non-secret; bound to `WODBUSTER_IDU` GH variable. Empty on the first bootstrap; the `/cookie` route returns 503 until both this and `wodbusterGym` are set.')
+param wodbusterIdu string = ''
+
 @description('Container image reference for the worker Container App (registry/image:tag). Bound to `SERVICE_WORKER_IMAGE_NAME` (set by `azd deploy` and, in CI, discovered from the running Container App before `azd provision`). Empty on the very first bootstrap; the child module falls back to the public hello-world image so the resource can be created before anything is pushed. Preserving the tag across provisions is why F3.15 exists (previously each `azd provision` reverted the app to hello-world).')
 param containerImage string = ''
 
@@ -81,6 +87,8 @@ module resources 'resources.bicep' = {
     oauthMicrosoftClientId: oauthMicrosoftClientId
     oauthGithubClientId: oauthGithubClientId
     oauthGoogleClientId: oauthGoogleClientId
+    wodbusterGym: wodbusterGym
+    wodbusterIdu: wodbusterIdu
     containerImage: containerImage
   }
 }
