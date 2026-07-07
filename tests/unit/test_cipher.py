@@ -13,6 +13,7 @@ underlying ``cryptography`` library is trusted.
 
 from __future__ import annotations
 
+import base64
 import os
 
 import pytest
@@ -118,6 +119,41 @@ def test_failure_does_not_leak_plaintext_in_exception() -> None:
     assert b"super-secret" not in message.encode()
     if excinfo.value.__cause__ is not None:
         assert b"super-secret" not in str(excinfo.value.__cause__).encode()
+
+
+def test_from_base64_accepts_standard_alphabet() -> None:
+    # ``openssl rand -base64 32`` output uses ``+`` and ``/``. Round-trip
+    # a payload through the resulting cipher to prove the alphabet was
+    # decoded correctly.
+    key = os.urandom(32)
+    key_b64 = base64.b64encode(key).decode("ascii")
+    assert "=" in key_b64  # sanity: standard alphabet with padding
+
+    cipher = Cipher.from_base64(key_b64)
+    ciphertext, nonce = cipher.encrypt(b"payload")
+    assert cipher.decrypt(ciphertext, nonce) == b"payload"
+
+
+def test_from_base64_accepts_urlsafe_alphabet() -> None:
+    key = os.urandom(32)
+    key_b64 = base64.urlsafe_b64encode(key).decode("ascii")
+
+    cipher = Cipher.from_base64(key_b64)
+    ciphertext, nonce = cipher.encrypt(b"payload")
+    assert cipher.decrypt(ciphertext, nonce) == b"payload"
+
+
+def test_from_base64_rejects_wrong_decoded_length() -> None:
+    # 16 bytes = AES-128; we only accept AES-256. Fail loudly at
+    # startup rather than at first encrypt.
+    short = base64.urlsafe_b64encode(os.urandom(16)).decode("ascii")
+    with pytest.raises(ValueError, match="32 bytes"):
+        Cipher.from_base64(short)
+
+
+def test_from_base64_rejects_non_base64_input() -> None:
+    with pytest.raises(ValueError, match="valid base64"):
+        Cipher.from_base64("not$%^valid&base64@@")
 
 
 def test_encrypt_produces_fresh_nonce_each_call() -> None:
