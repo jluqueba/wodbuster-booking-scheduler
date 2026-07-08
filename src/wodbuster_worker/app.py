@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
@@ -28,8 +29,11 @@ from .auth.routes import router as auth_router
 from .auth.session import IdleTimeoutMiddleware, build_session_middleware
 from .config import Settings, get_settings
 from .cookie.routes import router as cookie_router
+from .heartbeat.probe import HeartbeatProbe
 from .observability import configure_logging
 from .persistence.cookie_store import CookieStore
+from .persistence.engine import get_session
+from .scheduler.scheduler import build_scheduler, register_heartbeat_job
 from .security.cipher import Cipher
 from .security.cookie import CookieValidator
 from .security.keyvault import Secrets, load_secrets
@@ -74,6 +78,23 @@ def _build_cookie_stack(
     return cipher, wodbuster_client, validator, store
 
 
+def _build_heartbeat_probe(
+    settings: Settings,
+    store: CookieStore | None,
+    validator: CookieValidator | None,
+) -> HeartbeatProbe | None:
+    """Build the shared :class:`HeartbeatProbe` if both inputs are wired.
+
+    Returns ``None`` when either dependency is missing so the scheduler
+    can decide not to register a job in that state. The probe is a
+    lightweight object; a fresh instance per app is fine.
+    """
+    if store is None or validator is None:
+        return None
+    ceiling = timedelta(days=settings.cookie_projected_ttl_ceiling_days)
+    return HeartbeatProbe(store, validator, ceiling=ceiling)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Resolve settings, secrets, OAuth registry and templates once.
@@ -99,12 +120,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.wodbuster_client = wb_client
         app.state.cookie_validator = validator
         app.state.cookie_store = store
+    if not hasattr(app.state, "heartbeat_probe") or app.state.heartbeat_probe is None:
+        app.state.heartbeat_probe = _build_heartbeat_probe(
+            settings, app.state.cookie_store, app.state.cookie_validator
+        )
+    # Scheduler: build lazily and register the heartbeat job only when
+    # its probe dependency is wired. Tests that inject their own
+    # scheduler (or want none at all) can pre-seed ``app.state.scheduler``.
+    if not hasattr(app.state, "scheduler") or app.state.scheduler is None:
+        app.state.scheduler = None
+        if app.state.heartbeat_probe is not None:
+            scheduler = build_scheduler()
+            register_heartbeat_job(
+                scheduler, app.state.heartbeat_probe, get_session
+            )
+            scheduler.start()
+            app.state.scheduler = scheduler
     try:
         yield
     finally:
-        # No teardown resources today. Placeholder for engine.dispose(),
-        # scheduler shutdown, and httpx client close in later phases.
-        pass
+        scheduler = getattr(app.state, "scheduler", None)
+        if scheduler is not None:
+            # ``wait=False`` so a lingering tick does not block the
+            # ASGI shutdown sequence past its deadline.
+            scheduler.shutdown(wait=False)
+            app.state.scheduler = None
 
 
 def create_app(
@@ -148,6 +188,13 @@ def create_app(
     app.state.wodbuster_client = wb_client
     app.state.cookie_validator = validator
     app.state.cookie_store = store
+    app.state.heartbeat_probe = _build_heartbeat_probe(
+        effective_settings, store, validator
+    )
+    # The scheduler itself is built lazily inside the lifespan hook
+    # so tests that construct an app without entering its lifespan
+    # never spin up a real BackgroundScheduler thread.
+    app.state.scheduler = None
 
     app.add_middleware(
         IdleTimeoutMiddleware,
