@@ -1,28 +1,24 @@
-"""Scheduler rule CRUD routes (US5.2-5.5).
+"""Scheduler rule CRUD routes (US-005 + form uplift).
 
-Five routes, all under ``/rules``:
+Routes (all under ``/rules``):
 
-- ``GET /rules`` — list the operator's rules.
-- ``GET /rules/new`` — render an empty form.
-- ``POST /rules`` — create a rule. On validation failure re-renders
-  the form with error banners; on success redirects to the list.
-- ``GET /rules/{id}`` — render the edit form for one rule.
-- ``POST /rules/{id}`` — update the rule; same success / failure
-  branching as create.
-- ``POST /rules/{id}/delete`` — delete the rule.
+- ``GET /rules``             list operator's rules (one row per day)
+- ``GET /rules/new``         empty create form (multi-day)
+- ``POST /rules``            fan-out create; 303 to list; 422 on failure
+- ``GET /rules/api/classes`` JSON picker source (types + time slots)
+- ``GET /rules/{id}``        edit form (single day)
+- ``POST /rules/{id}``       update; 303 to list; 422 on failure; 404 for non-owned
+- ``POST /rules/{id}/delete`` delete; 303 to list; 404 for non-owned
 
-All routes are auth-gated (:func:`require_session`) and every mutating
-route runs the CSRF check.
+Both mutating flows are CSRF-protected. All routes are auth-gated.
 
-Ownership: routes touching a specific rule call
-:func:`get_rule_for_operator`. Any miss returns 404 rather than 403 so
-we do not confirm existence to an unauthorized caller (CC-012).
+The ``/api/*`` routes are declared above the ``/{rule_id}`` handlers
+so FastAPI does not try to parse ``api`` as an integer.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
@@ -30,18 +26,19 @@ from fastapi.templating import Jinja2Templates
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
+from ..config import Settings
 from ..persistence.cookie_store import CookieStore
 from ..persistence.engine import get_session
-from ..wodbuster_client.client import (
-    WodBusterAuthError,
-    WodBusterClient,
-    WodBusterProtocolError,
-    WodBusterTransportError,
+from ..persistence.models import SchedulerRule
+from ..wodbuster_client.client import WodBusterClient
+from .classes import AvailableClasses, fetch_available_classes
+from .forms import (
+    PreferenceInput,
+    parse_create_rule_form,
+    parse_edit_rule_form,
 )
-from .forms import parse_rule_form
-from .schema_debug import summarize_shape
 from .service import (
-    create_rule,
+    create_rules_for_days,
     delete_rule,
     get_rule_for_operator,
     list_rules_for_operator,
@@ -60,6 +57,12 @@ _DAY_LABELS = [
     "Sunday",
 ]
 
+# Fallback picker values used when the WodBuster probe fails. The
+# operator can still submit a rule; free-text entry survives even
+# without live data because the templates fall back to inputs when
+# the option lists are empty.
+_TIME_FALLBACK: list[str] = []
+
 
 def _templates(request: Request) -> Jinja2Templates:
     templates = getattr(request.app.state, "templates", None)
@@ -71,21 +74,42 @@ def _templates(request: Request) -> Jinja2Templates:
     return templates
 
 
+def _settings(request: Request) -> Settings:
+    settings = getattr(request.app.state, "settings", None)
+    assert isinstance(settings, Settings)
+    return settings
+
+
+def _picker_or_none(request: Request, operator_id: int) -> AvailableClasses | None:
+    """Best-effort fetch of the class-type / time-slot picker.
+
+    Returns ``None`` when any dependency is missing (cookie stack not
+    wired, no cookie on file, WodBuster unreachable). The form
+    template renders free-text inputs in that state.
+    """
+    store = getattr(request.app.state, "cookie_store", None)
+    client = getattr(request.app.state, "wodbuster_client", None)
+    if not isinstance(store, CookieStore) or not isinstance(client, WodBusterClient):
+        return None
+    return fetch_available_classes(store, client, operator_id)
+
+
 def _render_form(
     request: Request,
     *,
+    template: str,
     heading: str,
     action_url: str,
-    form_values: dict[str, str],
-    errors: dict[str, str],
+    form_values: Mapping[str, object],
+    errors: Mapping[str, str],
+    picker: AvailableClasses | None,
     delete_url: str | None = None,
     status_code: int = 200,
 ) -> Response:
-    """Render the rule form (create or edit)."""
     templates = _templates(request)
     return templates.TemplateResponse(
         request=request,
-        name="rules/form.html",
+        name=template,
         context={
             "heading": heading,
             "action_url": action_url,
@@ -93,6 +117,9 @@ def _render_form(
             "errors": errors,
             "delete_url": delete_url,
             "day_labels": _DAY_LABELS,
+            "picker_class_types": picker.class_types if picker else [],
+            "picker_time_slots": picker.time_slots if picker else _TIME_FALLBACK,
+            "picker_unavailable": picker is None,
             "csrf_token": get_csrf_token(request) or "",
         },
         status_code=status_code,
@@ -107,22 +134,20 @@ def rules_list(
     templates = _templates(request)
     with get_session() as session:
         rules = list_rules_for_operator(session, operator_id)
-        # Materialise the render context inside the session so lazy
-        # attribute loads on ``preferences`` succeed even after the
-        # session closes on `with` exit.
         rows = [
             {
                 "id": rule.id,
                 "day_label": _DAY_LABELS[rule.day_of_week],
+                "day_of_week": rule.day_of_week,
                 "window_offset_hours": rule.window_offset_hours,
                 "active": rule.active,
-                "preferences": [
-                    {
-                        "class_type": p.class_type,
-                        "target_time_slot": p.target_time_slot,
-                    }
-                    for p in rule.preferences
-                ],
+                # All preferences on a given rule share the same
+                # target_time_slot in the new form model, so surfacing
+                # one is enough for the list view.
+                "time_slot": (
+                    rule.preferences[0].target_time_slot if rule.preferences else None
+                ),
+                "class_types": [p.class_type for p in rule.preferences],
             }
             for rule in rules
         ]
@@ -140,14 +165,16 @@ def rules_list(
 def rules_new(
     request: Request, operator_id: int = Depends(require_session)
 ) -> Response:
-    """Render an empty rule form."""
-    _ = operator_id  # auth-only; nothing operator-scoped to load
+    """Render an empty create form pre-seeded with the picker options."""
+    picker = _picker_or_none(request, operator_id)
     return _render_form(
         request,
-        heading="Create rule",
+        template="rules/create.html",
+        heading="New rule",
         action_url="/rules",
         form_values={},
         errors={},
+        picker=picker,
     )
 
 
@@ -155,90 +182,56 @@ def rules_new(
 async def rules_create(
     request: Request, operator_id: int = Depends(require_session)
 ) -> Response:
-    """Persist a new rule (or re-render the form on validation failure)."""
-    form_data = dict(await request.form())
-    parsed = parse_rule_form(_str_only(form_data))
+    """Fan-out create: N rules for N selected days."""
+    form_data = _str_only(dict(await request.form()))
+    parsed = parse_create_rule_form(form_data)
 
     if not parsed.is_valid:
+        picker = _picker_or_none(request, operator_id)
         return _render_form(
             request,
-            heading="Create rule",
+            template="rules/create.html",
+            heading="New rule",
             action_url="/rules",
-            form_values=_str_only(form_data),
+            form_values=form_data,
             errors=parsed.errors,
+            picker=picker,
             status_code=422,
         )
 
-    assert parsed.day_of_week is not None
-    assert parsed.window_offset_hours is not None
+    assert parsed.time_slot is not None
+    settings = _settings(request)
     with get_session() as session:
-        create_rule(
+        create_rules_for_days(
             session,
             operator_id=operator_id,
-            day_of_week=parsed.day_of_week,
-            window_offset_hours=parsed.window_offset_hours,
+            days_of_week=parsed.days_of_week,
+            time_slot=parsed.time_slot,
             preferences=parsed.preferences,
+            window_offset_hours=settings.wodbuster_booking_lead_hours,
         )
 
     return RedirectResponse(url="/rules", status_code=303)
 
 
-@router.get("/api/schema-debug", name="rules_api_schema_debug")
-def rules_api_schema_debug(
+@router.get("/api/classes", name="rules_api_classes")
+def rules_api_classes(
     request: Request, operator_id: int = Depends(require_session)
 ) -> Response:
-    """Return a PII-redacted shape summary of ``LoadClass.ashx``.
+    """Return the distinct class-types and time-slots from the gym schedule.
 
-    Temporary endpoint used to discover the class-type and time-slot
-    field names for the rules form uplift. Delete once
-    ``GET /rules/api/classes`` lands in the follow-up PR.
-
-    Requires the cookie stack to be wired (``/cookie`` path already
-    503s the same way when it is not). Returns:
-
-    - ``top_level_keys``: keys of the top-level response object.
-    - ``top_level_summary``: shape summary two levels deep with
-      ``AtletasEntrenando``-style PII fields redacted.
-
-    Route lives at ``/rules/api/schema-debug`` — registered above
-    ``/{rule_id}`` so FastAPI does not try to parse ``api`` as int.
+    Consumed both by the form (server-side render seeds the dropdowns)
+    and available for future HTMX refreshes. Failure modes collapse
+    to an empty payload so the client can render its fallback.
     """
-    store = getattr(request.app.state, "cookie_store", None)
-    client = getattr(request.app.state, "wodbuster_client", None)
-    if store is None or client is None:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "cookie store or WodBuster client not configured; "
-                "set WODBUSTER_GYM, WODBUSTER_IDU and the cookie key."
-            ),
-        )
-    assert isinstance(store, CookieStore)
-    assert isinstance(client, WodBusterClient)
-
-    with get_session() as session:
-        cookie_value = store.load(session, operator_id)
-    if cookie_value is None:
-        raise HTTPException(
-            status_code=409,
-            detail="no cookie on file; paste one at /cookie first.",
-        )
-
-    ticks = _today_ticks_utc()
-    try:
-        loaded = client.load_class(cookie_value, ticks)
-    except WodBusterAuthError as exc:
-        raise HTTPException(status_code=502, detail=f"auth: {exc}") from exc
-    except WodBusterTransportError as exc:
-        raise HTTPException(status_code=502, detail=f"transport: {exc}") from exc
-    except WodBusterProtocolError as exc:
-        raise HTTPException(status_code=502, detail=f"protocol: {exc}") from exc
-
+    picker = _picker_or_none(request, operator_id)
+    if picker is None:
+        return JSONResponse({"class_types": [], "time_slots": [], "available": False})
     return JSONResponse(
         {
-            "ticks": ticks,
-            "top_level_keys": sorted(loaded.payload.keys()),
-            "top_level_summary": summarize_shape(loaded.payload),
+            "class_types": picker.class_types,
+            "time_slots": picker.time_slots,
+            "available": True,
         }
     )
 
@@ -256,12 +249,15 @@ def rules_edit(
             raise HTTPException(status_code=404)
         form_values = _rule_to_form_values(rule)
 
+    picker = _picker_or_none(request, operator_id)
     return _render_form(
         request,
+        template="rules/edit.html",
         heading="Edit rule",
         action_url=f"/rules/{rule_id}",
         form_values=form_values,
         errors={},
+        picker=picker,
         delete_url=f"/rules/{rule_id}/delete",
     )
 
@@ -273,35 +269,38 @@ async def rules_update(
     operator_id: int = Depends(require_session),
 ) -> Response:
     """Update a rule owned by the operator."""
-    form_data = dict(await request.form())
-    parsed = parse_rule_form(_str_only(form_data))
+    form_data = _str_only(dict(await request.form()))
+    parsed = parse_edit_rule_form(form_data)
 
     with get_session() as session:
         rule = get_rule_for_operator(session, operator_id, rule_id)
         if rule is None:
-            # Silently 404 non-owned rules even after form parse so
-            # validation timing does not leak existence.
             raise HTTPException(status_code=404)
 
         if not parsed.is_valid:
+            picker = _picker_or_none(request, operator_id)
             return _render_form(
                 request,
+                template="rules/edit.html",
                 heading="Edit rule",
                 action_url=f"/rules/{rule_id}",
-                form_values=_str_only(form_data),
+                form_values=form_data,
                 errors=parsed.errors,
+                picker=picker,
                 delete_url=f"/rules/{rule_id}/delete",
                 status_code=422,
             )
 
         assert parsed.day_of_week is not None
-        assert parsed.window_offset_hours is not None
+        assert parsed.time_slot is not None
+        settings = _settings(request)
         update_rule(
             session,
             rule,
             day_of_week=parsed.day_of_week,
-            window_offset_hours=parsed.window_offset_hours,
+            time_slot=parsed.time_slot,
             preferences=parsed.preferences,
+            window_offset_hours=settings.wodbuster_booking_lead_hours,
         )
 
     return RedirectResponse(url="/rules", status_code=303)
@@ -324,43 +323,33 @@ def rules_delete(
         if rule is None:
             raise HTTPException(status_code=404)
         delete_rule(session, rule)
-
     return RedirectResponse(url="/rules", status_code=303)
 
 
-def _today_ticks_utc() -> int:
-    """Unix timestamp of today at 00:00 UTC (matches Phase 0's ticks)."""
-    now = datetime.now(tz=UTC)
-    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return int(midnight.timestamp())
+def _rule_to_form_values(rule: SchedulerRule) -> dict[str, str]:
+    """Convert a loaded rule into the flat form-values dict for edit.
 
-
-def _rule_to_form_values(rule) -> dict[str, str]:  # type: ignore[no-untyped-def]
-    """Convert a loaded rule into the flat form-values dict.
-
-    The template renders every field from this dict so the create and
-    edit flows use the same partial.
+    The edit form uses ``day_of_week`` (single select), ``time_slot``,
+    and up to 5 ``preference_{n}_class_type`` slots. Time is
+    reconstructed from the first preference's ``target_time_slot`` —
+    all preferences on a rule share the same slot under the new form
+    model.
     """
-    values: dict[str, str] = {
-        "day_of_week": str(rule.day_of_week),
-        "window_offset_hours": str(rule.window_offset_hours),
-    }
+    values: dict[str, str] = {"day_of_week": str(rule.day_of_week)}
+    if rule.preferences:
+        values["time_slot"] = rule.preferences[0].target_time_slot
     for pref in rule.preferences:
         values[f"preference_{pref.order_index}_class_type"] = pref.class_type
-        values[f"preference_{pref.order_index}_time_slot"] = pref.target_time_slot
     return values
 
 
 def _str_only(form_data: Mapping[str, object]) -> dict[str, str]:
-    """Coerce Starlette FormData into a plain ``str -> str`` dict.
-
-    ``FormData.get`` may return :class:`UploadFile` for file inputs;
-    the rule form only has text inputs but the type-narrowing keeps
-    the parser's contract explicit. Accepts a ``Mapping`` so the
-    caller can pass a ``dict[str, UploadFile | str]`` from
-    ``request.form()`` without an invariance error.
-    """
+    """Filter Starlette FormData to text-only entries."""
     return {k: v for k, v in form_data.items() if isinstance(v, str)}
+
+
+# Silence "imported but unused" for the type-narrowing import.
+_ = PreferenceInput
 
 
 __all__ = ["router"]

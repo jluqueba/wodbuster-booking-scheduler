@@ -1,15 +1,19 @@
-"""Scheduler rule persistence (US5.2-5.5).
+"""Scheduler rule persistence (US-005).
 
 Handles the four CRUD operations against ``scheduler_rule`` and its
 ``class_preference`` children. Session and transaction management is
 the caller's responsibility (route handlers open a session per
 request).
 
-Ownership check policy: an operator can only see or mutate their own
-rules. Routes call :func:`get_rule_for_operator` which returns ``None``
-when the rule id does not belong to the operator; the route surfaces
-that as a 404 rather than a 403 so we do not confirm the row's
-existence to an unauthorized caller (CC-012).
+Multi-day fan-out lives in :func:`create_rules_for_days`: when the
+operator ticks Mon+Wed+Fri, that function inserts three sibling rows
+that share the same time slot, preferences, and offset. This keeps
+the schema unchanged (one row per day) while offering the operator a
+"one form, many days" experience.
+
+Ownership: a rule can only be seen or mutated by its owner. Callers
+translate a ``None`` from :func:`get_rule_for_operator` into a 404 so
+we do not confirm existence to an unauthorised caller (CC-012).
 """
 
 from __future__ import annotations
@@ -26,13 +30,13 @@ from .forms import PreferenceInput
 def list_rules_for_operator(
     session: Session, operator_id: int
 ) -> Sequence[SchedulerRule]:
-    """Return every rule the operator owns, newest first."""
+    """Return every rule the operator owns, ordered by day of week."""
     return (
         session.execute(
             select(SchedulerRule)
             .where(SchedulerRule.operator_id == operator_id)
             .options(selectinload(SchedulerRule.preferences))
-            .order_by(SchedulerRule.created_at.desc())
+            .order_by(SchedulerRule.day_of_week, SchedulerRule.created_at)
         )
         .scalars()
         .all()
@@ -42,11 +46,7 @@ def list_rules_for_operator(
 def get_rule_for_operator(
     session: Session, operator_id: int, rule_id: int
 ) -> SchedulerRule | None:
-    """Return the rule if it exists AND belongs to the operator.
-
-    Returns ``None`` on either miss. Routes translate the ``None`` case
-    into a 404, which is what an unauthorized caller sees.
-    """
+    """Return the rule if it exists AND belongs to the operator."""
     return session.scalar(
         select(SchedulerRule)
         .where(
@@ -57,37 +57,44 @@ def get_rule_for_operator(
     )
 
 
-def create_rule(
+def create_rules_for_days(
     session: Session,
     *,
     operator_id: int,
-    day_of_week: int,
-    window_offset_hours: int,
+    days_of_week: Sequence[int],
+    time_slot: str,
     preferences: Sequence[PreferenceInput],
-) -> SchedulerRule:
-    """Insert a rule and its preferences in one transactional unit.
+    window_offset_hours: int,
+) -> list[SchedulerRule]:
+    """Insert one rule per day-of-week; all share time / prefs / offset.
 
-    Caller commits. Enforces the ``uq_class_preference_rule_order``
-    invariant implicitly because :func:`parse_rule_form` assigns
-    ``order_index`` positionally, without gaps.
+    ``preferences`` are class-type-only at the form layer; here we
+    denormalise ``time_slot`` into every :class:`ClassPreference`'s
+    ``target_time_slot`` so downstream readers (the alert evaluator's
+    :func:`compute_next_window`) keep working unchanged.
+
+    Caller commits.
     """
-    rule = SchedulerRule(
-        operator_id=operator_id,
-        day_of_week=day_of_week,
-        window_offset_hours=window_offset_hours,
-        active=True,
-        preferences=[
-            ClassPreference(
-                order_index=pref.order_index,
-                class_type=pref.class_type,
-                target_time_slot=pref.target_time_slot,
-            )
-            for pref in preferences
-        ],
-    )
-    session.add(rule)
-    session.flush()  # populate rule.id for the caller (redirect target)
-    return rule
+    rules: list[SchedulerRule] = []
+    for day in days_of_week:
+        rule = SchedulerRule(
+            operator_id=operator_id,
+            day_of_week=day,
+            window_offset_hours=window_offset_hours,
+            active=True,
+            preferences=[
+                ClassPreference(
+                    order_index=pref.order_index,
+                    class_type=pref.class_type,
+                    target_time_slot=time_slot,
+                )
+                for pref in preferences
+            ],
+        )
+        session.add(rule)
+        rules.append(rule)
+    session.flush()
+    return rules
 
 
 def update_rule(
@@ -95,22 +102,20 @@ def update_rule(
     rule: SchedulerRule,
     *,
     day_of_week: int,
-    window_offset_hours: int,
+    time_slot: str,
     preferences: Sequence[PreferenceInput],
+    window_offset_hours: int,
 ) -> SchedulerRule:
-    """Replace a rule's fields and its full preference list.
+    """Replace one rule's fields and its full preference list.
 
-    The preference list is replaced wholesale rather than diffed: the
-    order is meaningful (primary + fallbacks) and a diff-style update
-    would need to handle deletion, reinsertion, and reordering
-    together anyway. Wholesale replace is easier to reason about and
-    the row counts here are small (single-digit).
+    Edit is per-row on purpose: if a rule was originally created via
+    fan-out (Mon+Wed+Fri) the operator edits each row individually.
+    Group-edit UX can layer on top later without changing the
+    persistence contract.
     """
     rule.day_of_week = day_of_week
     rule.window_offset_hours = window_offset_hours
 
-    # Clear existing preferences via the collection so the
-    # cascade="all, delete-orphan" relationship deletes the old rows.
     rule.preferences.clear()
     session.flush()
 
@@ -119,26 +124,19 @@ def update_rule(
             ClassPreference(
                 order_index=pref.order_index,
                 class_type=pref.class_type,
-                target_time_slot=pref.target_time_slot,
+                target_time_slot=time_slot,
             )
         )
     return rule
 
 
 def delete_rule(session: Session, rule: SchedulerRule) -> None:
-    """Remove the rule and its preferences.
-
-    Hard-delete: the ``cascade="all, delete-orphan"`` relationship
-    cleans up ``class_preference`` rows automatically. The plan
-    allows soft-delete via ``active=False`` but for now we hard-delete
-    so the operator's rule list stays uncluttered; when audit history
-    matters we can switch to soft-delete without changing the route.
-    """
+    """Remove the rule and its preferences (cascade)."""
     session.delete(rule)
 
 
 __all__ = [
-    "create_rule",
+    "create_rules_for_days",
     "delete_rule",
     "get_rule_for_operator",
     "list_rules_for_operator",
