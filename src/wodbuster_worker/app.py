@@ -258,11 +258,17 @@ def _register_routes(app: FastAPI) -> None:
         templates: Jinja2Templates = request.app.state.templates
         operator_id = request.session.get("operator_id")
         if isinstance(operator_id, int):
+            # ``display_name`` was seated on the session by the OAuth
+            # callback (auth/routes.py) alongside ``operator_id``. Fall
+            # back to an empty string when it is missing rather than
+            # a placeholder — the template picks its own copy.
+            display_name = request.session.get("display_name") or ""
             return templates.TemplateResponse(
                 request=request,
                 name="dashboard.html",
                 context={
                     "operator_id": operator_id,
+                    "display_name": display_name,
                     "csrf_token": get_csrf_token(request) or "",
                 },
             )

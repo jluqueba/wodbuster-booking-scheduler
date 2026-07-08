@@ -53,7 +53,7 @@ def test_dashboard_shows_only_own_operator_id(
     seed_operator: Callable[..., tuple[int, str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Operator A sees their own operator_id; B's data does not appear."""
+    """Operator A sees their own identity markers; B's data does not appear."""
     op_a_id, subject_a = seed_operator(provider="microsoft", display_name="Alice")
     op_b_id, _subject_b = seed_operator(provider="microsoft", display_name="Bob-Doe-42")
     assert op_a_id != op_b_id
@@ -64,9 +64,12 @@ def test_dashboard_shows_only_own_operator_id(
 
     assert response.status_code == 200
     body = response.text
-    assert f"<code>{op_a_id}</code>" in body
-    # Neither Bob's operator_id nor his display name appears.
-    assert f"<code>{op_b_id}</code>" not in body
+    # A's display name renders in the "Hero, <name>" greeting.
+    assert "Alice" in body
+    # The dashboard also carries a ``data-operator-id`` marker for A.
+    assert f'data-operator-id="{op_a_id}"' in body
+    # Neither B's operator_id nor his distinctive display name appears.
+    assert f'data-operator-id="{op_b_id}"' not in body
     assert "Bob-Doe-42" not in body
 
 
