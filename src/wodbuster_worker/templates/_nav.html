@@ -12,21 +12,21 @@
     <li>
       <a href="/"
          {% if active_nav == "dashboard" %}aria-current="page"{% endif %}
-      >Dashboard</a>
+      >🏠 Dashboard</a>
     </li>
     <li>
       <a href="/rules"
          {% if active_nav == "rules" %}aria-current="page"{% endif %}
-      >Rules</a>
+      >📅 Rules</a>
     </li>
     <li>
       <a href="/cookie"
          {% if active_nav == "cookie" %}aria-current="page"{% endif %}
-      >Cookie</a>
+      >🍪 Cookie</a>
     </li>
   </ul>
   <form method="post" action="/auth/logout">
     <input type="hidden" name="_csrf" value="{{ csrf_token | default('') }}">
-    <button type="submit" class="wb-nav__logout">Log out</button>
+    <button type="submit" class="wb-nav__logout">Log out 👋</button>
   </form>
 </nav>

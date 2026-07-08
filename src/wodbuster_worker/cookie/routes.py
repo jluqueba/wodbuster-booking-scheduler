@@ -205,7 +205,7 @@ async def cookie_paste(
             close_open_cookie_expiring(session, operator_id, now=verdict.probed_at)
         banner = {
             "level": "valid",
-            "message": "Cookie validated and stored.",
+            "message": "✅ Cookie validated and stored.",
         }
         return _render_partial(request, operator_id, banner=banner)
 
@@ -213,7 +213,7 @@ async def cookie_paste(
         banner = {
             "level": "rejected",
             "message": (
-                "Cookie rejected. Re-copy the .WBAuth value from a signed-in "
+                "❌ Cookie rejected. Re-copy the .WBAuth value from a signed-in "
                 "browser session and try again."
             ),
         }
@@ -225,7 +225,7 @@ async def cookie_paste(
     banner = {
         "level": "unknown",
         "message": (
-            "Could not validate the cookie right now. Try again in a minute; "
+            "⚠️ Could not validate the cookie right now. Try again in a minute; "
             "your stored cookie was not touched."
         ),
     }

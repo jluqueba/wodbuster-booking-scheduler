@@ -224,6 +224,12 @@ hr {
   color: var(--wb-accent);
   margin-bottom: 0.3rem;
 }
+/* Accent the operator's real name inside the ``Hero, <name>`` greeting
+   without also colouring the "Hero," lead-in. Keeps the accent
+   applied to a semantic span rather than tinting the whole heading. */
+.wb-title-name {
+  color: var(--wb-accent);
+}
 .wb-page-subtitle {
   color: var(--wb-text-muted);
   margin: 0 0 2rem;

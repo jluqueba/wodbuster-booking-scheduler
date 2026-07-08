@@ -11,30 +11,37 @@
 {% block content %}
   <span class="wb-page-title__eyebrow">Welcome back</span>
   <h1 class="wb-page-title">
-    Operator <code>{{ operator_id }}</code>
+    {# Greeting mixes the "Hero" label with the operator's real
+       display_name (seated on the session by the OAuth callback).
+       Falls back to "Hero" alone when the display name is empty so
+       the page never reads "Hero  " with a stray trailing space. #}
+    Hero{% if display_name %}, <span class="wb-title-name">{{ display_name }}</span>{% endif %} 💪
   </h1>
   <p class="wb-page-subtitle">
     Everything below drives your booking automation. Rules define <em>when</em>,
     the cookie proves <em>who</em>, the heartbeat catches issues before they
     become a missed class.
   </p>
+  <p class="wb-muted" style="font-size: 0.75rem; margin: -1.5rem 0 2rem;" data-operator-id="{{ operator_id }}">
+    Operator #{{ operator_id }}
+  </p>
 
   <div class="wb-feature-grid">
     <a href="/rules" class="wb-card wb-card--interactive">
-      <h3 class="wb-card__title">Rules</h3>
+      <h3 class="wb-card__title">📅 Rules</h3>
       <p class="wb-card__body">
         Manage your recurring weekly bookings and preference chains.
       </p>
     </a>
     <a href="/cookie" class="wb-card wb-card--interactive">
-      <h3 class="wb-card__title">Cookie</h3>
+      <h3 class="wb-card__title">🍪 Cookie</h3>
       <p class="wb-card__body">
         Paste or refresh the <code>.WBAuth</code> value the worker
         uses to authenticate against WodBuster.
       </p>
     </a>
     <div class="wb-card" aria-disabled="true">
-      <h3 class="wb-card__title wb-muted">Reservations · soon</h3>
+      <h3 class="wb-card__title wb-muted">🏋️ Reservations · soon</h3>
       <p class="wb-card__body">
         Weekly calendar of your booking outcomes will land with US-001.
       </p>

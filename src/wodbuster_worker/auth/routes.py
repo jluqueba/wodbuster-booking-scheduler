@@ -164,14 +164,22 @@ async def callback(provider: str, request: Request) -> Response:
 
 @router.post("/logout", name="auth_logout", dependencies=[Depends(verify_csrf)])
 async def logout(request: Request) -> Response:
-    """Clear the session and redirect to the default login flow.
+    """Clear the session and land the operator back on the marketing page.
 
-    CSRF-protected. The response also deletes the ``wodbuster_csrf``
-    cookie so a subsequent request cannot present a stale double-submit
-    value against a fresh session.
+    CSRF-protected. Also deletes the ``wodbuster_csrf`` cookie so a
+    subsequent request cannot present a stale double-submit value
+    against a fresh session.
+
+    The redirect target is ``/`` (the anonymous landing page) rather
+    than ``/auth/{provider}/login``. Going through the OAuth flow
+    would silently re-authenticate the browser (Microsoft still has
+    the operator's SSO cookies), leaving the user apparently "still
+    logged in" from their perspective. Landing on ``/`` shows the
+    marketing hero with a "Sign in" button and requires an intentional
+    click to re-enter the app.
     """
     request.session.clear()
-    response = RedirectResponse(url="/auth/microsoft/login", status_code=302)
+    response = RedirectResponse(url="/", status_code=302)
     response.delete_cookie(key=CSRF_COOKIE_NAME, path="/")
     return response
 

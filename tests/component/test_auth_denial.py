@@ -129,9 +129,12 @@ def test_allow_listed_identity_seats_session(
         assert response.headers["location"] == "/"
 
         # Follow the redirect with the same cookie jar; the dashboard
-        # must return 200 and mention the operator_id (visible only to
+        # must return 200 and identify the operator (visible only to
         # the authenticated user).
         follow = client.get("/")
 
     assert follow.status_code == 200
-    assert f"<code>{operator_id}</code>" in follow.text
+    # The dashboard renders the operator's display_name in the greeting
+    # and carries a ``data-operator-id`` marker for future scoping tests.
+    assert "Alice" in follow.text
+    assert f'data-operator-id="{operator_id}"' in follow.text

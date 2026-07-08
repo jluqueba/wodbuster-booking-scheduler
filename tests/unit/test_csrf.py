@@ -149,7 +149,11 @@ def test_logout_with_valid_csrf_token_redirects(
 
         response = client.post("/auth/logout", headers={"X-CSRF-Token": token})
     assert response.status_code == 302
-    assert response.headers["location"] == "/auth/microsoft/login"
+    # Logout lands on ``/`` (the anonymous landing hero) rather than on
+    # ``/auth/{provider}/login`` — going through the OAuth flow would
+    # silently re-authenticate via Microsoft's browser cookies and the
+    # operator would appear "still logged in".
+    assert response.headers["location"] == "/"
     # The CSRF cookie is unset on logout.
     set_cookie = response.headers.get_list("set-cookie")
     assert any(CSRF_COOKIE_NAME in c and "Max-Age=0" in c for c in set_cookie)
