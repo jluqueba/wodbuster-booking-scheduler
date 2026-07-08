@@ -373,9 +373,12 @@ def test_edit_form_prefills_current_values(
         response = client.get(f"/rules/{rule_id}")
 
     assert response.status_code == 200
-    # Day of week option selected.
-    assert 'value="2"\n              selected' in response.text or (
-        'value="2" selected' in response.text
+    # Day of week option is selected (accept any whitespace between
+    # ``value="2"`` and the ``selected`` attribute).
+    import re
+
+    assert re.search(r'value="2"\s+selected', response.text), (
+        "expected the Wednesday option to be pre-selected"
     )
     # Preference values echoed.
     assert 'value="WOD"' in response.text

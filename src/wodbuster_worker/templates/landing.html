@@ -1,0 +1,48 @@
+{# Landing page for unauthenticated visitors. Signed-in operators see
+   dashboard.html instead — the branching happens in ``app.py``'s
+   index route. #}
+{% extends "base.html" %}
+
+{% block title %}WodBuster Booking Worker — sign in{% endblock %}
+{% block body_class %}wb-body--landing{% endblock %}
+
+{% block content %}
+  <section class="wb-hero">
+    <span class="wb-hero__eyebrow">Booking on autopilot</span>
+    <h1 class="wb-hero__title">
+      Never miss a <span class="wb-hero__title-accent">WOD</span>.
+    </h1>
+    <p class="wb-hero__subtitle">
+      Set a rule once. Paste a cookie. The worker grabs your class the
+      moment booking opens and pings your phone when it needs you.
+    </p>
+    <a href="/auth/microsoft/login" class="wb-hero__cta">
+      Sign in with Microsoft
+    </a>
+  </section>
+
+  <div class="wb-feature-grid">
+    <div class="wb-card">
+      <h3 class="wb-card__title">Recurring rules</h3>
+      <p class="wb-card__body">
+        One rule per day-of-week with a preference chain of class types.
+        Rule changes take effect on the next window.
+      </p>
+    </div>
+    <div class="wb-card">
+      <h3 class="wb-card__title">Cookie heartbeat</h3>
+      <p class="wb-card__body">
+        Hourly probe against WodBuster. Projects expiry, alerts you
+        24 hours before the next booking window if the cookie is
+        about to die.
+      </p>
+    </div>
+    <div class="wb-card">
+      <h3 class="wb-card__title">Dual-channel notifications</h3>
+      <p class="wb-card__body">
+        Every outcome shows up as a banner in-app and a message on
+        Telegram. Never surprise-fail on a Monday.
+      </p>
+    </div>
+  </div>
+{% endblock %}

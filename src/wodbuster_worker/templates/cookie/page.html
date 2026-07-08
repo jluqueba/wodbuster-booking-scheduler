@@ -1,59 +1,48 @@
-{# Full cookie paste-and-validate page.
+{# Cookie paste-and-validate page. #}
+{% extends "base.html" %}
 
-   Wraps the reusable status partial (``_status.html``) inside the
-   standard chrome and paste form. HTMX targets the ``#cookie-status``
-   region so the POST reply is scoped to the status card.
-#}
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Cookie — WodBuster Booking Worker</title>
-    <meta name="csrf-token" content="{{ csrf_token }}">
-    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
-    <style>
-      body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
-      textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 0.85rem; }
-      button { padding: 0.5rem 1rem; }
-      .banner { padding: 0.75rem 1rem; margin-bottom: 1rem; border-left: 4px solid; }
-      .banner-valid    { border-color: #2e7d32; background: #eef7ee; }
-      .banner-rejected { border-color: #c62828; background: #fdecea; }
-      .banner-unknown  { border-color: #ef6c00; background: #fff4e5; }
-      .status-card { border: 1px solid #ddd; padding: 1rem; margin-bottom: 1rem; }
-      .status-empty { color: #666; font-style: italic; }
-      .field-label { font-weight: 600; color: #444; }
-      dl { margin: 0; }
-      dt { font-weight: 600; margin-top: 0.5rem; }
-      dd { margin: 0; }
-    </style>
-  </head>
-  <body hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
-    <h1>Cookie</h1>
-    <p>
-      Paste the <code>.WBAuth</code> value from a signed-in WodBuster browser
-      session. The worker validates it against WodBuster, stores it encrypted,
-      and uses it to place bookings on your schedule.
+{% block title %}Cookie — WodBuster Booking Worker{% endblock %}
+
+{% block nav %}
+  {% set active_nav = "cookie" %}
+  {% include "_nav.html" %}
+{% endblock %}
+
+{% block content %}
+  <span class="wb-page-title__eyebrow">Session</span>
+  <h1 class="wb-page-title">Cookie</h1>
+  <p class="wb-page-subtitle">
+    Paste the <code>.WBAuth</code> value from a signed-in WodBuster
+    browser session. The worker validates it, stores it encrypted,
+    and uses it to place bookings on your schedule.
+  </p>
+
+  <section id="cookie-status">
+    {% include "cookie/_status.html" %}
+  </section>
+
+  <form
+    class="wb-card"
+    hx-post="/cookie"
+    hx-target="#cookie-status"
+    hx-swap="innerHTML"
+    hx-disabled-elt="find button"
+  >
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label for="cookie_value">.WBAuth value</label>
+    <textarea
+      id="cookie_value"
+      name="cookie_value"
+      rows="4"
+      spellcheck="false"
+      autocomplete="off"
+      placeholder="Paste the .WBAuth cookie value here..."
+      required
+    ></textarea>
+    <p class="wb-muted" style="font-size: 0.82rem; margin: 0.5rem 0 1rem;">
+      Extract it in devtools: Application → Cookies →
+      <code>.wodbuster.com</code> → <code>.WBAuth</code>.
     </p>
-
-    <section id="cookie-status">
-      {% include "cookie/_status.html" %}
-    </section>
-
-    <form
-      hx-post="/cookie"
-      hx-target="#cookie-status"
-      hx-swap="innerHTML"
-      hx-disabled-elt="find button"
-    >
-      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <label for="cookie_value" class="field-label">.WBAuth value</label>
-      <textarea id="cookie_value" name="cookie_value" rows="4" spellcheck="false" autocomplete="off" required></textarea>
-      <p>
-        <button type="submit">Validate and save</button>
-      </p>
-    </form>
-
-    <p><a href="/">Back to dashboard</a></p>
-  </body>
-</html>
+    <button type="submit" class="wb-btn--primary">Validate and save</button>
+  </form>
+{% endblock %}

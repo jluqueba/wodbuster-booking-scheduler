@@ -98,10 +98,13 @@ def test_callback_denies_non_allow_listed_identity(
 
     # No session cookie set (or set but empty). If Starlette flushed
     # a session cookie, it must not contain an operator_id — the
-    # simplest check is that a follow-up GET / still redirects.
+    # simplest check is that a follow-up GET / still renders the
+    # anonymous landing page (200) with no operator data. If the
+    # session had leaked, the branch would flip to the dashboard.
     with TestClient(app, follow_redirects=False, cookies=response.cookies) as client:
         follow = client.get("/")
-    assert follow.status_code == 302
+    assert follow.status_code == 200
+    assert "Sign in with Microsoft" in follow.text
 
 
 def test_allow_listed_identity_seats_session(

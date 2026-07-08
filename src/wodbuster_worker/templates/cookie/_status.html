@@ -1,15 +1,7 @@
-{# Cookie status card partial.
+{# Cookie status card partial (HTMX swap target).
 
-   Rendered on its own for the HTMX POST swap and included inside
-   ``page.html`` for the initial GET. Owns two branches:
-
-   - No cookie on file: prompt to paste.
-   - Cookie on file: show pasted_at / last_validated_at / projected_ttl_at
-     / last_probe_status.
-
-   Also renders an optional banner supplied by the POST handler with
-   a per-verdict tone (valid / rejected / unknown).
-#}
+   Rendered on its own for the POST response and included inside
+   page.html on the initial GET. #}
 {% if banner %}
   <div class="banner banner-{{ banner.level }}" role="status">
     {{ banner.message }}
@@ -18,20 +10,26 @@
 
 <div class="status-card">
   {% if not has_cookie %}
-    <p class="status-empty">No cookie on file yet. Paste one below to enable booking.</p>
+    <p class="status-empty">
+      No cookie on file yet. Paste one below to enable booking.
+    </p>
   {% else %}
     <dl>
       <dt>Pasted</dt>
-      <dd>{% if pasted_at %}{{ pasted_at.isoformat(sep=" ", timespec="seconds") }}{% else %}—{% endif %}</dd>
+      <dd class="wb-tabular">{% if pasted_at %}{{ pasted_at.isoformat(sep=" ", timespec="seconds") }}{% else %}—{% endif %}</dd>
 
       <dt>Last validated</dt>
-      <dd>{% if last_validated_at %}{{ last_validated_at.isoformat(sep=" ", timespec="seconds") }}{% else %}—{% endif %}</dd>
+      <dd class="wb-tabular">{% if last_validated_at %}{{ last_validated_at.isoformat(sep=" ", timespec="seconds") }}{% else %}—{% endif %}</dd>
 
       <dt>Projected expiry</dt>
-      <dd>{% if projected_ttl_at %}{{ projected_ttl_at.isoformat(sep=" ", timespec="seconds") }}{% else %}awaiting first heartbeat{% endif %}</dd>
+      <dd class="wb-tabular">{% if projected_ttl_at %}{{ projected_ttl_at.isoformat(sep=" ", timespec="seconds") }}{% else %}<span class="wb-muted">awaiting first heartbeat</span>{% endif %}</dd>
 
       <dt>Last probe</dt>
-      <dd>{{ last_probe_status or "unknown" }}</dd>
+      <dd>
+        <span class="wb-chip {% if last_probe_status == 'valid' %}wb-chip--accent{% else %}wb-chip--muted{% endif %}">
+          {{ last_probe_status or "unknown" }}
+        </span>
+      </dd>
     </dl>
   {% endif %}
 </div>
