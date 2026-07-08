@@ -103,6 +103,14 @@ class Settings(BaseSettings):
     wodbuster_gym: str | None = None
     wodbuster_idu: str | None = None
 
+    # US-004 heartbeat knobs. ``ceiling`` bounds the pessimistic TTL
+    # projection: on a successful probe the projected expiry cannot be
+    # further than ``now + ceiling`` in the future. Between probes the
+    # projection stays constant, so the effective decay is one day per
+    # calendar day. Plan default is 30 days; expose as a setting so we
+    # can shorten it in tests without patching module constants.
+    cookie_projected_ttl_ceiling_days: int = 30
+
     @model_validator(mode="after")
     def _apply_env_defaults(self) -> Settings:
         """Fill mode-dependent Postgres defaults.
