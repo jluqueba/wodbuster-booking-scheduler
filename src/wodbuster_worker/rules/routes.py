@@ -22,15 +22,24 @@ we do not confirm existence to an unauthorized caller (CC-012).
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
+from ..persistence.cookie_store import CookieStore
 from ..persistence.engine import get_session
+from ..wodbuster_client.client import (
+    WodBusterAuthError,
+    WodBusterClient,
+    WodBusterProtocolError,
+    WodBusterTransportError,
+)
 from .forms import parse_rule_form
+from .schema_debug import summarize_shape
 from .service import (
     create_rule,
     delete_rule,
@@ -174,6 +183,66 @@ async def rules_create(
     return RedirectResponse(url="/rules", status_code=303)
 
 
+@router.get("/api/schema-debug", name="rules_api_schema_debug")
+def rules_api_schema_debug(
+    request: Request, operator_id: int = Depends(require_session)
+) -> Response:
+    """Return a PII-redacted shape summary of ``LoadClass.ashx``.
+
+    Temporary endpoint used to discover the class-type and time-slot
+    field names for the rules form uplift. Delete once
+    ``GET /rules/api/classes`` lands in the follow-up PR.
+
+    Requires the cookie stack to be wired (``/cookie`` path already
+    503s the same way when it is not). Returns:
+
+    - ``top_level_keys``: keys of the top-level response object.
+    - ``top_level_summary``: shape summary two levels deep with
+      ``AtletasEntrenando``-style PII fields redacted.
+
+    Route lives at ``/rules/api/schema-debug`` — registered above
+    ``/{rule_id}`` so FastAPI does not try to parse ``api`` as int.
+    """
+    store = getattr(request.app.state, "cookie_store", None)
+    client = getattr(request.app.state, "wodbuster_client", None)
+    if store is None or client is None:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "cookie store or WodBuster client not configured; "
+                "set WODBUSTER_GYM, WODBUSTER_IDU and the cookie key."
+            ),
+        )
+    assert isinstance(store, CookieStore)
+    assert isinstance(client, WodBusterClient)
+
+    with get_session() as session:
+        cookie_value = store.load(session, operator_id)
+    if cookie_value is None:
+        raise HTTPException(
+            status_code=409,
+            detail="no cookie on file; paste one at /cookie first.",
+        )
+
+    ticks = _today_ticks_utc()
+    try:
+        loaded = client.load_class(cookie_value, ticks)
+    except WodBusterAuthError as exc:
+        raise HTTPException(status_code=502, detail=f"auth: {exc}") from exc
+    except WodBusterTransportError as exc:
+        raise HTTPException(status_code=502, detail=f"transport: {exc}") from exc
+    except WodBusterProtocolError as exc:
+        raise HTTPException(status_code=502, detail=f"protocol: {exc}") from exc
+
+    return JSONResponse(
+        {
+            "ticks": ticks,
+            "top_level_keys": sorted(loaded.payload.keys()),
+            "top_level_summary": summarize_shape(loaded.payload),
+        }
+    )
+
+
 @router.get("/{rule_id}", name="rules_edit")
 def rules_edit(
     rule_id: int,
@@ -257,6 +326,13 @@ def rules_delete(
         delete_rule(session, rule)
 
     return RedirectResponse(url="/rules", status_code=303)
+
+
+def _today_ticks_utc() -> int:
+    """Unix timestamp of today at 00:00 UTC (matches Phase 0's ticks)."""
+    now = datetime.now(tz=UTC)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return int(midnight.timestamp())
 
 
 def _rule_to_form_values(rule) -> dict[str, str]:  # type: ignore[no-untyped-def]
