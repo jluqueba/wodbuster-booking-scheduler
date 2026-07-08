@@ -7,9 +7,10 @@ Verifies CC-011:
 - The response body is empty; no operator data (display name, rule
   names, booking history) leaks through the redirect.
 
-The dashboard route (``/``) is the only protected route in scope for
-US-009 core. As additional routes land, they are added to the
-``PROTECTED_ROUTES`` list below.
+The root path ``/`` is intentionally NOT protected: it renders a
+landing hero for unauthenticated visitors and the operator dashboard
+once the session is seated. Protected routes list ``/cookie`` and
+``/rules`` (added when their user stories landed).
 """
 
 from __future__ import annotations
@@ -21,10 +22,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-# Extended as new protected routes land (rules, cookie-paste, history).
-# For US-009 core only ``/`` exists. Left as a list so future stories
-# can grow it without changing the test structure.
-PROTECTED_ROUTES = ["/"]
+# Routes that MUST 302 to the login flow when unauthenticated.
+PROTECTED_ROUTES = ["/cookie", "/rules"]
 
 
 @pytest.mark.parametrize("path", PROTECTED_ROUTES)
@@ -49,7 +48,24 @@ def test_anonymous_request_redirects_to_login(
     # appears.
     body = response.text
     assert "Alice Wonderland-42" not in body
-    assert "operator" not in body.lower()
+
+
+def test_anonymous_root_renders_landing_page(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+) -> None:
+    """The root path shows a marketing / sign-in landing when anonymous."""
+    _, _ = seed_operator(display_name="Alice Wonderland-42")
+    app = app_factory()
+    with TestClient(app, follow_redirects=False) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    body = response.text
+    # A visible sign-in CTA is present.
+    assert "Sign in with Microsoft" in body
+    # No operator data leaks through the anonymous view.
+    assert "Alice Wonderland-42" not in body
 
 
 def test_health_route_is_public(app_factory: Callable[..., FastAPI]) -> None:

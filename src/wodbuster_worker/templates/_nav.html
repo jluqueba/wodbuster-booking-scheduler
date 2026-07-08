@@ -1,0 +1,32 @@
+{# Top navigation. Rendered by base.html when ``show_nav`` is true.
+
+   The ``active_nav`` context variable determines which link gets the
+   ``aria-current="page"`` marker. Values match the route family:
+   ``dashboard``, ``cookie``, ``rules``.
+#}
+<nav class="wb-nav">
+  <a href="/" class="wb-nav__brand" aria-label="WodBuster Booking Worker">
+    WodBuster
+  </a>
+  <ul class="wb-nav__links">
+    <li>
+      <a href="/"
+         {% if active_nav == "dashboard" %}aria-current="page"{% endif %}
+      >Dashboard</a>
+    </li>
+    <li>
+      <a href="/rules"
+         {% if active_nav == "rules" %}aria-current="page"{% endif %}
+      >Rules</a>
+    </li>
+    <li>
+      <a href="/cookie"
+         {% if active_nav == "cookie" %}aria-current="page"{% endif %}
+      >Cookie</a>
+    </li>
+  </ul>
+  <form method="post" action="/auth/logout">
+    <input type="hidden" name="_csrf" value="{{ csrf_token | default('') }}">
+    <button type="submit" class="wb-nav__logout">Log out</button>
+  </form>
+</nav>

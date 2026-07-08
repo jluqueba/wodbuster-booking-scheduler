@@ -1,0 +1,42 @@
+{# Base layout for every rendered page.
+
+   Extending templates fill three blocks:
+     - title      -> the <title> element
+     - head_extra -> optional stylesheet / meta additions
+     - body_class -> optional class on <body> (e.g. ``wb-body--landing``
+                     when the nav should be omitted)
+     - content    -> everything inside <main>
+
+   The nav is rendered when ``session.operator_id`` is present; anonymous
+   pages (landing, denial) skip it via ``body_class`` and no ``show_nav``.
+#}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}WodBuster Booking Worker{% endblock %}</title>
+    <meta name="csrf-token" content="{{ csrf_token | default('') }}">
+    <link rel="preconnect" href="https://rsms.me">
+    <link href="https://rsms.me/inter/inter.css" rel="stylesheet">
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@picocss/pico@2.0.6/css/pico.min.css">
+    <link rel="stylesheet" href="/static/brand.css">
+    <script src="https://unpkg.com/htmx.org@2.0.3" defer></script>
+    {% block head_extra %}{% endblock %}
+  </head>
+  <body
+    class="{% block body_class %}{% endblock %}"
+    hx-headers='{"X-CSRF-Token": "{{ csrf_token | default('') }}"}'
+  >
+    {% block nav %}
+      {% if show_nav | default(false) %}
+        {% include "_nav.html" %}
+      {% endif %}
+    {% endblock %}
+    <main class="wb-main">
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

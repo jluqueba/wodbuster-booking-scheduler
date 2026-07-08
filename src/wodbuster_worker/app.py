@@ -18,12 +18,13 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .auth.csrf import get_csrf_token
-from .auth.deps import AuthRedirectRequired, require_session
+from .auth.deps import AuthRedirectRequired
 from .auth.oauth import build_oauth
 from .auth.routes import router as auth_router
 from .auth.session import IdleTimeoutMiddleware, build_session_middleware
@@ -41,6 +42,7 @@ from .security.keyvault import Secrets, load_secrets
 from .wodbuster_client.client import WodBusterClient
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+_STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 def _build_cookie_stack(
@@ -239,26 +241,37 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(cookie_router)
     app.include_router(rules_router)
     app.add_api_route("/health", health, methods=["GET"])
+    # Static assets (brand CSS, later JS / images). Mounted after
+    # routers so a stray path collision would surface as an app-side
+    # 404 rather than the static handler swallowing it silently.
+    app.mount(
+        "/static", StaticFiles(directory=str(_STATIC_DIR)), name="static"
+    )
 
     @app.get("/")
-    def index(
-        request: Request, operator_id: int = Depends(require_session)
-    ) -> Response:
-        """Minimal authenticated dashboard.
+    def index(request: Request) -> Response:
+        """Dashboard for signed-in operators; landing hero otherwise.
 
-        Rendered by ``templates/index.html``. The template exposes the
-        session CSRF token via a ``meta`` tag and an ``hx-headers``
-        attribute on ``<body>`` so HTMX-driven forms carry the token
-        automatically.
+        Splitting the two flows here rather than gating with
+        :func:`require_session` gives us a real landing page for the
+        very first sign-in (better than the immediate redirect the
+        gate would produce).
         """
         templates: Jinja2Templates = request.app.state.templates
+        operator_id = request.session.get("operator_id")
+        if isinstance(operator_id, int):
+            return templates.TemplateResponse(
+                request=request,
+                name="dashboard.html",
+                context={
+                    "operator_id": operator_id,
+                    "csrf_token": get_csrf_token(request) or "",
+                },
+            )
         return templates.TemplateResponse(
             request=request,
-            name="index.html",
-            context={
-                "operator_id": operator_id,
-                "csrf_token": get_csrf_token(request) or "",
-            },
+            name="landing.html",
+            context={},
         )
 
 

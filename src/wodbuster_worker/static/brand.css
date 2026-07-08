@@ -1,0 +1,713 @@
+/* ==========================================================================
+   WodBuster Booking Worker — brand stylesheet
+   --------------------------------------------------------------------------
+   Sits on top of Pico.css v2 (loaded before this file). Defines the dark
+   palette, the electric-yellow accent, and the signature components
+   (hero, feature cards, day chips, preference chain, banners).
+
+   All colours are exposed as CSS variables so a future theme swap only
+   touches the ``:root`` block below.
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* Layered backgrounds — deepest to most elevated. */
+  --wb-bg:            #0a0e14;
+  --wb-bg-elevated:   #111827;
+  --wb-bg-card:       #151d2a;
+  --wb-bg-inset:      #0d131c;
+
+  /* Borders */
+  --wb-border:        #1f2937;
+  --wb-border-strong: #334155;
+  --wb-border-focus:  #f8ff40;
+
+  /* Text */
+  --wb-text:          #f1f5f9;
+  --wb-text-muted:    #94a3b8;
+  --wb-text-subtle:   #64748b;
+
+  /* Accent (used sparingly — it is intense at 63% lightness). */
+  --wb-accent:        #f8ff40;
+  --wb-accent-hover:  #e5ec00;
+  --wb-accent-glow:   rgba(248, 255, 64, 0.22);
+  --wb-accent-soft:   rgba(248, 255, 64, 0.10);
+  --wb-accent-ink:    #0a0e14;  /* text colour to place ON --wb-accent */
+
+  /* Semantic status colours (tuned for dark backgrounds). */
+  --wb-success:       #4ade80;
+  --wb-warning:       #fbbf24;
+  --wb-danger:        #f87171;
+  --wb-info:          #60a5fa;
+
+  /* Type + geometry. */
+  --wb-font: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --wb-mono: ui-monospace, "SF Mono", "JetBrains Mono", monospace;
+  --wb-radius:      12px;
+  --wb-radius-sm:   6px;
+  --wb-shadow:      0 1px 2px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.25);
+  --wb-shadow-lg:   0 8px 32px rgba(0,0,0,0.5);
+
+  /* Pico variable overrides — applied everywhere Pico paints. */
+  --pico-background-color: var(--wb-bg);
+  --pico-color: var(--wb-text);
+  --pico-h1-color: var(--wb-text);
+  --pico-h2-color: var(--wb-text);
+  --pico-h3-color: var(--wb-text);
+  --pico-primary: var(--wb-accent);
+  --pico-primary-background: var(--wb-accent);
+  --pico-primary-hover: var(--wb-accent-hover);
+  --pico-primary-hover-background: var(--wb-accent-hover);
+  --pico-primary-focus: var(--wb-accent-glow);
+  --pico-primary-inverse: var(--wb-accent-ink);
+  --pico-form-element-background-color: var(--wb-bg-inset);
+  --pico-form-element-border-color: var(--wb-border);
+  --pico-form-element-active-border-color: var(--wb-accent);
+  --pico-form-element-focus-color: var(--wb-accent-glow);
+  --pico-card-background-color: var(--wb-bg-card);
+  --pico-card-border-color: var(--wb-border);
+  --pico-muted-color: var(--wb-text-muted);
+  --pico-muted-border-color: var(--wb-border);
+  --pico-border-radius: var(--wb-radius);
+}
+
+/* --------------------------------------------------------------------------
+   Global chrome
+   -------------------------------------------------------------------------- */
+
+body {
+  background: var(--wb-bg);
+  color: var(--wb-text);
+  font-family: var(--wb-font);
+  min-height: 100vh;
+  margin: 0;
+}
+
+h1, h2, h3 {
+  letter-spacing: -0.02em;
+}
+
+code {
+  font-family: var(--wb-mono);
+  background: var(--wb-bg-inset);
+  color: var(--wb-accent);
+  padding: 0.1em 0.4em;
+  border-radius: var(--wb-radius-sm);
+  font-size: 0.9em;
+}
+
+a {
+  color: var(--wb-accent);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--wb-accent-hover);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--wb-border);
+  margin: 2rem 0;
+}
+
+/* --------------------------------------------------------------------------
+   Site nav — top strip, translucent glass with blur
+   -------------------------------------------------------------------------- */
+
+.wb-nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.9rem 1.5rem;
+  background: rgba(10, 14, 20, 0.72);
+  border-bottom: 1px solid var(--wb-border);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.wb-nav__brand {
+  font-weight: 700;
+  color: var(--wb-text);
+  font-size: 1.05rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.wb-nav__brand::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--wb-accent);
+  box-shadow: 0 0 8px var(--wb-accent-glow);
+}
+
+.wb-nav__brand:hover {
+  text-decoration: none;
+  color: var(--wb-text);
+}
+
+.wb-nav__links {
+  display: flex;
+  gap: 0.25rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex-grow: 1;
+}
+
+.wb-nav__links a {
+  color: var(--wb-text-muted);
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--wb-radius-sm);
+  font-size: 0.92rem;
+  transition: background 0.15s, color 0.15s;
+}
+.wb-nav__links a:hover {
+  color: var(--wb-text);
+  background: var(--wb-bg-elevated);
+  text-decoration: none;
+}
+.wb-nav__links a[aria-current="page"] {
+  color: var(--wb-accent);
+  background: var(--wb-accent-soft);
+}
+
+.wb-nav__spacer { flex-grow: 1; }
+
+.wb-nav form { display: inline; margin: 0; }
+.wb-nav button.wb-nav__logout {
+  background: transparent;
+  color: var(--wb-text-muted);
+  border: 1px solid var(--wb-border);
+  padding: 0.35rem 0.9rem;
+  border-radius: var(--wb-radius-sm);
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.wb-nav button.wb-nav__logout:hover {
+  color: var(--wb-text);
+  border-color: var(--wb-border-strong);
+}
+
+/* --------------------------------------------------------------------------
+   Main layout
+   -------------------------------------------------------------------------- */
+
+.wb-main {
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+.wb-page-title {
+  font-size: 2rem;
+  margin: 0 0 0.5rem;
+  font-weight: 700;
+}
+.wb-page-title__eyebrow {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--wb-accent);
+  margin-bottom: 0.3rem;
+}
+.wb-page-subtitle {
+  color: var(--wb-text-muted);
+  margin: 0 0 2rem;
+  font-size: 1.02rem;
+}
+
+/* --------------------------------------------------------------------------
+   Cards + feature grid
+   -------------------------------------------------------------------------- */
+
+.wb-card {
+  background: var(--wb-bg-card);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius);
+  padding: 1.4rem 1.5rem;
+  box-shadow: var(--wb-shadow);
+}
+
+.wb-card--interactive {
+  display: block;
+  color: inherit;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.wb-card--interactive:hover {
+  transform: translateY(-2px);
+  border-color: var(--wb-border-strong);
+  box-shadow: var(--wb-shadow-lg);
+  text-decoration: none;
+  color: inherit;
+}
+.wb-card--interactive:hover .wb-card__title {
+  color: var(--wb-accent);
+}
+
+.wb-card__title {
+  font-size: 1.15rem;
+  margin: 0 0 0.4rem;
+  font-weight: 600;
+  transition: color 0.15s;
+}
+.wb-card__body {
+  color: var(--wb-text-muted);
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.wb-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+  margin: 2rem 0;
+}
+
+/* --------------------------------------------------------------------------
+   Landing hero
+   -------------------------------------------------------------------------- */
+
+.wb-hero {
+  position: relative;
+  padding: 5rem 2rem 4rem;
+  text-align: center;
+  overflow: hidden;
+  border-radius: var(--wb-radius);
+  margin-bottom: 2rem;
+  background:
+    radial-gradient(1200px 500px at 50% -100px, var(--wb-accent-glow), transparent 60%),
+    radial-gradient(700px 400px at 80% 120%, rgba(96, 165, 250, 0.15), transparent 60%),
+    var(--wb-bg-elevated);
+  border: 1px solid var(--wb-border);
+}
+
+.wb-hero::before {
+  content: "";
+  position: absolute;
+  inset: -50%;
+  background: conic-gradient(
+    from 90deg,
+    transparent 0deg,
+    rgba(248, 255, 64, 0.06) 90deg,
+    transparent 180deg,
+    rgba(248, 255, 64, 0.06) 270deg,
+    transparent 360deg
+  );
+  animation: wb-spin 24s linear infinite;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.wb-hero > * { position: relative; z-index: 1; }
+
+.wb-hero__eyebrow {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--wb-border-strong);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--wb-accent);
+  background: var(--wb-bg-inset);
+  margin-bottom: 1.5rem;
+}
+
+.wb-hero__title {
+  font-size: clamp(2.2rem, 5vw, 3.4rem);
+  font-weight: 800;
+  line-height: 1.1;
+  margin: 0 0 1rem;
+  letter-spacing: -0.03em;
+}
+.wb-hero__title .wb-hero__title-accent {
+  color: var(--wb-accent);
+}
+
+.wb-hero__subtitle {
+  color: var(--wb-text-muted);
+  font-size: 1.1rem;
+  max-width: 34rem;
+  margin: 0 auto 2rem;
+  line-height: 1.55;
+}
+
+.wb-hero__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.75rem;
+  background: var(--wb-accent);
+  color: var(--wb-accent-ink);
+  font-weight: 600;
+  border-radius: var(--wb-radius-sm);
+  transition: transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 0 0 0 var(--wb-accent-glow);
+  animation: wb-pulse 2.4s ease-in-out infinite;
+}
+.wb-hero__cta:hover {
+  transform: translateY(-1px);
+  text-decoration: none;
+  color: var(--wb-accent-ink);
+  box-shadow: 0 6px 20px var(--wb-accent-glow);
+  animation: none;
+}
+.wb-hero__cta::after { content: "→"; font-weight: 400; }
+
+@keyframes wb-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--wb-accent-glow); }
+  50%      { box-shadow: 0 0 0 12px transparent; }
+}
+@keyframes wb-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* --------------------------------------------------------------------------
+   Buttons (dashboard + forms)
+   -------------------------------------------------------------------------- */
+
+button, .wb-btn, [role="button"] {
+  font-family: var(--wb-font);
+  border-radius: var(--wb-radius-sm);
+  border: 1px solid var(--wb-border-strong);
+  background: var(--wb-bg-elevated);
+  color: var(--wb-text);
+  padding: 0.55rem 1.1rem;
+  font-size: 0.92rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+button:hover:not(:disabled),
+.wb-btn:hover {
+  border-color: var(--wb-border-focus);
+  background: var(--wb-bg-card);
+}
+button.wb-btn--primary,
+.wb-btn--primary {
+  background: var(--wb-accent);
+  color: var(--wb-accent-ink);
+  border-color: var(--wb-accent);
+  font-weight: 600;
+}
+button.wb-btn--primary:hover,
+.wb-btn--primary:hover {
+  background: var(--wb-accent-hover);
+  border-color: var(--wb-accent-hover);
+  color: var(--wb-accent-ink);
+}
+button.wb-btn--danger,
+.wb-btn--danger {
+  color: var(--wb-danger);
+  border-color: transparent;
+  background: transparent;
+}
+button.wb-btn--danger:hover,
+.wb-btn--danger:hover {
+  background: rgba(248, 113, 113, 0.10);
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+/* --------------------------------------------------------------------------
+   Forms
+   -------------------------------------------------------------------------- */
+
+form:not(.wb-nav form) label {
+  display: block;
+  color: var(--wb-text);
+  font-weight: 500;
+  font-size: 0.88rem;
+  margin-bottom: 0.35rem;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+textarea,
+select {
+  background: var(--wb-bg-inset);
+  color: var(--wb-text);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius-sm);
+  padding: 0.55rem 0.75rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+  width: 100%;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--wb-accent);
+  box-shadow: 0 0 0 3px var(--wb-accent-glow);
+}
+
+textarea {
+  font-family: var(--wb-mono);
+  min-height: 5.5rem;
+  resize: vertical;
+}
+
+fieldset {
+  border: none;
+  padding: 0;
+  margin: 0 0 1.2rem;
+}
+fieldset legend {
+  color: var(--wb-text);
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 0;
+  margin-bottom: 0.6rem;
+}
+
+.wb-field-error {
+  color: var(--wb-danger);
+  font-size: 0.85rem;
+  margin-top: 0.3rem;
+}
+
+.wb-form-error {
+  padding: 0.7rem 0.9rem;
+  border-left: 3px solid var(--wb-danger);
+  background: rgba(248, 113, 113, 0.10);
+  border-radius: var(--wb-radius-sm);
+  margin-bottom: 1rem;
+  color: var(--wb-text);
+}
+
+/* --------------------------------------------------------------------------
+   Banners (cookie flow feedback)
+   -------------------------------------------------------------------------- */
+
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: var(--wb-radius-sm);
+  border: 1px solid var(--wb-border);
+  border-left-width: 3px;
+  background: var(--wb-bg-card);
+  color: var(--wb-text);
+  font-size: 0.94rem;
+}
+.banner::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 0.55em;
+  flex-shrink: 0;
+}
+.banner-valid {
+  border-left-color: var(--wb-success);
+  background: rgba(74, 222, 128, 0.08);
+}
+.banner-valid::before   { background: var(--wb-success); box-shadow: 0 0 8px rgba(74,222,128,0.6); }
+.banner-rejected {
+  border-left-color: var(--wb-danger);
+  background: rgba(248, 113, 113, 0.08);
+}
+.banner-rejected::before { background: var(--wb-danger); box-shadow: 0 0 8px rgba(248,113,113,0.6); }
+.banner-unknown {
+  border-left-color: var(--wb-warning);
+  background: rgba(251, 191, 36, 0.08);
+}
+.banner-unknown::before  { background: var(--wb-warning); box-shadow: 0 0 8px rgba(251,191,36,0.6); }
+
+/* --------------------------------------------------------------------------
+   Status card (cookie page)
+   -------------------------------------------------------------------------- */
+
+.status-card {
+  background: var(--wb-bg-card);
+  border: 1px solid var(--wb-border);
+  padding: 1.2rem 1.4rem;
+  border-radius: var(--wb-radius);
+  margin-bottom: 1.5rem;
+}
+.status-card dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.4rem 1.5rem;
+  margin: 0;
+}
+.status-card dt {
+  color: var(--wb-text-muted);
+  font-weight: 500;
+  font-size: 0.86rem;
+}
+.status-card dd {
+  margin: 0;
+  color: var(--wb-text);
+  font-variant-numeric: tabular-nums;
+}
+.status-empty {
+  color: var(--wb-text-muted);
+  font-style: italic;
+  margin: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Rules — list table + form
+   -------------------------------------------------------------------------- */
+
+.wb-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-bottom: 1.5rem;
+}
+
+.wb-rules-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--wb-bg-card);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius);
+  overflow: hidden;
+}
+.wb-rules-table th,
+.wb-rules-table td {
+  padding: 0.9rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--wb-border);
+  vertical-align: top;
+}
+.wb-rules-table thead th {
+  background: var(--wb-bg-inset);
+  color: var(--wb-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.wb-rules-table tbody tr:last-child td { border-bottom: none; }
+.wb-rules-table tbody tr:hover { background: rgba(248, 255, 64, 0.03); }
+.wb-rules-table .wb-cell-actions {
+  white-space: nowrap;
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.wb-preflist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.wb-preflist li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.9rem;
+}
+.wb-preflist li::before {
+  content: attr(data-index);
+  display: inline-block;
+  min-width: 1.4rem;
+  text-align: center;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  background: var(--wb-bg-inset);
+  color: var(--wb-text-muted);
+  font-family: var(--wb-mono);
+  font-size: 0.72rem;
+}
+
+.wb-empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  background: var(--wb-bg-card);
+  border: 1px dashed var(--wb-border-strong);
+  border-radius: var(--wb-radius);
+  color: var(--wb-text-muted);
+}
+.wb-empty-state__title { color: var(--wb-text); font-size: 1.05rem; margin: 0 0 0.35rem; }
+
+/* --------------------------------------------------------------------------
+   Chips + badges
+   -------------------------------------------------------------------------- */
+
+.wb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.65rem;
+  background: var(--wb-bg-inset);
+  border: 1px solid var(--wb-border);
+  border-radius: 999px;
+  color: var(--wb-text);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+.wb-chip--accent {
+  background: var(--wb-accent-soft);
+  border-color: rgba(248, 255, 64, 0.35);
+  color: var(--wb-accent);
+}
+.wb-chip--muted {
+  color: var(--wb-text-muted);
+}
+
+/* --------------------------------------------------------------------------
+   Denial / error pages
+   -------------------------------------------------------------------------- */
+
+.wb-denied {
+  text-align: center;
+  padding: 5rem 1.5rem;
+  max-width: 32rem;
+  margin: 0 auto;
+}
+.wb-denied h1 {
+  color: var(--wb-danger);
+  margin: 0 0 1rem;
+}
+.wb-denied p {
+  color: var(--wb-text-muted);
+  line-height: 1.6;
+}
+
+/* --------------------------------------------------------------------------
+   Utilities
+   -------------------------------------------------------------------------- */
+
+.wb-mono { font-family: var(--wb-mono); }
+.wb-muted { color: var(--wb-text-muted); }
+.wb-tabular { font-variant-numeric: tabular-nums; }
+.wb-mb-0 { margin-bottom: 0 !important; }
+.wb-mb-lg { margin-bottom: 2rem; }
+
+/* Respect users who prefer no motion. */
+@media (prefers-reduced-motion: reduce) {
+  .wb-hero::before,
+  .wb-hero__cta {
+    animation: none !important;
+  }
+  .wb-card--interactive {
+    transition: none;
+  }
+}

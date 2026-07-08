@@ -1,20 +1,21 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <title>Access denied</title>
-    <style>
-      body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1rem; }
-    </style>
-  </head>
-  <body>
+{# Access denied page — non-allow-listed OAuth identity. #}
+{% extends "base.html" %}
+
+{% block title %}Access denied — WodBuster Booking Worker{% endblock %}
+{% block body_class %}wb-body--denied{% endblock %}
+
+{% block content %}
+  <div class="wb-denied">
     <h1>Access denied</h1>
     <p>
       This account is not authorized to access the WodBuster Booking Worker.
     </p>
     <p>
-      If you believe this is a mistake, contact the operator who set up this
-      deployment.
+      If you believe this is a mistake, contact the operator who set up
+      this deployment.
     </p>
-  </body>
-</html>
+    <p style="margin-top: 2rem;">
+      <a href="/" class="wb-btn">← Back to sign-in</a>
+    </p>
+  </div>
+{% endblock %}
