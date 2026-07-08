@@ -36,6 +36,7 @@ from fastapi.templating import Jinja2Templates
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
+from ..heartbeat.alerts import close_open_cookie_expiring
 from ..persistence.cookie_store import CookieDecryptError, CookieStore
 from ..persistence.engine import get_session
 from ..persistence.models import CookieCredential
@@ -196,6 +197,12 @@ async def cookie_paste(
                 cookie_value,
                 validated_at=verdict.probed_at,
             )
+            # Clear-on-refresh (US4.4): a successful paste means the
+            # operator has dealt with the underlying condition; close
+            # any open ``cookie_expiring`` alert in the same
+            # transaction so the banner disappears immediately rather
+            # than at the next heartbeat.
+            close_open_cookie_expiring(session, operator_id, now=verdict.probed_at)
         banner = {
             "level": "valid",
             "message": "Cookie validated and stored.",
