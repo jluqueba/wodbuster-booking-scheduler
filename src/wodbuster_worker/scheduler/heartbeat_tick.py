@@ -30,6 +30,11 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..heartbeat.alerts import (
+    apply_alert_action,
+    evaluate_cookie_expiring,
+    previous_heartbeat_at,
+)
 from ..heartbeat.probe import HeartbeatOutcome, HeartbeatProbe, NoCookieOnFile
 from ..persistence.models import OperatorProfile
 
@@ -75,12 +80,25 @@ def run_heartbeat_tick(
     for operator_id in ids:
         try:
             with session_factory() as session:
+                # Compute the previous heartbeat's timestamp BEFORE the
+                # probe writes the new row. The alert evaluator uses it
+                # to decide whether a fresh acknowledgment counts as
+                # "since the last heartbeat" (US4.3 suppression rule).
                 outcome = probe.run(session, operator_id)
+                prev_at = previous_heartbeat_at(session, operator_id, outcome.probed_at)
+                action = evaluate_cookie_expiring(
+                    session=session,
+                    operator_id=operator_id,
+                    projected_ttl_at=outcome.projected_ttl_at,
+                    now=outcome.probed_at,
+                    previous_heartbeat_at=prev_at,
+                )
+                alert_id = apply_alert_action(
+                    session, operator_id, action, now=outcome.probed_at
+                )
         except NoCookieOnFile:
             # Normal state for a freshly seeded operator; skip quietly.
-            _log.info(
-                "heartbeat.tick.skipped_no_cookie", operator_id=operator_id
-            )
+            _log.info("heartbeat.tick.skipped_no_cookie", operator_id=operator_id)
             continue
         except Exception as exc:
             # Never let one operator's failure abort the whole tick.
@@ -101,6 +119,8 @@ def run_heartbeat_tick(
                 if outcome.projected_ttl_at
                 else None
             ),
+            alert_action=type(action).__name__,
+            alert_id=alert_id,
         )
         outcomes.append(outcome)
 

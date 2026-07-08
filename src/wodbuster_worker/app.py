@@ -131,9 +131,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.scheduler = None
         if app.state.heartbeat_probe is not None:
             scheduler = build_scheduler()
-            register_heartbeat_job(
-                scheduler, app.state.heartbeat_probe, get_session
-            )
+            register_heartbeat_job(scheduler, app.state.heartbeat_probe, get_session)
             scheduler.start()
             app.state.scheduler = scheduler
     try:

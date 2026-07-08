@@ -18,11 +18,49 @@ from wodbuster_worker.scheduler.heartbeat_tick import run_heartbeat_tick
 
 
 class _FakeSession:
-    """Minimal session shape — the tick body treats it as opaque."""
+    """Minimal session shape — the tick treats it as opaque.
+
+    Since slice 3 wires the alert evaluator into the tick, the fake
+    also has to satisfy the two SQL entry points the evaluator uses:
+    ``scalar`` (for ``compute_next_window`` and ``_open_alert``) and
+    ``execute`` (for the SchedulerRule list). Returning ``None`` /
+    empty for both keeps the alert flow at the ``NoOp`` branch, which
+    is what a tick-orchestration unit test wants: no alert-side work
+    should happen; the tick's job is only to route outcomes.
+    """
 
     def commit(self) -> None: ...
     def rollback(self) -> None: ...
     def close(self) -> None: ...
+
+    def scalar(self, _stmt: Any) -> Any:
+        return None
+
+    def execute(self, _stmt: Any) -> Any:
+        # Duck-typed ``Result`` returning an empty scalars iterator so
+        # the SchedulerRule query in ``compute_next_window`` yields no
+        # rules and the evaluator drops to NoOp.
+        class _EmptyResult:
+            def scalars(self) -> Any:
+                class _EmptyScalars:
+                    def all(self) -> list[Any]:
+                        return []
+
+                return _EmptyScalars()
+
+        return _EmptyResult()
+
+    def add(self, _obj: Any) -> None:
+        # Not exercised in this file (the NoOp path never adds rows),
+        # but included so a future test that flips the fake into an
+        # Emit path gets a clear ``AssertionError`` rather than a
+        # confusing ``AttributeError``.
+        raise AssertionError("_FakeSession.add called; extend the fake")
+
+    def get(self, _cls: Any, _pk: Any) -> Any:
+        return None
+
+    def flush(self) -> None: ...
 
 
 class _FakeSessionFactory:
@@ -95,9 +133,7 @@ def test_tick_runs_probe_for_every_operator_in_order() -> None:
 
 
 def test_tick_skips_operators_without_a_cookie() -> None:
-    probe = _FakeProbe(
-        [NoCookieOnFile(1), _outcome(2), NoCookieOnFile(3), _outcome(4)]
-    )
+    probe = _FakeProbe([NoCookieOnFile(1), _outcome(2), NoCookieOnFile(3), _outcome(4)])
     factory = _FakeSessionFactory()
 
     outcomes = run_heartbeat_tick(
@@ -111,9 +147,7 @@ def test_tick_skips_operators_without_a_cookie() -> None:
 
 def test_tick_isolates_failures_across_operators() -> None:
     # Operator 2 blows up but 1 and 3 still probe successfully.
-    probe = _FakeProbe(
-        [_outcome(1), RuntimeError("simulated"), _outcome(3)]
-    )
+    probe = _FakeProbe([_outcome(1), RuntimeError("simulated"), _outcome(3)])
     factory = _FakeSessionFactory()
 
     outcomes = run_heartbeat_tick(
