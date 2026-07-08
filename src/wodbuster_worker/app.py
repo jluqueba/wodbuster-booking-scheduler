@@ -33,6 +33,7 @@ from .heartbeat.probe import HeartbeatProbe
 from .observability import configure_logging
 from .persistence.cookie_store import CookieStore
 from .persistence.engine import get_session
+from .rules.routes import router as rules_router
 from .scheduler.scheduler import build_scheduler, register_heartbeat_job
 from .security.cipher import Cipher
 from .security.cookie import CookieValidator
@@ -236,6 +237,7 @@ def _register_routes(app: FastAPI) -> None:
     """Register the built-in routes (health, dashboard) and mount ``/auth``."""
     app.include_router(auth_router)
     app.include_router(cookie_router)
+    app.include_router(rules_router)
     app.add_api_route("/health", health, methods=["GET"])
 
     @app.get("/")

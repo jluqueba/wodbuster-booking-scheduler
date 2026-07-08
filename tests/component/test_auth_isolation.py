@@ -74,39 +74,6 @@ def test_dashboard_shows_only_own_operator_id(
     assert "Bob-Doe-42" not in body
 
 
-@pytest.mark.xfail(strict=False, reason="US5.2 /rules/{id} not yet implemented")
-def test_rules_route_denies_cross_operator_read(
-    app_factory: Callable[..., FastAPI],
-    seed_operator: Callable[..., tuple[int, str]],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:  # pragma: no cover - placeholder
-    """Placeholder for US5.2: GET /rules/{other_op_id} → 404 / 403."""
-    _, subject_a = seed_operator(provider="microsoft", display_name="Alice")
-    seed_operator(provider="microsoft", display_name="Bob")
-
-    app = app_factory()
-    with _sign_in(app, "microsoft", subject_a, "Alice", monkeypatch) as client:
-        response = client.get("/rules/999999")
-
-    assert response.status_code in (403, 404)
-
-
-@pytest.mark.xfail(strict=False, reason="US5.2 /rules/{id} POST not yet implemented")
-def test_rules_route_denies_cross_operator_mutation(
-    app_factory: Callable[..., FastAPI],
-    seed_operator: Callable[..., tuple[int, str]],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:  # pragma: no cover - placeholder
-    """Placeholder for US5.2: POST /rules/{other_op_id} → 404 / 403."""
-    _, subject_a = seed_operator(provider="microsoft", display_name="Alice")
-
-    app = app_factory()
-    with _sign_in(app, "microsoft", subject_a, "Alice", monkeypatch) as client:
-        response = client.post("/rules/999999", json={})
-
-    assert response.status_code in (403, 404)
-
-
 @pytest.mark.xfail(strict=False, reason="H.1 GET /history not yet implemented")
 def test_history_route_scopes_to_operator(
     app_factory: Callable[..., FastAPI],
@@ -123,3 +90,44 @@ def test_history_route_scopes_to_operator(
 
     assert response.status_code == 200
     assert "Bob-Doe-42" not in response.text
+
+
+def test_rules_route_denies_cross_operator_read(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CC-012: GET /rules/{other_op_id} for a non-owned rule -> 404.
+
+    The route deliberately returns 404 (not 403) so an unauthorized
+    caller cannot confirm the row's existence.
+    """
+    _, subject_a = seed_operator(provider="microsoft", display_name="Alice")
+    seed_operator(provider="microsoft", display_name="Bob")
+
+    app = app_factory()
+    with _sign_in(app, "microsoft", subject_a, "Alice", monkeypatch) as client:
+        response = client.get("/rules/999999")
+
+    assert response.status_code == 404
+
+
+def test_rules_route_denies_cross_operator_mutation(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CC-012 mutating half: POST /rules/{other_op_id} -> 404 too."""
+    _, subject_a = seed_operator(provider="microsoft", display_name="Alice")
+
+    app = app_factory()
+    with _sign_in(app, "microsoft", subject_a, "Alice", monkeypatch) as client:
+        # A CSRF header is present so the check does not short-circuit
+        # to 403 before the ownership guard runs.
+        response = client.post(
+            "/rules/999999",
+            data={"_csrf": client.cookies.get("wodbuster_csrf", "")},
+            headers={"X-CSRF-Token": client.cookies.get("wodbuster_csrf", "")},
+        )
+
+    assert response.status_code == 404

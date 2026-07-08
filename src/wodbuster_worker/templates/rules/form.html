@@ -1,0 +1,98 @@
+{# Rule form. Reused by GET /rules/new, POST /rules validation-failure,
+   GET /rules/{id}, and POST /rules/{id} validation-failure. #}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ heading }} — WodBuster Booking Worker</title>
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+      form { display: block; }
+      fieldset { margin-bottom: 1rem; }
+      label { display: block; margin-bottom: 0.25rem; font-weight: 600; }
+      input[type=number], select, input[type=text] { width: 100%; padding: 0.4rem; box-sizing: border-box; }
+      .row { display: flex; gap: 0.75rem; margin-bottom: 0.5rem; align-items: flex-end; }
+      .row > div { flex: 1; }
+      .field-error { color: #b71c1c; font-size: 0.85rem; margin-top: 0.2rem; }
+      .form-error { padding: 0.5rem 0.75rem; margin-bottom: 1rem; background: #fdecea; border-left: 4px solid #c62828; }
+      .actions { margin-top: 1rem; }
+      button { padding: 0.5rem 1rem; margin-right: 0.5rem; }
+      .btn-danger { color: #b71c1c; }
+      form.inline { display: inline; }
+    </style>
+  </head>
+  <body hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
+    <h1>{{ heading }}</h1>
+    <p><a href="/rules">← Back to rules</a></p>
+
+    {% if errors.get('preferences') %}
+      <p class="form-error">{{ errors['preferences'] }}</p>
+    {% endif %}
+
+    <form method="post" action="{{ action_url }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+      <fieldset>
+        <label for="day_of_week">Day of week</label>
+        <select id="day_of_week" name="day_of_week" required>
+          <option value=""></option>
+          {% for label in day_labels %}
+            <option value="{{ loop.index0 }}"
+              {% if form_values.get('day_of_week') == (loop.index0 | string) %}selected{% endif %}
+            >{{ label }}</option>
+          {% endfor %}
+        </select>
+        {% if errors.get('day_of_week') %}
+          <p class="field-error">{{ errors['day_of_week'] }}</p>
+        {% endif %}
+      </fieldset>
+
+      <fieldset>
+        <label for="window_offset_hours">Window offset (hours before class start)</label>
+        <input id="window_offset_hours" name="window_offset_hours" type="number" min="0" max="168"
+               value="{{ form_values.get('window_offset_hours', '') }}" required>
+        {% if errors.get('window_offset_hours') %}
+          <p class="field-error">{{ errors['window_offset_hours'] }}</p>
+        {% endif %}
+      </fieldset>
+
+      <fieldset>
+        <legend>Preferences (primary + fallbacks)</legend>
+        {% for slot in range(5) %}
+          <div class="row">
+            <div>
+              <label for="preference_{{ slot }}_class_type">Class type</label>
+              <input id="preference_{{ slot }}_class_type" name="preference_{{ slot }}_class_type" type="text"
+                     value="{{ form_values.get('preference_' ~ slot ~ '_class_type', '') }}"
+                     placeholder="{% if loop.first %}WOD{% else %}(fallback){% endif %}">
+              {% set ct_err = errors.get('preference_' ~ slot ~ '_class_type') %}
+              {% if ct_err %}<p class="field-error">{{ ct_err }}</p>{% endif %}
+            </div>
+            <div>
+              <label for="preference_{{ slot }}_time_slot">Time (HH:MM)</label>
+              <input id="preference_{{ slot }}_time_slot" name="preference_{{ slot }}_time_slot" type="text"
+                     pattern="[0-9]{2}:[0-9]{2}" placeholder="21:30"
+                     value="{{ form_values.get('preference_' ~ slot ~ '_time_slot', '') }}">
+              {% set ts_err = errors.get('preference_' ~ slot ~ '_time_slot') %}
+              {% if ts_err %}<p class="field-error">{{ ts_err }}</p>{% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </fieldset>
+
+      <div class="actions">
+        <button type="submit">Save</button>
+        {% if delete_url %}
+          <form class="inline" method="post" action="{{ delete_url }}"
+                onsubmit="return confirm('Delete this rule?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="btn-danger">Delete</button>
+          </form>
+        {% endif %}
+      </div>
+    </form>
+  </body>
+</html>
