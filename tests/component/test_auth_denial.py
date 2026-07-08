@@ -113,9 +113,7 @@ def test_allow_listed_identity_seats_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Positive-path sanity: an allow-listed identity gets a session."""
-    operator_id, subject_id = seed_operator(
-        provider="microsoft", display_name="Alice"
-    )
+    operator_id, subject_id = seed_operator(provider="microsoft", display_name="Alice")
 
     app = app_factory()
     _patch_callback(

@@ -244,9 +244,7 @@ def _register_routes(app: FastAPI) -> None:
     # Static assets (brand CSS, later JS / images). Mounted after
     # routers so a stray path collision would surface as an app-side
     # 404 rather than the static handler swallowing it silently.
-    app.mount(
-        "/static", StaticFiles(directory=str(_STATIC_DIR)), name="static"
-    )
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
     @app.get("/")
     def index(request: Request) -> Response:

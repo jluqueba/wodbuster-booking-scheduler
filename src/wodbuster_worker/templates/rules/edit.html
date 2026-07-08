@@ -1,0 +1,147 @@
+{# Rule edit form (single day).
+
+   Same layout as create.html except the day-of-week is a single
+   dropdown — an edit retargets one rule, no fan-out.
+#}
+{% extends "base.html" %}
+
+{% block title %}{{ heading }} — WodBuster Booking Worker{% endblock %}
+
+{% block head_extra %}
+<style>
+  .wb-pref-row {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  .wb-pref-row__index {
+    flex: 0 0 1.75rem;
+    text-align: center;
+    color: var(--wb-text-muted);
+    font-family: var(--wb-mono);
+    font-size: 0.78rem;
+    padding: 0.35rem 0;
+  }
+  .wb-picker-note {
+    color: var(--wb-warning);
+    font-size: 0.82rem;
+    margin-top: 0.3rem;
+  }
+</style>
+{% endblock %}
+
+{% block nav %}
+  {% set active_nav = "rules" %}
+  {% include "_nav.html" %}
+{% endblock %}
+
+{% block content %}
+  <span class="wb-page-title__eyebrow">Automation</span>
+  <h1 class="wb-page-title">{{ heading }}</h1>
+  <p class="wb-page-subtitle">
+    <a href="/rules">← Back to rules</a>
+  </p>
+
+  {% if errors.get('preferences') %}
+    <p class="wb-form-error">{{ errors['preferences'] }}</p>
+  {% endif %}
+
+  <form class="wb-card" method="post" action="{{ action_url }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+    <fieldset>
+      <label for="day_of_week">Day of week</label>
+      <select id="day_of_week" name="day_of_week" required>
+        <option value=""></option>
+        {% for label in day_labels %}
+          <option value="{{ loop.index0 }}"
+            {% if form_values.get('day_of_week') == (loop.index0 | string) %}selected{% endif %}
+          >{{ label }}</option>
+        {% endfor %}
+      </select>
+      {% if errors.get('day_of_week') %}
+        <p class="wb-field-error">{{ errors['day_of_week'] }}</p>
+      {% endif %}
+    </fieldset>
+
+    <fieldset>
+      <label for="time_slot">Class time</label>
+      {% if picker_time_slots %}
+        <select id="time_slot" name="time_slot" required>
+          <option value=""></option>
+          {% for slot in picker_time_slots %}
+            <option value="{{ slot }}"
+              {% if form_values.get('time_slot') == slot %}selected{% endif %}
+            >{{ slot }}</option>
+          {% endfor %}
+        </select>
+      {% else %}
+        <input
+          id="time_slot"
+          name="time_slot"
+          type="text"
+          pattern="[0-9]{2}:[0-9]{2}"
+          placeholder="21:30"
+          value="{{ form_values.get('time_slot', '') }}"
+          required
+        >
+        <p class="wb-picker-note">
+          Could not load the gym schedule. Enter the time manually (HH:MM).
+        </p>
+      {% endif %}
+      {% if errors.get('time_slot') %}
+        <p class="wb-field-error">{{ errors['time_slot'] }}</p>
+      {% endif %}
+    </fieldset>
+
+    <fieldset>
+      <legend>Class preferences (primary + fallbacks)</legend>
+      {% for slot in range(5) %}
+        <div class="wb-pref-row">
+          <div class="wb-pref-row__index">#{{ loop.index }}</div>
+          <div style="flex: 1;">
+            {% if picker_class_types %}
+              <select
+                id="preference_{{ slot }}_class_type"
+                name="preference_{{ slot }}_class_type"
+              >
+                <option value=""></option>
+                {% for name in picker_class_types %}
+                  <option value="{{ name }}"
+                    {% if form_values.get('preference_' ~ slot ~ '_class_type') == name %}selected{% endif %}
+                  >{{ name }}</option>
+                {% endfor %}
+              </select>
+            {% else %}
+              <input
+                id="preference_{{ slot }}_class_type"
+                name="preference_{{ slot }}_class_type"
+                type="text"
+                placeholder="{% if loop.first %}WOD{% else %}(fallback){% endif %}"
+                value="{{ form_values.get('preference_' ~ slot ~ '_class_type', '') }}"
+              >
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+      {% if picker_unavailable %}
+        <p class="wb-picker-note">
+          Live class list unavailable. Paste a fresh cookie first
+          (<a href="/cookie">Cookie</a>) to seed the dropdowns.
+        </p>
+      {% endif %}
+    </fieldset>
+
+    <div style="display: flex; gap: 0.75rem; align-items: center; margin-top: 1.5rem;">
+      <button type="submit" class="wb-btn--primary">Save changes</button>
+      {% if delete_url %}
+        <form method="post" action="{{ delete_url }}" style="display: inline; margin: 0;"
+              onsubmit="return confirm('Delete this rule?')">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <button type="submit" class="wb-btn wb-btn--danger">Delete rule</button>
+        </form>
+      {% endif %}
+    </div>
+  </form>
+{% endblock %}

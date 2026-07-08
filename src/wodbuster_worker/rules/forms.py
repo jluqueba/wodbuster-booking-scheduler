@@ -1,17 +1,24 @@
-"""Rule form parsing and validation (US5.3, US5.T3).
+"""Rule form parsing and validation (US-005 form uplift).
 
-The web layer submits a rule as a flat form:
+Two form shapes — create and edit — because they differ on the
+day-of-week field only. Create takes ``day_of_week_{n}`` checkboxes
+for multi-day fan-out (submitting Mon+Wed+Fri creates three rules
+under the hood). Edit takes a single ``day_of_week`` value so the
+operator can retarget one rule without triggering the fan-out.
 
-- ``day_of_week`` — integer 0..6 (Mon..Sun, Python ``datetime.weekday()``)
-- ``window_offset_hours`` — non-negative integer
-- ``preferences[n].class_type`` — non-empty label per non-empty row
-- ``preferences[n].target_time_slot`` — ``HH:MM`` per non-empty row
+Both shapes share:
 
-Rows are indexed by position; empty rows (both fields blank) are
-silently dropped. At least one non-empty row is required.
+- ``time_slot`` — the class start time (``HH:MM``). One value per
+  rule; ``target_time_slot`` on every stored preference is
+  denormalised from this to avoid a schema migration.
+- ``preferences`` — ordered list of class-type strings. At least one
+  is required. Empty slots between filled ones are silently skipped
+  (order_index compacts around them).
 
-This module is deliberately independent of Starlette / FastAPI so the
-unit tests can drive it with plain dicts.
+The window offset is not a form field: it comes from the global
+``settings.wodbuster_booking_lead_hours`` (default 48h). The rule form
+therefore stays "day + time + class types", matching the "super
+simple" ask.
 """
 
 from __future__ import annotations
@@ -19,35 +26,28 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import time
 
-_MAX_WINDOW_OFFSET_HOURS = 168  # one week; anything longer is a data-entry bug
 _MAX_PREFERENCE_SLOTS = 5
+_TRUTHY = {"on", "true", "1", "yes"}
 
 
 @dataclass(frozen=True)
 class PreferenceInput:
-    """Parsed, validated preference row.
+    """Parsed preference row — class type only.
 
-    ``order_index`` is assigned by :func:`parse_rule_form` based on the
-    row's position among *non-empty* rows, so a form that leaves slot
-    1 empty and fills slots 0 and 2 still produces ``order_index=0, 1``.
+    ``order_index`` is assigned by the parser based on the row's
+    position among non-empty rows, not the submitted slot index.
     """
 
     order_index: int
     class_type: str
-    target_time_slot: str  # ``HH:MM``
 
 
 @dataclass
-class RuleFormResult:
-    """Outcome of :func:`parse_rule_form`.
+class CreateRuleFormResult:
+    """Outcome of :func:`parse_create_rule_form`."""
 
-    On success, ``errors`` is empty and the other fields are populated.
-    On failure, ``errors`` maps field name → message; the template
-    renders these next to the offending input.
-    """
-
-    day_of_week: int | None = None
-    window_offset_hours: int | None = None
+    days_of_week: list[int] = field(default_factory=list)
+    time_slot: str | None = None
     preferences: list[PreferenceInput] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
 
@@ -56,26 +56,51 @@ class RuleFormResult:
         return not self.errors
 
 
-def parse_rule_form(form: dict[str, str]) -> RuleFormResult:
-    """Parse and validate a submitted rule form.
+@dataclass
+class EditRuleFormResult:
+    """Outcome of :func:`parse_edit_rule_form`. Single day; no fan-out."""
 
-    ``form`` is the flat form dict. Preference rows use the naming
-    convention ``preference_{index}_class_type`` /
-    ``preference_{index}_time_slot`` for ``index in 0..4``. Empty
-    (both blank) rows are ignored.
-    """
-    result = RuleFormResult()
+    day_of_week: int | None = None
+    time_slot: str | None = None
+    preferences: list[PreferenceInput] = field(default_factory=list)
+    errors: dict[str, str] = field(default_factory=dict)
 
-    result.day_of_week = _parse_day_of_week(form.get("day_of_week"), result.errors)
-    result.window_offset_hours = _parse_offset(
-        form.get("window_offset_hours"), result.errors
-    )
+    @property
+    def is_valid(self) -> bool:
+        return not self.errors
+
+
+def parse_create_rule_form(form: dict[str, str]) -> CreateRuleFormResult:
+    """Parse the create form: multi-day checkboxes + time + class types."""
+    result = CreateRuleFormResult()
+    result.days_of_week = _parse_days_multi(form, result.errors)
+    result.time_slot = _parse_time_slot(form, result.errors)
     result.preferences = _parse_preferences(form, result.errors)
-
     return result
 
 
-def _parse_day_of_week(raw: str | None, errors: dict[str, str]) -> int | None:
+def parse_edit_rule_form(form: dict[str, str]) -> EditRuleFormResult:
+    """Parse the edit form: single day + time + class types."""
+    result = EditRuleFormResult()
+    result.day_of_week = _parse_day_single(form, result.errors)
+    result.time_slot = _parse_time_slot(form, result.errors)
+    result.preferences = _parse_preferences(form, result.errors)
+    return result
+
+
+def _parse_days_multi(form: dict[str, str], errors: dict[str, str]) -> list[int]:
+    days: list[int] = []
+    for day in range(7):
+        value = form.get(f"day_of_week_{day}")
+        if value is not None and value.lower() in _TRUTHY:
+            days.append(day)
+    if not days:
+        errors["days_of_week"] = "Select at least one day of the week."
+    return days
+
+
+def _parse_day_single(form: dict[str, str], errors: dict[str, str]) -> int | None:
+    raw = form.get("day_of_week")
     if raw is None or raw == "":
         errors["day_of_week"] = "Select a day of the week."
         return None
@@ -90,24 +115,15 @@ def _parse_day_of_week(raw: str | None, errors: dict[str, str]) -> int | None:
     return value
 
 
-def _parse_offset(raw: str | None, errors: dict[str, str]) -> int | None:
-    if raw is None or raw == "":
-        errors["window_offset_hours"] = "Enter the window offset in hours."
+def _parse_time_slot(form: dict[str, str], errors: dict[str, str]) -> str | None:
+    raw = (form.get("time_slot") or "").strip()
+    if not raw:
+        errors["time_slot"] = "Pick a time slot."
         return None
-    try:
-        value = int(raw)
-    except ValueError:
-        errors["window_offset_hours"] = "Window offset must be an integer."
+    if not _valid_time_slot(raw):
+        errors["time_slot"] = "Time slot must be in HH:MM format."
         return None
-    if value < 0:
-        errors["window_offset_hours"] = "Window offset cannot be negative."
-        return None
-    if value > _MAX_WINDOW_OFFSET_HOURS:
-        errors["window_offset_hours"] = (
-            f"Window offset cannot exceed {_MAX_WINDOW_OFFSET_HOURS} hours."
-        )
-        return None
-    return value
+    return raw
 
 
 def _parse_preferences(
@@ -117,47 +133,12 @@ def _parse_preferences(
     next_index = 0
     for slot in range(_MAX_PREFERENCE_SLOTS):
         class_type = (form.get(f"preference_{slot}_class_type") or "").strip()
-        time_slot = (form.get(f"preference_{slot}_time_slot") or "").strip()
-
-        if not class_type and not time_slot:
-            # Empty row — silently skip. This lets operators leave
-            # unused fallback slots blank without a validation error.
-            continue
-
-        # Partial row: one field filled, the other empty. That is a
-        # data-entry mistake, not an intentional omission.
         if not class_type:
-            errors[f"preference_{slot}_class_type"] = (
-                "Class type is required when a time slot is set."
-            )
             continue
-        if not time_slot:
-            errors[f"preference_{slot}_time_slot"] = (
-                "Time slot is required when a class type is set."
-            )
-            continue
-
-        if not _valid_time_slot(time_slot):
-            errors[f"preference_{slot}_time_slot"] = (
-                "Time slot must be in HH:MM format."
-            )
-            continue
-
-        parsed.append(
-            PreferenceInput(
-                order_index=next_index,
-                class_type=class_type,
-                target_time_slot=time_slot,
-            )
-        )
+        parsed.append(PreferenceInput(order_index=next_index, class_type=class_type))
         next_index += 1
-
-    if not parsed and "preferences" not in errors:
-        # At least one preference is required. The error is not tied to
-        # a specific slot because a completely blank preference list is
-        # a form-level omission.
-        errors["preferences"] = "At least one preference is required."
-
+    if not parsed:
+        errors["preferences"] = "Add at least one class-type preference."
     return parsed
 
 
@@ -173,7 +154,9 @@ def _valid_time_slot(value: str) -> bool:
 
 
 __all__ = [
+    "CreateRuleFormResult",
+    "EditRuleFormResult",
     "PreferenceInput",
-    "RuleFormResult",
-    "parse_rule_form",
+    "parse_create_rule_form",
+    "parse_edit_rule_form",
 ]
