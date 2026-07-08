@@ -111,6 +111,17 @@ class Settings(BaseSettings):
     # can shorten it in tests without patching module constants.
     cookie_projected_ttl_ceiling_days: int = 30
 
+    # US-005 rule model knob. WodBuster only lets the operator book a
+    # class ``N`` hours before it starts (typical values: 48 or 72).
+    # This is a property of the gym, not of a rule; the rules form
+    # therefore does not expose it. Every new rule takes this global
+    # default; existing rules keep whatever value was persisted before
+    # the form uplift. When a gym changes its booking-lead policy,
+    # bump this setting and (optionally) run a one-shot UPDATE on
+    # ``scheduler_rule`` — a migration would be overkill for a single
+    # operator.
+    wodbuster_booking_lead_hours: int = 48
+
     @model_validator(mode="after")
     def _apply_env_defaults(self) -> Settings:
         """Fill mode-dependent Postgres defaults.

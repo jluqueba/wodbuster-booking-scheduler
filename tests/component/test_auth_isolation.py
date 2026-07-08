@@ -54,12 +54,8 @@ def test_dashboard_shows_only_own_operator_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Operator A sees their own operator_id; B's data does not appear."""
-    op_a_id, subject_a = seed_operator(
-        provider="microsoft", display_name="Alice"
-    )
-    op_b_id, _subject_b = seed_operator(
-        provider="microsoft", display_name="Bob-Doe-42"
-    )
+    op_a_id, subject_a = seed_operator(provider="microsoft", display_name="Alice")
+    op_b_id, _subject_b = seed_operator(provider="microsoft", display_name="Bob-Doe-42")
     assert op_a_id != op_b_id
 
     app = app_factory()
