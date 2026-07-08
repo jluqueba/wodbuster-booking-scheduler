@@ -1,0 +1,72 @@
+{# Rules list page (GET /rules). Rendered by ``rules.routes.rules_list``. #}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Rules — WodBuster Booking Worker</title>
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; }
+      table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
+      th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #ddd; vertical-align: top; }
+      th { background: #f5f5f5; font-weight: 600; }
+      .empty { color: #666; font-style: italic; }
+      .actions { white-space: nowrap; }
+      form.inline { display: inline; }
+      button { padding: 0.3rem 0.7rem; }
+      .btn-danger { color: #b71c1c; }
+      ul.prefs { margin: 0; padding-left: 1rem; }
+      .toolbar { margin-bottom: 1rem; }
+    </style>
+  </head>
+  <body hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
+    <h1>Rules</h1>
+    <p><a href="/">Back to dashboard</a></p>
+
+    <div class="toolbar">
+      <a href="/rules/new"><button type="button">+ New rule</button></a>
+    </div>
+
+    {% if not rules %}
+      <p class="empty">No rules yet. Create one to start automating bookings.</p>
+    {% else %}
+      <table>
+        <thead>
+          <tr>
+            <th>Day</th>
+            <th>Window offset</th>
+            <th>Preferences</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rule in rules %}
+            <tr>
+              <td>{{ rule.day_label }}</td>
+              <td>{{ rule.window_offset_hours }}h before class</td>
+              <td>
+                <ul class="prefs">
+                  {% for pref in rule.preferences %}
+                    <li><code>{{ pref.class_type }}</code> @ {{ pref.target_time_slot }}</li>
+                  {% endfor %}
+                </ul>
+              </td>
+              <td>{% if rule.active %}active{% else %}paused{% endif %}</td>
+              <td class="actions">
+                <a href="/rules/{{ rule.id }}"><button type="button">Edit</button></a>
+                <form class="inline" method="post" action="/rules/{{ rule.id }}/delete"
+                      onsubmit="return confirm('Delete this rule?')">
+                  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                  <button type="submit" class="btn-danger">Delete</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </body>
+</html>
