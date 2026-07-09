@@ -31,11 +31,17 @@ from .auth.session import IdleTimeoutMiddleware, build_session_middleware
 from .config import Settings, get_settings
 from .cookie.routes import router as cookie_router
 from .heartbeat.probe import HeartbeatProbe
+from .notifications.banners import load_banners_for_operator
+from .notifications.dispatcher import NotificationDispatcher
 from .observability import configure_logging
 from .persistence.cookie_store import CookieStore
 from .persistence.engine import get_session
 from .rules.routes import router as rules_router
-from .scheduler.scheduler import build_scheduler, register_heartbeat_job
+from .scheduler.scheduler import (
+    build_scheduler,
+    register_dispatcher_job,
+    register_heartbeat_job,
+)
 from .security.cipher import Cipher
 from .security.cookie import CookieValidator
 from .security.keyvault import Secrets, load_secrets
@@ -127,14 +133,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.heartbeat_probe = _build_heartbeat_probe(
             settings, app.state.cookie_store, app.state.cookie_validator
         )
-    # Scheduler: build lazily and register the heartbeat job only when
-    # its probe dependency is wired. Tests that inject their own
-    # scheduler (or want none at all) can pre-seed ``app.state.scheduler``.
+    # Scheduler: build lazily and register the heartbeat + dispatcher
+    # jobs. Tests that inject their own scheduler (or want none at all)
+    # can pre-seed ``app.state.scheduler``.
     if not hasattr(app.state, "scheduler") or app.state.scheduler is None:
         app.state.scheduler = None
         if app.state.heartbeat_probe is not None:
             scheduler = build_scheduler()
             register_heartbeat_job(scheduler, app.state.heartbeat_probe, get_session)
+            dispatcher = NotificationDispatcher(
+                bot_token=secrets.telegram_bot_token,
+                session_factory=get_session,
+            )
+            app.state.notification_dispatcher = dispatcher
+            register_dispatcher_job(scheduler, dispatcher)
             scheduler.start()
             app.state.scheduler = scheduler
     try:
@@ -263,12 +275,15 @@ def _register_routes(app: FastAPI) -> None:
             # back to an empty string when it is missing rather than
             # a placeholder — the template picks its own copy.
             display_name = request.session.get("display_name") or ""
+            with get_session() as session:
+                banners = load_banners_for_operator(session, operator_id)
             return templates.TemplateResponse(
                 request=request,
                 name="dashboard.html",
                 context={
                     "operator_id": operator_id,
                     "display_name": display_name,
+                    "banners": banners,
                     "csrf_token": get_csrf_token(request) or "",
                 },
             )

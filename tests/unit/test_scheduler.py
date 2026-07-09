@@ -15,9 +15,12 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from wodbuster_worker.heartbeat.probe import HeartbeatProbe
+from wodbuster_worker.notifications.dispatcher import NotificationDispatcher
 from wodbuster_worker.scheduler.scheduler import (
+    DISPATCHER_JOB_ID,
     HEARTBEAT_JOB_ID,
     build_scheduler,
+    register_dispatcher_job,
     register_heartbeat_job,
 )
 
@@ -77,3 +80,38 @@ def test_register_heartbeat_job_is_idempotent_with_custom_interval() -> None:
     job = scheduler.get_job(HEARTBEAT_JOB_ID)
     assert job is not None
     assert job.trigger.interval == timedelta(hours=4)
+
+
+def test_register_dispatcher_job_adds_expected_job() -> None:
+    scheduler = build_scheduler()
+    dispatcher = NotificationDispatcher(
+        bot_token=None, session_factory=_null_session_factory
+    )
+
+    register_dispatcher_job(scheduler, dispatcher)
+
+    job = scheduler.get_job(DISPATCHER_JOB_ID)
+    assert job is not None
+    assert isinstance(job.trigger, IntervalTrigger)
+    # Default cadence: 5 seconds.
+    assert job.trigger.interval == timedelta(seconds=5)
+    assert job.coalesce is True
+    assert job.max_instances == 1
+    # First run scheduled immediately so a startup-time pending row
+    # does not wait a full interval to leave.
+    assert job.next_run_time is not None
+
+
+def test_register_dispatcher_job_is_idempotent() -> None:
+    scheduler = build_scheduler()
+    dispatcher = NotificationDispatcher(
+        bot_token=None, session_factory=_null_session_factory
+    )
+
+    register_dispatcher_job(scheduler, dispatcher, interval_seconds=5)
+    # Re-register with a different cadence: must overwrite, not error.
+    register_dispatcher_job(scheduler, dispatcher, interval_seconds=15)
+
+    job = scheduler.get_job(DISPATCHER_JOB_ID)
+    assert job is not None
+    assert job.trigger.interval == timedelta(seconds=15)
