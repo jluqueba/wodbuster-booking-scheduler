@@ -1,7 +1,12 @@
-"""Unit tests for :func:`compute_next_window` (US4.T2).
+"""Component tests for :func:`compute_next_window` (rule model v2).
 
-Uses the real Postgres via ``postgres_engine`` — the lookahead is a
-SQL-driven function and mocking would just re-implement the query.
+Uses the real Postgres via ``postgres_engine`` — the lookahead is
+schema-driven and mocking would just re-implement the query.
+
+Rule-model-v2 semantics: ``day_of_week`` is the *attendance* day. The
+booking window opens on ``(day_of_week - booking_opens_days_before)
+mod 7`` at ``booking_opens_at``. That trigger instant is what the
+function returns.
 """
 
 from __future__ import annotations
@@ -44,37 +49,34 @@ def _make_rule(
     operator_id: int,
     *,
     day_of_week: int,
-    window_offset_hours: int,
-    time_slot: str = "21:30",
+    booking_opens_days_before: int,
+    booking_opens_at: str = "21:30",
     class_type: str = "WOD",
+    class_time: str = "21:30",
     active: bool = True,
 ) -> int:
-    """Insert a scheduler_rule and one class_preference; return the rule id."""
+    """Insert a scheduler_rule row; return the id."""
     with engine.begin() as conn:
-        rule_id = int(
+        return int(
             conn.execute(
                 text(
                     "INSERT INTO scheduler_rule "
-                    "(operator_id, day_of_week, window_offset_hours, active) "
-                    "VALUES (:op, :dow, :off, :act) RETURNING id"
+                    "(operator_id, day_of_week, class_type, class_time, "
+                    "booking_opens_days_before, booking_opens_at, active) "
+                    "VALUES (:op, :dow, :ct, :ctime, :dbefore, :oat, :act) "
+                    "RETURNING id"
                 ),
                 {
                     "op": operator_id,
                     "dow": day_of_week,
-                    "off": window_offset_hours,
+                    "ct": class_type,
+                    "ctime": class_time,
+                    "dbefore": booking_opens_days_before,
+                    "oat": booking_opens_at,
                     "act": active,
                 },
             ).scalar_one()
         )
-        conn.execute(
-            text(
-                "INSERT INTO class_preference "
-                "(rule_id, order_index, class_type, target_time_slot) "
-                "VALUES (:r, 0, :c, :t)"
-            ),
-            {"r": rule_id, "c": class_type, "t": time_slot},
-        )
-    return rule_id
 
 
 def test_no_rules_returns_none(
@@ -94,27 +96,32 @@ def test_returns_earliest_window_across_active_rules(
     op_id = _make_operator(postgres_engine)
     now = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
 
-    # Rule A: Thursday 21:30, opens 48h before class start => Tue 21:30.
-    # Next Thursday is 2026-07-09 (weekday 3), class 2026-07-09 21:30,
-    # window opens 2026-07-07 21:30. That is in the past, so the
-    # function should roll forward one week to 2026-07-14 21:30.
-    _make_rule(postgres_engine, op_id, day_of_week=3, window_offset_hours=48)
-    # Rule B: Friday 07:30, opens 24h before => Thu 07:30. Next Friday
-    # is 2026-07-10; class 2026-07-10 07:30; window opens 2026-07-09
-    # 07:30. That is in the future.
+    # Rule A: attend Thursday (3), opens 2d before at 21:30
+    # → trigger day = (3-2)%7 = 1 (Tuesday). Next Tuesday is
+    # 2026-07-14 21:30.
+    _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=3,
+        booking_opens_days_before=2,
+        booking_opens_at="21:30",
+    )
+    # Rule B: attend Friday (4), opens 1d before at 07:30
+    # → trigger day = (4-1)%7 = 3 (Thursday). Next Thursday is
+    # 2026-07-09 07:30.
     _make_rule(
         postgres_engine,
         op_id,
         day_of_week=4,
-        window_offset_hours=24,
-        time_slot="07:30",
+        booking_opens_days_before=1,
+        booking_opens_at="07:30",
     )
 
     with session_factory() as session:
         result = compute_next_window(session, op_id, now)
 
-    # Rule B's window (2026-07-09 07:30) is earlier than Rule A's
-    # rolled-forward window (2026-07-14 21:30). Expect Rule B.
+    # Rule B (2026-07-09 07:30) is earlier than Rule A (2026-07-14
+    # 21:30). Expect B.
     assert result == datetime(2026, 7, 9, 7, 30, tzinfo=UTC)
 
 
@@ -124,60 +131,46 @@ def test_inactive_rules_are_ignored(
     op_id = _make_operator(postgres_engine)
     now = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
 
-    # Inactive rule that would otherwise win.
+    # Inactive rule that would otherwise win: attend Thu, opens 1d
+    # before at 14:00 → trigger Wed 14:00 (today, still in future).
     _make_rule(
         postgres_engine,
         op_id,
-        day_of_week=3,  # tomorrow
-        window_offset_hours=1,
-        time_slot="14:00",
+        day_of_week=3,
+        booking_opens_days_before=1,
+        booking_opens_at="14:00",
         active=False,
     )
-    # Active rule further out.
+    # Active rule further out: attend Sat (5), opens 1d before at
+    # 10:00 → trigger Fri 10:00 → 2026-07-10 10:00.
     _make_rule(
         postgres_engine,
         op_id,
-        day_of_week=5,  # Saturday
-        window_offset_hours=24,
-        time_slot="10:00",
+        day_of_week=5,
+        booking_opens_days_before=1,
+        booking_opens_at="10:00",
     )
 
     with session_factory() as session:
         result = compute_next_window(session, op_id, now)
 
-    # Saturday 10:00 minus 24h = Friday 10:00.
     assert result == datetime(2026, 7, 10, 10, 0, tzinfo=UTC)
-
-
-def test_rule_without_preferences_is_skipped(
-    postgres_engine: Engine, session_factory: sessionmaker[Session]
-) -> None:
-    op_id = _make_operator(postgres_engine)
-    now = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
-
-    # Insert a rule with no preferences.
-    with postgres_engine.begin() as conn:
-        conn.execute(
-            text(
-                "INSERT INTO scheduler_rule "
-                "(operator_id, day_of_week, window_offset_hours, active) "
-                "VALUES (:op, 3, 24, true)"
-            ),
-            {"op": op_id},
-        )
-
-    with session_factory() as session:
-        assert compute_next_window(session, op_id, now) is None
 
 
 def test_same_day_future_window_returns_today(
     postgres_engine: Engine, session_factory: sessionmaker[Session]
 ) -> None:
-    # 2026-07-08 Wed 06:00 UTC. Rule Wed 21:30 with 6h offset -> window
-    # opens Wed 15:30 (today, still future).
+    # 2026-07-08 Wed 06:00 UTC. Rule attends Wed, opens 0d before at
+    # 15:30 → trigger Wed 15:30 (today, still future).
     op_id = _make_operator(postgres_engine)
     now = datetime(2026, 7, 8, 6, 0, tzinfo=UTC)
-    _make_rule(postgres_engine, op_id, day_of_week=2, window_offset_hours=6)
+    _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=2,
+        booking_opens_days_before=0,
+        booking_opens_at="15:30",
+    )
 
     with session_factory() as session:
         result = compute_next_window(session, op_id, now)
@@ -195,33 +188,41 @@ def test_naive_datetime_raises() -> None:
 def test_operator_scope_isolation(
     postgres_engine: Engine, session_factory: sessionmaker[Session]
 ) -> None:
-    # Rules on operator B must not affect operator A's lookahead.
     op_a = _make_operator(postgres_engine, name="A")
     op_b = _make_operator(postgres_engine, name="B")
     now = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
 
-    _make_rule(postgres_engine, op_b, day_of_week=3, window_offset_hours=1)  # tomorrow
+    # Op B: attend Thursday, opens 1d before at 20:30 → trigger Wed
+    # 20:30 (today, later).
+    _make_rule(
+        postgres_engine,
+        op_b,
+        day_of_week=3,
+        booking_opens_days_before=1,
+        booking_opens_at="20:30",
+    )
 
     with session_factory() as session:
         assert compute_next_window(session, op_a, now) is None
         assert compute_next_window(session, op_b, now) == datetime(
-            2026, 7, 9, 20, 30, tzinfo=UTC
+            2026, 7, 8, 20, 30, tzinfo=UTC
         )
 
 
-def test_offset_zero_returns_class_start(
+def test_zero_days_before_uses_same_day_as_attendance(
     postgres_engine: Engine, session_factory: sessionmaker[Session]
 ) -> None:
-    # window_offset_hours=0 -> window opens at class start.
+    """``opens_days_before=0`` means the window opens on the class day itself."""
     op_id = _make_operator(postgres_engine)
     now = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
 
+    # Attend Fri (4), opens 0d before at 18:00 → trigger Fri 18:00.
     _make_rule(
         postgres_engine,
         op_id,
-        day_of_week=4,  # Friday
-        window_offset_hours=0,
-        time_slot="18:00",
+        day_of_week=4,
+        booking_opens_days_before=0,
+        booking_opens_at="18:00",
     )
 
     with session_factory() as session:
@@ -233,21 +234,45 @@ def test_offset_zero_returns_class_start(
 def test_rolls_forward_when_first_occurrence_is_before_now(
     postgres_engine: Engine, session_factory: sessionmaker[Session]
 ) -> None:
-    # Wednesday 12:00. Rule for Wednesday 08:00 with 0h offset -> class
-    # was earlier today, window in the past. Should roll forward one week.
+    # Wed 12:00. Attend Wed, opens 0d before at 08:00 → trigger Wed
+    # 08:00 (already passed). Roll forward one week.
     op_id = _make_operator(postgres_engine)
     now = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
 
     _make_rule(
         postgres_engine,
         op_id,
-        day_of_week=2,  # Wed
-        window_offset_hours=0,
-        time_slot="08:00",
+        day_of_week=2,
+        booking_opens_days_before=0,
+        booking_opens_at="08:00",
     )
 
     with session_factory() as session:
         result = compute_next_window(session, op_id, now)
 
-    # Next Wednesday.
     assert result == now.replace(hour=8) + timedelta(days=7)
+
+
+def test_days_before_wraps_across_week_boundary(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """Attending Mon with a 3-day lead fires the previous Friday."""
+    # Wed 2026-07-08 12:00.
+    op_id = _make_operator(postgres_engine)
+    now = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
+
+    # Attend Mon (0), opens 3d before at 22:40
+    # → trigger day = (0-3)%7 = 4 (Friday). Next Friday is 2026-07-10
+    # at 22:40.
+    _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=0,
+        booking_opens_days_before=3,
+        booking_opens_at="22:40",
+    )
+
+    with session_factory() as session:
+        result = compute_next_window(session, op_id, now)
+
+    assert result == datetime(2026, 7, 10, 22, 40, tzinfo=UTC)

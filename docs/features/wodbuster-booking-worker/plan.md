@@ -88,8 +88,7 @@ Persisted in Azure Database for PostgreSQL (Flexible Server, Burstable B1ms, PG 
 |-------|---------|-------------|
 | `operator_profile` | Single human user. | `id`, `display_name`, `telegram_chat_id`, `created_at` |
 | `federated_identity` | One row per allow-listed `(provider, subject_id)` for an operator. | `id`, `operator_id`, `provider`, `subject_id`, `display_name`, `created_at` |
-| `scheduler_rule` | Recurring weekly booking intent. | `id`, `operator_id`, `day_of_week`, `window_offset_hours`, `active`, `created_at`, `updated_at` |
-| `class_preference` | Ordered preferences inside a rule. | `id`, `rule_id`, `order_index`, `class_type`, `target_time_slot` |
+| `scheduler_rule` | Recurring weekly booking intent (rule model v2). | `id`, `operator_id`, `day_of_week`, `class_type`, `class_time`, `booking_opens_days_before`, `booking_opens_at`, `second_shot_class_type`, `second_shot_class_time`, `active`, `created_at`, `updated_at` |
 | `cookie_credential` | Encrypted `.WBAuth` blob for the operator. | `id`, `operator_id`, `ciphertext`, `nonce`, `pasted_at`, `last_validated_at`, `projected_ttl_at`, `last_probe_status` |
 | `booking_outcome` | One row per execution attempt. | `id`, `operator_id`, `rule_id` (nullable), `target_class`, `target_slot`, `attempted_at`, `terminal_status`, `granted_fallback_index` (nullable), `response_payload`, `notified_at` (nullable) |
 | `vacation_window` | Date ranges with skip-and-cancel semantics. | `id`, `operator_id`, `start_date`, `end_date`, `created_at`, `closed_at` (nullable) |

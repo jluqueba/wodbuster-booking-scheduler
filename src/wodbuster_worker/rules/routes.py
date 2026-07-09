@@ -1,4 +1,4 @@
-"""Scheduler rule CRUD routes (US-005 + form uplift).
+"""Scheduler rule CRUD routes (rule model v2).
 
 Routes (all under ``/rules``):
 
@@ -26,17 +26,12 @@ from fastapi.templating import Jinja2Templates
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
-from ..config import Settings
 from ..persistence.cookie_store import CookieStore
 from ..persistence.engine import get_session
 from ..persistence.models import SchedulerRule
 from ..wodbuster_client.client import WodBusterClient
 from .classes import AvailableClasses, fetch_available_classes
-from .forms import (
-    PreferenceInput,
-    parse_create_rule_form,
-    parse_edit_rule_form,
-)
+from .forms import parse_create_rule_form, parse_edit_rule_form
 from .service import (
     create_rules_for_days,
     delete_rule,
@@ -57,10 +52,6 @@ _DAY_LABELS = [
     "Sunday",
 ]
 
-# Fallback picker values used when the WodBuster probe fails. The
-# operator can still submit a rule; free-text entry survives even
-# without live data because the templates fall back to inputs when
-# the option lists are empty.
 _TIME_FALLBACK: list[str] = []
 
 
@@ -72,12 +63,6 @@ def _templates(request: Request) -> Jinja2Templates:
         )
     assert isinstance(templates, Jinja2Templates)
     return templates
-
-
-def _settings(request: Request) -> Settings:
-    settings = getattr(request.app.state, "settings", None)
-    assert isinstance(settings, Settings)
-    return settings
 
 
 def _picker_or_none(request: Request, operator_id: int) -> AvailableClasses | None:
@@ -139,15 +124,13 @@ def rules_list(
                 "id": rule.id,
                 "day_label": _DAY_LABELS[rule.day_of_week],
                 "day_of_week": rule.day_of_week,
-                "window_offset_hours": rule.window_offset_hours,
+                "class_type": rule.class_type,
+                "class_time": rule.class_time,
+                "booking_opens_days_before": rule.booking_opens_days_before,
+                "booking_opens_at": rule.booking_opens_at,
+                "second_shot_class_type": rule.second_shot_class_type,
+                "second_shot_class_time": rule.second_shot_class_time,
                 "active": rule.active,
-                # All preferences on a given rule share the same
-                # target_time_slot in the new form model, so surfacing
-                # one is enough for the list view.
-                "time_slot": (
-                    rule.preferences[0].target_time_slot if rule.preferences else None
-                ),
-                "class_types": [p.class_type for p in rule.preferences],
             }
             for rule in rules
         ]
@@ -172,7 +155,7 @@ def rules_new(
         template="rules/create.html",
         heading="New rule",
         action_url="/rules",
-        form_values={},
+        form_values={"booking_opens_days_before": "2", "booking_opens_at": "21:30"},
         errors={},
         picker=picker,
     )
@@ -199,16 +182,21 @@ async def rules_create(
             status_code=422,
         )
 
-    assert parsed.time_slot is not None
-    settings = _settings(request)
+    assert parsed.class_type is not None
+    assert parsed.class_time is not None
+    assert parsed.booking_opens_days_before is not None
+    assert parsed.booking_opens_at is not None
     with get_session() as session:
         create_rules_for_days(
             session,
             operator_id=operator_id,
             days_of_week=parsed.days_of_week,
-            time_slot=parsed.time_slot,
-            preferences=parsed.preferences,
-            window_offset_hours=settings.wodbuster_booking_lead_hours,
+            class_type=parsed.class_type,
+            class_time=parsed.class_time,
+            booking_opens_days_before=parsed.booking_opens_days_before,
+            booking_opens_at=parsed.booking_opens_at,
+            second_shot_class_type=parsed.second_shot_class_type,
+            second_shot_class_time=parsed.second_shot_class_time,
         )
 
     return RedirectResponse(url="/rules", status_code=303)
@@ -292,15 +280,20 @@ async def rules_update(
             )
 
         assert parsed.day_of_week is not None
-        assert parsed.time_slot is not None
-        settings = _settings(request)
+        assert parsed.class_type is not None
+        assert parsed.class_time is not None
+        assert parsed.booking_opens_days_before is not None
+        assert parsed.booking_opens_at is not None
         update_rule(
             session,
             rule,
             day_of_week=parsed.day_of_week,
-            time_slot=parsed.time_slot,
-            preferences=parsed.preferences,
-            window_offset_hours=settings.wodbuster_booking_lead_hours,
+            class_type=parsed.class_type,
+            class_time=parsed.class_time,
+            booking_opens_days_before=parsed.booking_opens_days_before,
+            booking_opens_at=parsed.booking_opens_at,
+            second_shot_class_type=parsed.second_shot_class_type,
+            second_shot_class_time=parsed.second_shot_class_time,
         )
 
     return RedirectResponse(url="/rules", status_code=303)
@@ -327,29 +320,24 @@ def rules_delete(
 
 
 def _rule_to_form_values(rule: SchedulerRule) -> dict[str, str]:
-    """Convert a loaded rule into the flat form-values dict for edit.
-
-    The edit form uses ``day_of_week`` (single select), ``time_slot``,
-    and up to 5 ``preference_{n}_class_type`` slots. Time is
-    reconstructed from the first preference's ``target_time_slot`` —
-    all preferences on a rule share the same slot under the new form
-    model.
-    """
-    values: dict[str, str] = {"day_of_week": str(rule.day_of_week)}
-    if rule.preferences:
-        values["time_slot"] = rule.preferences[0].target_time_slot
-    for pref in rule.preferences:
-        values[f"preference_{pref.order_index}_class_type"] = pref.class_type
+    """Convert a loaded rule into the flat form-values dict for edit."""
+    values: dict[str, str] = {
+        "day_of_week": str(rule.day_of_week),
+        "class_type": rule.class_type,
+        "class_time": rule.class_time,
+        "booking_opens_days_before": str(rule.booking_opens_days_before),
+        "booking_opens_at": rule.booking_opens_at,
+    }
+    if rule.second_shot_class_type is not None:
+        values["second_shot_class_type"] = rule.second_shot_class_type
+    if rule.second_shot_class_time is not None:
+        values["second_shot_class_time"] = rule.second_shot_class_time
     return values
 
 
 def _str_only(form_data: Mapping[str, object]) -> dict[str, str]:
     """Filter Starlette FormData to text-only entries."""
     return {k: v for k, v in form_data.items() if isinstance(v, str)}
-
-
-# Silence "imported but unused" for the type-narrowing import.
-_ = PreferenceInput
 
 
 __all__ = ["router"]

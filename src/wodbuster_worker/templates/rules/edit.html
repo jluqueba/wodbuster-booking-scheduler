@@ -1,4 +1,4 @@
-{# Rule edit form (single day).
+{# Rule edit form (single day, rule model v2).
 
    Same layout as create.html except the day-of-week is a single
    dropdown — an edit retargets one rule, no fan-out.
@@ -9,24 +9,22 @@
 
 {% block head_extra %}
 <style>
-  .wb-pref-row {
-    display: flex;
-    gap: 0.6rem;
-    align-items: center;
-    margin-bottom: 0.5rem;
+  .wb-row2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
   }
-  .wb-pref-row__index {
-    flex: 0 0 1.75rem;
-    text-align: center;
-    color: var(--wb-text-muted);
-    font-family: var(--wb-mono);
-    font-size: 0.78rem;
-    padding: 0.35rem 0;
+  @media (max-width: 640px) {
+    .wb-row2 { grid-template-columns: 1fr; }
   }
   .wb-picker-note {
     color: var(--wb-warning);
     font-size: 0.82rem;
     margin-top: 0.3rem;
+  }
+  .wb-second-shot legend {
+    color: var(--wb-text-muted);
+    font-size: 0.9rem;
   }
 </style>
 {% endblock %}
@@ -43,15 +41,11 @@
     <a href="/rules">← Back to rules</a>
   </p>
 
-  {% if errors.get('preferences') %}
-    <p class="wb-form-error">{{ errors['preferences'] }}</p>
-  {% endif %}
-
   <form class="wb-card" method="post" action="{{ action_url }}">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
     <fieldset>
-      <label for="day_of_week">Day of week</label>
+      <label for="day_of_week">Attendance day</label>
       <select id="day_of_week" name="day_of_week" required>
         <option value=""></option>
         {% for label in day_labels %}
@@ -66,71 +60,156 @@
     </fieldset>
 
     <fieldset>
-      <label for="time_slot">Class time</label>
-      {% if picker_time_slots %}
-        <select id="time_slot" name="time_slot" required>
-          <option value=""></option>
-          {% for slot in picker_time_slots %}
-            <option value="{{ slot }}"
-              {% if form_values.get('time_slot') == slot %}selected{% endif %}
-            >{{ slot }}</option>
-          {% endfor %}
-        </select>
-      {% else %}
-        <input
-          id="time_slot"
-          name="time_slot"
-          type="text"
-          pattern="[0-9]{2}:[0-9]{2}"
-          placeholder="21:30"
-          value="{{ form_values.get('time_slot', '') }}"
-          required
-        >
-        <p class="wb-picker-note">
-          Could not load the gym schedule. Enter the time manually (HH:MM).
-        </p>
-      {% endif %}
-      {% if errors.get('time_slot') %}
-        <p class="wb-field-error">{{ errors['time_slot'] }}</p>
-      {% endif %}
-    </fieldset>
-
-    <fieldset>
-      <legend>Class preferences (primary + fallbacks)</legend>
-      {% for slot in range(5) %}
-        <div class="wb-pref-row">
-          <div class="wb-pref-row__index">#{{ loop.index }}</div>
-          <div style="flex: 1;">
-            {% if picker_class_types %}
-              <select
-                id="preference_{{ slot }}_class_type"
-                name="preference_{{ slot }}_class_type"
-              >
-                <option value=""></option>
-                {% for name in picker_class_types %}
-                  <option value="{{ name }}"
-                    {% if form_values.get('preference_' ~ slot ~ '_class_type') == name %}selected{% endif %}
-                  >{{ name }}</option>
-                {% endfor %}
-              </select>
-            {% else %}
-              <input
-                id="preference_{{ slot }}_class_type"
-                name="preference_{{ slot }}_class_type"
-                type="text"
-                placeholder="{% if loop.first %}WOD{% else %}(fallback){% endif %}"
-                value="{{ form_values.get('preference_' ~ slot ~ '_class_type', '') }}"
-              >
-            {% endif %}
-          </div>
+      <legend>Primary class</legend>
+      <div class="wb-row2">
+        <div>
+          <label for="class_type">Class type</label>
+          {% if picker_class_types %}
+            <select id="class_type" name="class_type" required>
+              <option value=""></option>
+              {% for name in picker_class_types %}
+                <option value="{{ name }}"
+                  {% if form_values.get('class_type') == name %}selected{% endif %}
+                >{{ name }}</option>
+              {% endfor %}
+            </select>
+          {% else %}
+            <input
+              id="class_type"
+              name="class_type"
+              type="text"
+              placeholder="WOD"
+              value="{{ form_values.get('class_type', '') }}"
+              required
+            >
+          {% endif %}
+          {% if errors.get('class_type') %}
+            <p class="wb-field-error">{{ errors['class_type'] }}</p>
+          {% endif %}
         </div>
-      {% endfor %}
+        <div>
+          <label for="class_time">Class time</label>
+          {% if picker_time_slots %}
+            <select id="class_time" name="class_time" required>
+              <option value=""></option>
+              {% for slot in picker_time_slots %}
+                <option value="{{ slot }}"
+                  {% if form_values.get('class_time') == slot %}selected{% endif %}
+                >{{ slot }}</option>
+              {% endfor %}
+            </select>
+          {% else %}
+            <input
+              id="class_time"
+              name="class_time"
+              type="text"
+              pattern="[0-9]{2}:[0-9]{2}"
+              placeholder="21:30"
+              value="{{ form_values.get('class_time', '') }}"
+              required
+            >
+          {% endif %}
+          {% if errors.get('class_time') %}
+            <p class="wb-field-error">{{ errors['class_time'] }}</p>
+          {% endif %}
+        </div>
+      </div>
       {% if picker_unavailable %}
         <p class="wb-picker-note">
           Live class list unavailable. Paste a fresh cookie first
           (<a href="/cookie">Cookie</a>) to seed the dropdowns.
         </p>
       {% endif %}
+    </fieldset>
+
+    <fieldset>
+      <legend>Booking window</legend>
+      <div class="wb-row2">
+        <div>
+          <label for="booking_opens_days_before">Days before class</label>
+          <input
+            id="booking_opens_days_before"
+            name="booking_opens_days_before"
+            type="number"
+            min="0"
+            max="14"
+            step="1"
+            value="{{ form_values.get('booking_opens_days_before', '2') }}"
+            required
+          >
+          {% if errors.get('booking_opens_days_before') %}
+            <p class="wb-field-error">{{ errors['booking_opens_days_before'] }}</p>
+          {% endif %}
+        </div>
+        <div>
+          <label for="booking_opens_at">Opens at</label>
+          <input
+            id="booking_opens_at"
+            name="booking_opens_at"
+            type="text"
+            pattern="[0-9]{2}:[0-9]{2}"
+            placeholder="21:30"
+            value="{{ form_values.get('booking_opens_at', '21:30') }}"
+            required
+          >
+          {% if errors.get('booking_opens_at') %}
+            <p class="wb-field-error">{{ errors['booking_opens_at'] }}</p>
+          {% endif %}
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset class="wb-second-shot">
+      <legend>Second shot (optional)</legend>
+      <div class="wb-row2">
+        <div>
+          <label for="second_shot_class_type">Alternative class type</label>
+          {% if picker_class_types %}
+            <select id="second_shot_class_type" name="second_shot_class_type">
+              <option value=""></option>
+              {% for name in picker_class_types %}
+                <option value="{{ name }}"
+                  {% if form_values.get('second_shot_class_type') == name %}selected{% endif %}
+                >{{ name }}</option>
+              {% endfor %}
+            </select>
+          {% else %}
+            <input
+              id="second_shot_class_type"
+              name="second_shot_class_type"
+              type="text"
+              value="{{ form_values.get('second_shot_class_type', '') }}"
+            >
+          {% endif %}
+          {% if errors.get('second_shot_class_type') %}
+            <p class="wb-field-error">{{ errors['second_shot_class_type'] }}</p>
+          {% endif %}
+        </div>
+        <div>
+          <label for="second_shot_class_time">Alternative time</label>
+          {% if picker_time_slots %}
+            <select id="second_shot_class_time" name="second_shot_class_time">
+              <option value=""></option>
+              {% for slot in picker_time_slots %}
+                <option value="{{ slot }}"
+                  {% if form_values.get('second_shot_class_time') == slot %}selected{% endif %}
+                >{{ slot }}</option>
+              {% endfor %}
+            </select>
+          {% else %}
+            <input
+              id="second_shot_class_time"
+              name="second_shot_class_time"
+              type="text"
+              pattern="[0-9]{2}:[0-9]{2}"
+              value="{{ form_values.get('second_shot_class_time', '') }}"
+            >
+          {% endif %}
+          {% if errors.get('second_shot_class_time') %}
+            <p class="wb-field-error">{{ errors['second_shot_class_time'] }}</p>
+          {% endif %}
+        </div>
+      </div>
     </fieldset>
 
     <div style="display: flex; gap: 0.75rem; align-items: center; margin-top: 1.5rem;">

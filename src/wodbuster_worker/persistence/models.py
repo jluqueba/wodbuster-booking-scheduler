@@ -44,7 +44,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
 
@@ -143,7 +143,19 @@ class FederatedIdentity(Base):
 
 
 class SchedulerRule(Base):
-    """Recurring weekly booking intent (FR-002)."""
+    """Recurring weekly booking intent (FR-002).
+
+    Model v2 (2026-07-09): folded the primary class fields onto the
+    rule row itself and replaced the multi-preference ``class_preference``
+    child with an optional single "second shot" pair. Also replaced
+    ``window_offset_hours`` (misleading — reservations open at a specific
+    clock time, not N hours before class) with the pair
+    ``booking_opens_days_before`` + ``booking_opens_at``.
+
+    The rule fires on ``trigger_day`` at ``booking_opens_at`` where
+    ``trigger_day = day_of_week - booking_opens_days_before`` (mod 7).
+    See :func:`compute_next_window` for the concrete arithmetic.
+    """
 
     __tablename__ = "scheduler_rule"
 
@@ -153,13 +165,31 @@ class SchedulerRule(Base):
         nullable=False,
         index=True,
     )
-    # 0 = Monday .. 6 = Sunday (Python ``datetime.weekday()`` convention).
+    # 0 = Monday .. 6 = Sunday. This is the *attendance* day; the
+    # rule fires ``booking_opens_days_before`` days earlier.
     day_of_week: Mapped[int] = mapped_column(Integer, nullable=False)
-    # How many hours before the class the booking window opens. Real-world
-    # values are small integers (24, 48, 72). Modelled as Integer.
-    # TODO: plan is silent on whether this can be fractional. Kept
-    # integer for now; widen to Numeric if a case emerges.
-    window_offset_hours: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Primary target — what the worker tries to book first.
+    class_type: Mapped[str] = mapped_column(String(200), nullable=False)
+    class_time: Mapped[str] = mapped_column(String(5), nullable=False)  # HH:MM
+
+    # Reservation window arithmetic. The window opens on
+    # ``day_of_week - booking_opens_days_before`` (mod 7) at
+    # ``booking_opens_at`` in the operator's local time (UTC for now
+    # until we add a timezone column).
+    booking_opens_days_before: Mapped[int] = mapped_column(Integer, nullable=False)
+    booking_opens_at: Mapped[str] = mapped_column(String(5), nullable=False)  # HH:MM
+
+    # Second shot — if the primary class is unavailable at booking time,
+    # the worker retries with these fields. Both null when the operator
+    # did not fill the alternative section.
+    second_shot_class_type: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )
+    second_shot_class_time: Mapped[str | None] = mapped_column(
+        String(5), nullable=True
+    )
+
     active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=sa.true()
     )
@@ -172,42 +202,6 @@ class SchedulerRule(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
-
-    preferences: Mapped[list[ClassPreference]] = relationship(
-        "ClassPreference",
-        back_populates="rule",
-        cascade="all, delete-orphan",
-        order_by="ClassPreference.order_index",
-    )
-
-
-class ClassPreference(Base):
-    """Ordered fallbacks inside a scheduler rule (FR-009)."""
-
-    __tablename__ = "class_preference"
-    __table_args__ = (
-        UniqueConstraint(
-            "rule_id", "order_index", name="uq_class_preference_rule_order"
-        ),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    rule_id: Mapped[int] = mapped_column(
-        ForeignKey("scheduler_rule.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    order_index: Mapped[int] = mapped_column(Integer, nullable=False)
-    # Free-form label taken from WodBuster (e.g. "WOD", "Halterofilia").
-    # TODO: plan is silent on canonical class-type vocabulary. Modelled
-    # as free String; tighten to Enum if a fixed vocabulary appears.
-    class_type: Mapped[str] = mapped_column(String(100), nullable=False)
-    # ISO ``HH:MM`` (24h) representation of the target slot start time.
-    target_time_slot: Mapped[str] = mapped_column(String(5), nullable=False)
-
-    rule: Mapped[SchedulerRule] = relationship(
-        "SchedulerRule", back_populates="preferences"
-    )
-
-
 class CookieCredential(Base):
     """Encrypted ``.WBAuth`` blob (ADR-0002, ADR-0005, FR-020).
 
@@ -433,7 +427,6 @@ __all__ = [
     "Alert",
     "Base",
     "BookingOutcome",
-    "ClassPreference",
     "CookieCredential",
     "FederatedIdentity",
     "HeartbeatReading",

@@ -1,15 +1,14 @@
-"""Scheduler rule persistence (US-005).
+"""Scheduler rule persistence (rule model v2).
 
-Handles the four CRUD operations against ``scheduler_rule`` and its
-``class_preference`` children. Session and transaction management is
-the caller's responsibility (route handlers open a session per
-request).
+Handles the four CRUD operations against ``scheduler_rule``. Session
+and transaction management is the caller's responsibility (route
+handlers open a session per request).
 
 Multi-day fan-out lives in :func:`create_rules_for_days`: when the
 operator ticks Mon+Wed+Fri, that function inserts three sibling rows
-that share the same time slot, preferences, and offset. This keeps
-the schema unchanged (one row per day) while offering the operator a
-"one form, many days" experience.
+that share every field except ``day_of_week``. This keeps the schema
+unchanged (one row per day) while offering the operator a "one form,
+many days" experience.
 
 Ownership: a rule can only be seen or mutated by its owner. Callers
 translate a ``None`` from :func:`get_rule_for_operator` into a 404 so
@@ -21,10 +20,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
-from ..persistence.models import ClassPreference, SchedulerRule
-from .forms import PreferenceInput
+from ..persistence.models import SchedulerRule
 
 
 def list_rules_for_operator(
@@ -35,7 +33,6 @@ def list_rules_for_operator(
         session.execute(
             select(SchedulerRule)
             .where(SchedulerRule.operator_id == operator_id)
-            .options(selectinload(SchedulerRule.preferences))
             .order_by(SchedulerRule.day_of_week, SchedulerRule.created_at)
         )
         .scalars()
@@ -48,12 +45,10 @@ def get_rule_for_operator(
 ) -> SchedulerRule | None:
     """Return the rule if it exists AND belongs to the operator."""
     return session.scalar(
-        select(SchedulerRule)
-        .where(
+        select(SchedulerRule).where(
             SchedulerRule.id == rule_id,
             SchedulerRule.operator_id == operator_id,
         )
-        .options(selectinload(SchedulerRule.preferences))
     )
 
 
@@ -62,16 +57,14 @@ def create_rules_for_days(
     *,
     operator_id: int,
     days_of_week: Sequence[int],
-    time_slot: str,
-    preferences: Sequence[PreferenceInput],
-    window_offset_hours: int,
+    class_type: str,
+    class_time: str,
+    booking_opens_days_before: int,
+    booking_opens_at: str,
+    second_shot_class_type: str | None = None,
+    second_shot_class_time: str | None = None,
 ) -> list[SchedulerRule]:
-    """Insert one rule per day-of-week; all share time / prefs / offset.
-
-    ``preferences`` are class-type-only at the form layer; here we
-    denormalise ``time_slot`` into every :class:`ClassPreference`'s
-    ``target_time_slot`` so downstream readers (the alert evaluator's
-    :func:`compute_next_window`) keep working unchanged.
+    """Insert one rule per day-of-week; all share every other field.
 
     Caller commits.
     """
@@ -80,16 +73,13 @@ def create_rules_for_days(
         rule = SchedulerRule(
             operator_id=operator_id,
             day_of_week=day,
-            window_offset_hours=window_offset_hours,
+            class_type=class_type,
+            class_time=class_time,
+            booking_opens_days_before=booking_opens_days_before,
+            booking_opens_at=booking_opens_at,
+            second_shot_class_type=second_shot_class_type,
+            second_shot_class_time=second_shot_class_time,
             active=True,
-            preferences=[
-                ClassPreference(
-                    order_index=pref.order_index,
-                    class_type=pref.class_type,
-                    target_time_slot=time_slot,
-                )
-                for pref in preferences
-            ],
         )
         session.add(rule)
         rules.append(rule)
@@ -102,36 +92,30 @@ def update_rule(
     rule: SchedulerRule,
     *,
     day_of_week: int,
-    time_slot: str,
-    preferences: Sequence[PreferenceInput],
-    window_offset_hours: int,
+    class_type: str,
+    class_time: str,
+    booking_opens_days_before: int,
+    booking_opens_at: str,
+    second_shot_class_type: str | None,
+    second_shot_class_time: str | None,
 ) -> SchedulerRule:
-    """Replace one rule's fields and its full preference list.
+    """Replace one rule's fields.
 
     Edit is per-row on purpose: if a rule was originally created via
     fan-out (Mon+Wed+Fri) the operator edits each row individually.
-    Group-edit UX can layer on top later without changing the
-    persistence contract.
     """
     rule.day_of_week = day_of_week
-    rule.window_offset_hours = window_offset_hours
-
-    rule.preferences.clear()
-    session.flush()
-
-    for pref in preferences:
-        rule.preferences.append(
-            ClassPreference(
-                order_index=pref.order_index,
-                class_type=pref.class_type,
-                target_time_slot=time_slot,
-            )
-        )
+    rule.class_type = class_type
+    rule.class_time = class_time
+    rule.booking_opens_days_before = booking_opens_days_before
+    rule.booking_opens_at = booking_opens_at
+    rule.second_shot_class_type = second_shot_class_type
+    rule.second_shot_class_time = second_shot_class_time
     return rule
 
 
 def delete_rule(session: Session, rule: SchedulerRule) -> None:
-    """Remove the rule and its preferences (cascade)."""
+    """Remove the rule."""
     session.delete(rule)
 
 

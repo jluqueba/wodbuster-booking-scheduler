@@ -1,4 +1,4 @@
-"""Rule form parsing and validation (US-005 form uplift).
+"""Rule form parsing and validation (rule model v2).
 
 Two form shapes — create and edit — because they differ on the
 day-of-week field only. Create takes ``day_of_week_{n}`` checkboxes
@@ -8,17 +8,14 @@ operator can retarget one rule without triggering the fan-out.
 
 Both shapes share:
 
-- ``time_slot`` — the class start time (``HH:MM``). One value per
-  rule; ``target_time_slot`` on every stored preference is
-  denormalised from this to avoid a schema migration.
-- ``preferences`` — ordered list of class-type strings. At least one
-  is required. Empty slots between filled ones are silently skipped
-  (order_index compacts around them).
-
-The window offset is not a form field: it comes from the global
-``settings.wodbuster_booking_lead_hours`` (default 48h). The rule form
-therefore stays "day + time + class types", matching the "super
-simple" ask.
+- ``class_type`` — primary class type string.
+- ``class_time`` — primary class start time (``HH:MM``).
+- ``booking_opens_days_before`` — how many days before the class the
+  reservation window opens.
+- ``booking_opens_at`` — clock time the window opens on the trigger
+  day (``HH:MM``).
+- ``second_shot_class_type`` / ``second_shot_class_time`` — optional
+  alternative pair. Both must be present or both absent.
 """
 
 from __future__ import annotations
@@ -26,20 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import time
 
-_MAX_PREFERENCE_SLOTS = 5
 _TRUTHY = {"on", "true", "1", "yes"}
-
-
-@dataclass(frozen=True)
-class PreferenceInput:
-    """Parsed preference row — class type only.
-
-    ``order_index`` is assigned by the parser based on the row's
-    position among non-empty rows, not the submitted slot index.
-    """
-
-    order_index: int
-    class_type: str
 
 
 @dataclass
@@ -47,8 +31,12 @@ class CreateRuleFormResult:
     """Outcome of :func:`parse_create_rule_form`."""
 
     days_of_week: list[int] = field(default_factory=list)
-    time_slot: str | None = None
-    preferences: list[PreferenceInput] = field(default_factory=list)
+    class_type: str | None = None
+    class_time: str | None = None
+    booking_opens_days_before: int | None = None
+    booking_opens_at: str | None = None
+    second_shot_class_type: str | None = None
+    second_shot_class_time: str | None = None
     errors: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -61,8 +49,12 @@ class EditRuleFormResult:
     """Outcome of :func:`parse_edit_rule_form`. Single day; no fan-out."""
 
     day_of_week: int | None = None
-    time_slot: str | None = None
-    preferences: list[PreferenceInput] = field(default_factory=list)
+    class_type: str | None = None
+    class_time: str | None = None
+    booking_opens_days_before: int | None = None
+    booking_opens_at: str | None = None
+    second_shot_class_type: str | None = None
+    second_shot_class_time: str | None = None
     errors: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -71,21 +63,41 @@ class EditRuleFormResult:
 
 
 def parse_create_rule_form(form: dict[str, str]) -> CreateRuleFormResult:
-    """Parse the create form: multi-day checkboxes + time + class types."""
+    """Parse the create form."""
     result = CreateRuleFormResult()
     result.days_of_week = _parse_days_multi(form, result.errors)
-    result.time_slot = _parse_time_slot(form, result.errors)
-    result.preferences = _parse_preferences(form, result.errors)
+    _parse_shared_fields(form, result)
     return result
 
 
 def parse_edit_rule_form(form: dict[str, str]) -> EditRuleFormResult:
-    """Parse the edit form: single day + time + class types."""
+    """Parse the edit form (single day, no fan-out)."""
     result = EditRuleFormResult()
     result.day_of_week = _parse_day_single(form, result.errors)
-    result.time_slot = _parse_time_slot(form, result.errors)
-    result.preferences = _parse_preferences(form, result.errors)
+    _parse_shared_fields(form, result)
     return result
+
+
+def _parse_shared_fields(
+    form: dict[str, str], result: CreateRuleFormResult | EditRuleFormResult
+) -> None:
+    result.class_type = _parse_required_str(
+        form, "class_type", "Pick a class type.", result.errors
+    )
+    result.class_time = _parse_required_time(
+        form, "class_time", "Pick a class time.", result.errors
+    )
+    result.booking_opens_days_before = _parse_days_before(form, result.errors)
+    result.booking_opens_at = _parse_required_time(
+        form,
+        "booking_opens_at",
+        "Pick the time the booking window opens.",
+        result.errors,
+    )
+    (
+        result.second_shot_class_type,
+        result.second_shot_class_time,
+    ) = _parse_second_shot(form, result.errors)
 
 
 def _parse_days_multi(form: dict[str, str], errors: dict[str, str]) -> list[int]:
@@ -115,31 +127,74 @@ def _parse_day_single(form: dict[str, str], errors: dict[str, str]) -> int | Non
     return value
 
 
-def _parse_time_slot(form: dict[str, str], errors: dict[str, str]) -> str | None:
-    raw = (form.get("time_slot") or "").strip()
+def _parse_required_str(
+    form: dict[str, str], field_name: str, message: str, errors: dict[str, str]
+) -> str | None:
+    raw = (form.get(field_name) or "").strip()
     if not raw:
-        errors["time_slot"] = "Pick a time slot."
-        return None
-    if not _valid_time_slot(raw):
-        errors["time_slot"] = "Time slot must be in HH:MM format."
+        errors[field_name] = message
         return None
     return raw
 
 
-def _parse_preferences(
+def _parse_required_time(
+    form: dict[str, str], field_name: str, message: str, errors: dict[str, str]
+) -> str | None:
+    raw = (form.get(field_name) or "").strip()
+    if not raw:
+        errors[field_name] = message
+        return None
+    if not _valid_time_slot(raw):
+        errors[field_name] = f"{field_name} must be in HH:MM format."
+        return None
+    return raw
+
+
+def _parse_days_before(form: dict[str, str], errors: dict[str, str]) -> int | None:
+    raw = (form.get("booking_opens_days_before") or "").strip()
+    if not raw:
+        errors["booking_opens_days_before"] = (
+            "How many days before class does the window open?"
+        )
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        errors["booking_opens_days_before"] = "Must be a whole number."
+        return None
+    if value < 0 or value > 14:
+        errors["booking_opens_days_before"] = "Must be between 0 and 14 days."
+        return None
+    return value
+
+
+def _parse_second_shot(
     form: dict[str, str], errors: dict[str, str]
-) -> list[PreferenceInput]:
-    parsed: list[PreferenceInput] = []
-    next_index = 0
-    for slot in range(_MAX_PREFERENCE_SLOTS):
-        class_type = (form.get(f"preference_{slot}_class_type") or "").strip()
-        if not class_type:
-            continue
-        parsed.append(PreferenceInput(order_index=next_index, class_type=class_type))
-        next_index += 1
-    if not parsed:
-        errors["preferences"] = "Add at least one class-type preference."
-    return parsed
+) -> tuple[str | None, str | None]:
+    """Parse the optional second-shot pair.
+
+    Both fields must be present together or absent together. A single
+    filled field is treated as a validation error rather than silently
+    dropped.
+    """
+    raw_type = (form.get("second_shot_class_type") or "").strip()
+    raw_time = (form.get("second_shot_class_time") or "").strip()
+    if not raw_type and not raw_time:
+        return None, None
+    if raw_type and not raw_time:
+        errors["second_shot_class_time"] = (
+            "Pick a time for the second shot, or clear the class type."
+        )
+        return raw_type, None
+    if raw_time and not raw_type:
+        errors["second_shot_class_type"] = (
+            "Pick a class type for the second shot, or clear the time."
+        )
+        return None, raw_time
+    if not _valid_time_slot(raw_time):
+        errors["second_shot_class_time"] = "Time must be in HH:MM format."
+        return raw_type, None
+    return raw_type, raw_time
 
 
 def _valid_time_slot(value: str) -> bool:
@@ -156,7 +211,6 @@ def _valid_time_slot(value: str) -> bool:
 __all__ = [
     "CreateRuleFormResult",
     "EditRuleFormResult",
-    "PreferenceInput",
     "parse_create_rule_form",
     "parse_edit_rule_form",
 ]

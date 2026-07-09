@@ -1,7 +1,8 @@
-"""Component tests for the scheduler-rule CRUD routes (US-005 form uplift).
+"""Component tests for the scheduler-rule CRUD routes (rule model v2).
 
 Exercises the multi-day fan-out create flow, single-day edit, delete,
-cross-operator isolation, and the ``/api/classes`` picker endpoint.
+cross-operator isolation, second-shot pairing, and the ``/api/classes``
+picker endpoint.
 """
 
 from __future__ import annotations
@@ -13,8 +14,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import sessionmaker
 
-from wodbuster_worker.persistence.models import ClassPreference, SchedulerRule
+from wodbuster_worker.persistence.models import SchedulerRule
 
 
 def _sign_in(
@@ -46,15 +48,25 @@ def _csrf_headers(client: TestClient) -> dict[str, str]:
     return {"X-CSRF-Token": token}
 
 
-def _valid_create_form(csrf: str, *, days: tuple[int, ...] = (2,)) -> dict[str, str]:
+def _valid_create_form(
+    csrf: str,
+    *,
+    days: tuple[int, ...] = (2,),
+    second_shot: bool = False,
+) -> dict[str, str]:
     """Build a valid multi-day create form. Defaults to Wednesday only."""
     form: dict[str, str] = {
         "_csrf": csrf,
-        "time_slot": "21:30",
-        "preference_0_class_type": "WOD",
+        "class_type": "WOD",
+        "class_time": "21:30",
+        "booking_opens_days_before": "2",
+        "booking_opens_at": "21:30",
     }
     for day in days:
         form[f"day_of_week_{day}"] = "on"
+    if second_shot:
+        form["second_shot_class_type"] = "Halterofilia"
+        form["second_shot_class_time"] = "20:30"
     return form
 
 
@@ -107,17 +119,18 @@ def test_create_single_day_persists_one_row(
     assert response.status_code == 303
     assert response.headers["location"] == "/rules"
 
-    from sqlalchemy.orm import sessionmaker
-
     factory = sessionmaker(bind=postgres_engine)
     with factory() as session:
         rules = session.query(SchedulerRule).filter_by(operator_id=op_id).all()
         assert len(rules) == 1
-        assert rules[0].day_of_week == 2
-        prefs = session.query(ClassPreference).filter_by(rule_id=rules[0].id).all()
-        assert [p.class_type for p in prefs] == ["WOD"]
-        # Time gets denormalised into every preference row.
-        assert [p.target_time_slot for p in prefs] == ["21:30"]
+        rule = rules[0]
+        assert rule.day_of_week == 2
+        assert rule.class_type == "WOD"
+        assert rule.class_time == "21:30"
+        assert rule.booking_opens_days_before == 2
+        assert rule.booking_opens_at == "21:30"
+        assert rule.second_shot_class_type is None
+        assert rule.second_shot_class_time is None
 
 
 def test_create_multi_day_fans_out_to_n_rows(
@@ -126,7 +139,7 @@ def test_create_multi_day_fans_out_to_n_rows(
     postgres_engine: Engine,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Mon + Wed + Fri produces exactly three rules sharing time + prefs."""
+    """Mon + Wed + Fri produces exactly three rules sharing every other field."""
     op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
     app = app_factory()
 
@@ -140,8 +153,6 @@ def test_create_multi_day_fans_out_to_n_rows(
 
     assert response.status_code == 303
 
-    from sqlalchemy.orm import sessionmaker
-
     factory = sessionmaker(bind=postgres_engine)
     with factory() as session:
         rules = (
@@ -151,42 +162,37 @@ def test_create_multi_day_fans_out_to_n_rows(
             .all()
         )
         assert [r.day_of_week for r in rules] == [0, 2, 4]
-        # Every row has the same time + preference chain.
         for rule in rules:
-            prefs = (
-                session.query(ClassPreference)
-                .filter_by(rule_id=rule.id)
-                .order_by(ClassPreference.order_index)
-                .all()
-            )
-            assert [p.class_type for p in prefs] == ["WOD"]
-            assert [p.target_time_slot for p in prefs] == ["21:30"]
+            assert rule.class_type == "WOD"
+            assert rule.class_time == "21:30"
+            assert rule.booking_opens_days_before == 2
+            assert rule.booking_opens_at == "21:30"
 
 
-def test_create_uses_global_booking_lead_offset(
+def test_create_with_second_shot_persists_both_fields(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],
     postgres_engine: Engine,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Every new rule receives ``settings.wodbuster_booking_lead_hours``."""
     op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
-    app = app_factory(wodbuster_booking_lead_hours=72)
+    app = app_factory()
 
     with _sign_in(app, subject, "Alice", monkeypatch) as client:
         csrf = client.cookies["wodbuster_csrf"]
-        client.post(
+        response = client.post(
             "/rules",
-            data=_valid_create_form(csrf),
+            data=_valid_create_form(csrf, days=(2,), second_shot=True),
             headers=_csrf_headers(client),
         )
 
-    from sqlalchemy.orm import sessionmaker
+    assert response.status_code == 303
 
     factory = sessionmaker(bind=postgres_engine)
     with factory() as session:
         rule = session.query(SchedulerRule).filter_by(operator_id=op_id).one()
-        assert rule.window_offset_hours == 72
+        assert rule.second_shot_class_type == "Halterofilia"
+        assert rule.second_shot_class_time == "20:30"
 
 
 def test_create_with_no_days_re_renders_with_error(
@@ -204,16 +210,16 @@ def test_create_with_no_days_re_renders_with_error(
             "/rules",
             data={
                 "_csrf": csrf,
-                "time_slot": "21:30",
-                "preference_0_class_type": "WOD",
+                "class_type": "WOD",
+                "class_time": "21:30",
+                "booking_opens_days_before": "2",
+                "booking_opens_at": "21:30",
             },
             headers=_csrf_headers(client),
         )
 
     assert response.status_code == 422
     assert "Select at least one day" in response.text
-
-    from sqlalchemy.orm import sessionmaker
 
     factory = sessionmaker(bind=postgres_engine)
     with factory() as session:
@@ -229,13 +235,14 @@ def test_create_without_csrf_is_forbidden(
     app = app_factory()
 
     with _sign_in(app, subject, "Alice", monkeypatch) as client:
-        # No _csrf field and no header — must 403.
         response = client.post(
             "/rules",
             data={
                 "day_of_week_2": "on",
-                "time_slot": "21:30",
-                "preference_0_class_type": "WOD",
+                "class_type": "WOD",
+                "class_time": "21:30",
+                "booking_opens_days_before": "2",
+                "booking_opens_at": "21:30",
             },
         )
     assert response.status_code == 403
@@ -271,7 +278,7 @@ def test_list_shows_own_rules_and_no_others(
 # --- Edit (single day) -------------------------------------------------
 
 
-def test_edit_updates_day_time_and_preferences_in_place(
+def test_edit_updates_all_fields_in_place(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],
     postgres_engine: Engine,
@@ -280,6 +287,8 @@ def test_edit_updates_day_time_and_preferences_in_place(
     op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
     app = app_factory()
 
+    factory = sessionmaker(bind=postgres_engine)
+
     with _sign_in(app, subject, "Alice", monkeypatch) as client:
         csrf = client.cookies["wodbuster_csrf"]
         client.post(
@@ -287,9 +296,6 @@ def test_edit_updates_day_time_and_preferences_in_place(
             data=_valid_create_form(csrf, days=(2,)),
             headers=_csrf_headers(client),
         )
-        from sqlalchemy.orm import sessionmaker
-
-        factory = sessionmaker(bind=postgres_engine)
         with factory() as session:
             rule_id = session.query(SchedulerRule).filter_by(operator_id=op_id).one().id
 
@@ -298,9 +304,12 @@ def test_edit_updates_day_time_and_preferences_in_place(
             data={
                 "_csrf": csrf,
                 "day_of_week": "4",  # Wed -> Fri
-                "time_slot": "07:30",
-                "preference_0_class_type": "Cross Training",
-                "preference_1_class_type": "WOD",
+                "class_type": "Cross Training",
+                "class_time": "07:30",
+                "booking_opens_days_before": "3",
+                "booking_opens_at": "22:00",
+                "second_shot_class_type": "WOD",
+                "second_shot_class_time": "08:30",
             },
             headers=_csrf_headers(client),
         )
@@ -309,15 +318,12 @@ def test_edit_updates_day_time_and_preferences_in_place(
     with factory() as session:
         rule = session.query(SchedulerRule).filter_by(id=rule_id).one()
         assert rule.day_of_week == 4
-        prefs = (
-            session.query(ClassPreference)
-            .filter_by(rule_id=rule_id)
-            .order_by(ClassPreference.order_index)
-            .all()
-        )
-        assert [p.class_type for p in prefs] == ["Cross Training", "WOD"]
-        # New time replicated across every preference row.
-        assert {p.target_time_slot for p in prefs} == {"07:30"}
+        assert rule.class_type == "Cross Training"
+        assert rule.class_time == "07:30"
+        assert rule.booking_opens_days_before == 3
+        assert rule.booking_opens_at == "22:00"
+        assert rule.second_shot_class_type == "WOD"
+        assert rule.second_shot_class_time == "08:30"
 
 
 def test_edit_form_prefills_current_values(
@@ -331,6 +337,8 @@ def test_edit_form_prefills_current_values(
     _, subject = seed_operator(provider="microsoft", display_name="Alice")
     app = app_factory()
 
+    factory = sessionmaker(bind=postgres_engine)
+
     with _sign_in(app, subject, "Alice", monkeypatch) as client:
         csrf = client.cookies["wodbuster_csrf"]
         client.post(
@@ -338,9 +346,6 @@ def test_edit_form_prefills_current_values(
             data=_valid_create_form(csrf, days=(2,)),
             headers=_csrf_headers(client),
         )
-        from sqlalchemy.orm import sessionmaker
-
-        factory = sessionmaker(bind=postgres_engine)
         with factory() as session:
             rule_id = session.query(SchedulerRule).one().id
 
@@ -349,7 +354,7 @@ def test_edit_form_prefills_current_values(
     assert response.status_code == 200
     # Wednesday should be pre-selected in the day dropdown.
     assert re.search(r'value="2"\s+selected', response.text)
-    # Time and preference values echoed back.
+    # Time and class type echoed back.
     assert "21:30" in response.text
     assert "WOD" in response.text
 
@@ -371,8 +376,6 @@ def test_edit_rule_of_other_operator_returns_404(
             data=_valid_create_form(csrf, days=(2,)),
             headers=_csrf_headers(client),
         )
-
-    from sqlalchemy.orm import sessionmaker
 
     factory = sessionmaker(bind=postgres_engine)
     with factory() as session:
@@ -406,7 +409,7 @@ def test_edit_rule_of_other_operator_returns_404(
 # --- Delete ------------------------------------------------------------
 
 
-def test_delete_rule_removes_row_and_preferences(
+def test_delete_rule_removes_row(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],
     postgres_engine: Engine,
@@ -415,6 +418,8 @@ def test_delete_rule_removes_row_and_preferences(
     op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
     app = app_factory()
 
+    factory = sessionmaker(bind=postgres_engine)
+
     with _sign_in(app, subject, "Alice", monkeypatch) as client:
         csrf = client.cookies["wodbuster_csrf"]
         client.post(
@@ -422,9 +427,6 @@ def test_delete_rule_removes_row_and_preferences(
             data=_valid_create_form(csrf, days=(2,)),
             headers=_csrf_headers(client),
         )
-        from sqlalchemy.orm import sessionmaker
-
-        factory = sessionmaker(bind=postgres_engine)
         with factory() as session:
             rule_id = session.query(SchedulerRule).filter_by(operator_id=op_id).one().id
 
@@ -437,7 +439,6 @@ def test_delete_rule_removes_row_and_preferences(
     assert response.status_code == 303
     with factory() as session:
         assert session.query(SchedulerRule).filter_by(id=rule_id).count() == 0
-        assert session.query(ClassPreference).filter_by(rule_id=rule_id).count() == 0
 
 
 # --- /api/classes -------------------------------------------------------
@@ -464,8 +465,6 @@ def test_api_classes_returns_unavailable_when_stack_not_wired(
     """
     _, subject = seed_operator(provider="microsoft", display_name="Alice")
     app = app_factory()
-    # ``app_factory`` builds the app without ``wodbuster_gym`` / ``wodbuster_idu``,
-    # so the wodbuster_client is None. Confirm the endpoint degrades gracefully.
     assert app.state.wodbuster_client is None
 
     with _sign_in(app, subject, "Alice", monkeypatch) as client:
@@ -489,5 +488,4 @@ def test_new_form_renders_free_text_fallback_when_picker_unavailable(
         response = client.get("/rules/new")
 
     assert response.status_code == 200
-    # Picker note is present because no live class list was fetched.
     assert "Live class list unavailable" in response.text
