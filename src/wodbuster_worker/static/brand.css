@@ -295,11 +295,44 @@ hr {
   overflow: hidden;
   border-radius: var(--wb-radius);
   margin-bottom: 2rem;
-  background:
-    radial-gradient(1200px 500px at 50% -100px, var(--wb-accent-glow), transparent 60%),
-    radial-gradient(700px 400px at 80% 120%, rgba(96, 165, 250, 0.15), transparent 60%),
-    var(--wb-bg-elevated);
+  /* Bare background — the layers stack in ``.wb-hero__bg`` so the
+     photo can sit behind the animated conic gradient without any of
+     its colour bleed leaking through the radials. */
+  background: var(--wb-bg-elevated);
   border: 1px solid var(--wb-border);
+}
+
+/* Photo backdrop + colour + dark overlay, all in one absolutely-
+   positioned layer so the ``.wb-hero::before`` conic animation stays
+   above the image and the text stays above both. The image URL is a
+   permissive Unsplash CDN link (Anastase Maragos, empty CrossFit
+   box floor). Order of ``background-image`` values (topmost first):
+
+     1. accent radial glow at top-center
+     2. cool radial glow at bottom-right
+     3. dark linear overlay for contrast against the photo
+     4. the photo itself
+
+   Cover-sized so it scales to any hero width. ``saturate(0.6)`` keeps
+   the photo from fighting the yellow accent. */
+.wb-hero__bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(1200px 500px at 50% -100px, var(--wb-accent-glow), transparent 60%),
+    radial-gradient(700px 400px at 80% 120%, rgba(96, 165, 250, 0.20), transparent 60%),
+    linear-gradient(
+      180deg,
+      rgba(10, 14, 20, 0.55) 0%,
+      rgba(10, 14, 20, 0.88) 100%
+    ),
+    url("https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=1920&auto=format&fit=crop&q=80");
+  background-size: auto, auto, auto, cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: saturate(0.6) contrast(1.05);
 }
 
 .wb-hero::before {
@@ -315,11 +348,12 @@ hr {
     transparent 360deg
   );
   animation: wb-spin 24s linear infinite;
-  z-index: 0;
+  /* Sits ABOVE the photo backdrop but below the text. */
+  z-index: 1;
   pointer-events: none;
 }
 
-.wb-hero > * { position: relative; z-index: 1; }
+.wb-hero > *:not(.wb-hero__bg) { position: relative; z-index: 2; }
 
 .wb-hero__eyebrow {
   display: inline-block;
