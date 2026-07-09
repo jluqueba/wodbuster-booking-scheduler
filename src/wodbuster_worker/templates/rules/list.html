@@ -1,6 +1,7 @@
-{# Rules list page. One row per SchedulerRule (a "Mon+Wed+Fri" rule
-   from the create form appears as three rows here). Rows are ordered
-   by day-of-week so the weekly rhythm reads naturally. #}
+{# Rules list page (rule model v2). One row per SchedulerRule: a
+   "Mon+Wed+Fri" fan-out from the create form appears as three rows
+   here. Rows are ordered by day-of-week so the weekly rhythm reads
+   naturally. #}
 {% extends "base.html" %}
 
 {% block title %}Rules — WodBuster Booking Worker{% endblock %}
@@ -14,9 +15,8 @@
   <span class="wb-page-title__eyebrow">Automation</span>
   <h1 class="wb-page-title">📅 Rules</h1>
   <p class="wb-page-subtitle">
-    Weekly bookings on autopilot. Pick your days, pick your time, list your
-    class preferences. The worker tries each one in order until it grabs a
-    seat.
+    Weekly bookings on autopilot. Pick your days, pick your class, tell
+    the worker when the reservation window opens.
   </p>
 
   <div class="wb-toolbar">
@@ -32,9 +32,10 @@
     <table class="wb-rules-table">
       <thead>
         <tr>
-          <th>Day</th>
-          <th>Time</th>
-          <th>Preferences</th>
+          <th>Attend</th>
+          <th>Primary class</th>
+          <th>Second shot</th>
+          <th>Window opens</th>
           <th>Status</th>
           <th></th>
         </tr>
@@ -46,24 +47,19 @@
               <span class="wb-chip wb-chip--accent">{{ rule.day_label }}</span>
             </td>
             <td class="wb-tabular">
-              {% if rule.time_slot %}
-                {{ rule.time_slot }}
+              <code>{{ rule.class_type }}</code> @ {{ rule.class_time }}
+            </td>
+            <td class="wb-tabular">
+              {% if rule.second_shot_class_type %}
+                <code>{{ rule.second_shot_class_type }}</code>
+                @ {{ rule.second_shot_class_time }}
               {% else %}
                 <span class="wb-muted">—</span>
               {% endif %}
             </td>
-            <td>
-              {% if rule.class_types %}
-                <ul class="wb-preflist">
-                  {% for class_type in rule.class_types %}
-                    <li data-index="{{ loop.index }}">
-                      <code>{{ class_type }}</code>
-                    </li>
-                  {% endfor %}
-                </ul>
-              {% else %}
-                <span class="wb-muted">no preferences</span>
-              {% endif %}
+            <td class="wb-tabular">
+              {{ rule.booking_opens_days_before }}d before
+              at {{ rule.booking_opens_at }}
             </td>
             <td>
               {% if rule.active %}

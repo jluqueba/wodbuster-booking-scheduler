@@ -84,25 +84,21 @@ def _make_operator(engine: Engine, *, telegram_chat_id: str | None = None) -> in
 
 
 def _make_wednesday_rule(engine: Engine, operator_id: int) -> None:
-    """Insert the Wed-21:30 / 48h-offset rule for the operator."""
+    """Insert a Wed attendance rule that opens 2d before at 21:30.
+
+    Trigger day = (2-2)%7 = 0 (Monday) at 21:30. Callers pick a
+    ``now`` such that this window sits in the desired position
+    relative to the projected cookie TTL.
+    """
     with engine.begin() as conn:
-        rule_id = int(
-            conn.execute(
-                text(
-                    "INSERT INTO scheduler_rule "
-                    "(operator_id, day_of_week, window_offset_hours, active) "
-                    "VALUES (:op, 2, 48, true) RETURNING id"
-                ),
-                {"op": operator_id},
-            ).scalar_one()
-        )
         conn.execute(
             text(
-                "INSERT INTO class_preference "
-                "(rule_id, order_index, class_type, target_time_slot) "
-                "VALUES (:r, 0, 'WOD', '21:30')"
+                "INSERT INTO scheduler_rule "
+                "(operator_id, day_of_week, class_type, class_time, "
+                "booking_opens_days_before, booking_opens_at, active) "
+                "VALUES (:op, 2, 'WOD', '21:30', 2, '21:30', true)"
             ),
-            {"r": rule_id},
+            {"op": operator_id},
         )
 
 

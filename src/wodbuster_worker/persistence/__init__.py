@@ -13,7 +13,6 @@ from .engine import build_engine, get_engine, get_session, reset_engine
 from .models import (
     Alert,
     BookingOutcome,
-    ClassPreference,
     CookieCredential,
     FederatedIdentity,
     HeartbeatReading,
@@ -27,7 +26,6 @@ __all__ = [
     "Alert",
     "Base",
     "BookingOutcome",
-    "ClassPreference",
     "CookieCredential",
     "FederatedIdentity",
     "HeartbeatReading",

@@ -43,7 +43,6 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
     {
         "alert",
         "booking_outcome",
-        "class_preference",
         "cookie_credential",
         "federated_identity",
         "heartbeat_reading",
@@ -183,8 +182,10 @@ def test_minimal_rows_round_trip_through_every_table(
         rule_id = conn.execute(
             text(
                 "INSERT INTO scheduler_rule "
-                "(operator_id, day_of_week, window_offset_hours, active) "
-                "VALUES (:op, 1, 48, TRUE) RETURNING id"
+                "(operator_id, day_of_week, class_type, class_time, "
+                "booking_opens_days_before, booking_opens_at, active) "
+                "VALUES (:op, 1, 'WOD', '18:30', 2, '21:30', TRUE) "
+                "RETURNING id"
             ),
             {"op": op_id},
         ).scalar_one()
@@ -212,14 +213,6 @@ def test_minimal_rows_round_trip_through_every_table(
                 "VALUES (:op, :ct, :n)"
             ),
             {"op": op_id, "ct": b"\x00\x01", "n": b"\x02\x03\x04"},
-        )
-        conn.execute(
-            text(
-                "INSERT INTO class_preference "
-                "(rule_id, order_index, class_type, target_time_slot) "
-                "VALUES (:r, 0, 'WOD', '18:30')"
-            ),
-            {"r": rule_id},
         )
         conn.execute(
             text(
