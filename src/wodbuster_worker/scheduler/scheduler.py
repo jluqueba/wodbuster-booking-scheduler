@@ -36,11 +36,13 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from ..heartbeat.probe import HeartbeatProbe
+from ..notifications.dispatcher import NotificationDispatcher
 from .heartbeat_tick import SessionFactory, run_heartbeat_tick
 
 _log = structlog.get_logger(__name__)
 
 HEARTBEAT_JOB_ID = "cookie_heartbeat"
+DISPATCHER_JOB_ID = "notification_dispatcher"
 
 
 def build_scheduler() -> BackgroundScheduler:
@@ -91,8 +93,46 @@ def register_heartbeat_job(
     )
 
 
+def register_dispatcher_job(
+    scheduler: BackgroundScheduler,
+    dispatcher: NotificationDispatcher,
+    *,
+    interval_seconds: int = 5,
+) -> None:
+    """Register the notification-outbox dispatcher on ``scheduler``.
+
+    Same idempotency contract as :func:`register_heartbeat_job`. The
+    dispatcher owns its own session factory internally, so this
+    wrapper only needs the interval knob and the dispatcher instance.
+    """
+
+    def _tick() -> None:
+        dispatcher.tick()
+
+    if scheduler.get_job(DISPATCHER_JOB_ID) is not None:
+        scheduler.remove_job(DISPATCHER_JOB_ID)
+
+    scheduler.add_job(
+        func=_tick,
+        trigger=IntervalTrigger(seconds=interval_seconds),
+        id=DISPATCHER_JOB_ID,
+        max_instances=1,
+        coalesce=True,
+        # Fire immediately so a pending row queued on startup does
+        # not wait a full interval to leave.
+        next_run_time=datetime.now(tz=UTC),
+    )
+    _log.info(
+        "scheduler.dispatcher_job_registered",
+        job_id=DISPATCHER_JOB_ID,
+        interval_seconds=interval_seconds,
+    )
+
+
 __all__ = [
+    "DISPATCHER_JOB_ID",
     "HEARTBEAT_JOB_ID",
     "build_scheduler",
+    "register_dispatcher_job",
     "register_heartbeat_job",
 ]

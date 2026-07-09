@@ -1,0 +1,26 @@
+{# Open-alert banner stack (US2.7).
+
+   Renders one banner per open ``Alert`` row for the current
+   operator. Producer: :func:`load_banners_for_operator` in
+   ``notifications.banners``. Severity vocabulary:
+
+     - ``warning``: something the operator should act on soon.
+     - ``error``: worker paused / degraded until acted on.
+
+   The dashboard route (in ``app.py``) resolves the list, passes it
+   as ``banners``, and includes this partial. Other pages can opt in
+   by passing the same variable and including the same partial.
+#}
+{% if banners %}
+  <section class="wb-banner-stack" role="region" aria-label="System alerts">
+    {% for banner in banners %}
+      <article class="wb-banner wb-banner--{{ banner.severity }}"
+               data-alert-kind="{{ banner.kind }}">
+        <div class="wb-banner__body">
+          <h2 class="wb-banner__heading">{{ banner.heading }}</h2>
+          <p class="wb-banner__text">{{ banner.body }}</p>
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+{% endif %}
