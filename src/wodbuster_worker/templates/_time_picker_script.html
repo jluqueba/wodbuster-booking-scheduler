@@ -1,55 +1,45 @@
-{# Inline JS bootstrap for every <div class="wb-time-picker"> on the
-   page. Idempotent: safe to include multiple times, and the init
-   walks every widget once on DOMContentLoaded.
+{# Flatpickr CDN loader + init for every ``.wb-time-flatpickr`` on
+   the page. Idempotent: safe to include multiple times, and the
+   init walks every input once on DOMContentLoaded.
 
-   For each widget:
-     - Read the initial value from the hidden input (HH:MM string).
-     - Snap the hour <select> to the exact hour and the minute
-       <select> to the nearest lower option (5-min step by default).
-     - Wire ``change`` handlers so any user edit rewrites the hidden
-       input as ``HH:MM``.
+   Version pinned so a Flatpickr breaking change cannot silently
+   ship — bump deliberately after regression-testing the picker
+   panel + submit round-trip.
 #}
+<link
+  rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css"
+>
+<link
+  rel="stylesheet"
+  href="/static/flatpickr-theme.css"
+>
+<script
+  src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"
+  defer
+></script>
 <script>
   (function () {
-    function initTimePicker(root) {
-      var hour = root.querySelector('.wb-time-picker__hour');
-      var minute = root.querySelector('.wb-time-picker__minute');
-      var hidden = root.querySelector('input[type="hidden"]');
-      if (!hour || !minute || !hidden) return;
-
-      // Seed the two selects from the hidden input's current value.
-      var initial = (hidden.value || '').trim();
-      if (initial.length >= 4 && initial.indexOf(':') > 0) {
-        var parts = initial.split(':');
-        var hh = parts[0].padStart(2, '0');
-        var mm = parts[1].padStart(2, '0');
-        // Exact hour match (00-23 all present, so always exact).
-        hour.value = hh;
-        // Nearest lower minute option (5-min grid may not include a
-        // stored 22:37 exactly; snap to 22:35 in the UI while the
-        // hidden field still shows 22:37 until the user picks a new
-        // value).
-        var options = Array.prototype.map.call(minute.options, function (o) {
-          return parseInt(o.value, 10);
-        });
-        var target = parseInt(mm, 10);
-        var chosen = options[0];
-        for (var i = 0; i < options.length; i++) {
-          if (options[i] <= target) chosen = options[i];
-        }
-        minute.value = String(chosen).padStart(2, '0');
+    function initAll() {
+      if (typeof flatpickr !== 'function') {
+        // Flatpickr failed to load — plain text input still accepts
+        // HH:MM entry via the pattern attribute.
+        return;
       }
-
-      function sync() {
-        hidden.value = hour.value + ':' + minute.value;
-      }
-      hour.addEventListener('change', sync);
-      minute.addEventListener('change', sync);
+      flatpickr('.wb-time-flatpickr', {
+        enableTime: true,
+        noCalendar: true,
+        time_24hr: true,
+        dateFormat: 'H:i',
+        minuteIncrement: 5,
+        allowInput: true,
+        disableMobile: false,
+      });
     }
-
-    document.addEventListener('DOMContentLoaded', function () {
-      var widgets = document.querySelectorAll('.wb-time-picker');
-      for (var i = 0; i < widgets.length; i++) initTimePicker(widgets[i]);
-    });
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initAll);
+    } else {
+      initAll();
+    }
   })();
 </script>

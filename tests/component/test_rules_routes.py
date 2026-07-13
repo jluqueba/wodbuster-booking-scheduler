@@ -495,28 +495,21 @@ def test_new_form_disables_selects_when_picker_unavailable(
     assert "Live class list unavailable" in response.text
     # Class-type stays a <select> (must match schedule string exactly).
     assert "<select" in response.text
-    # Time fields render as the custom wb-time-picker widget (no
-    # AM/PM ambiguity, always 24h; wire format remains HH:MM via the
-    # hidden input).
-    assert 'class="wb-time-picker"' in response.text
-    assert response.text.count('data-time-picker="class_time"') == 1
-    assert response.text.count('data-time-picker="booking_opens_at"') == 1
-    assert response.text.count('data-time-picker="second_shot_class_time"') == 1
-    # The init script is present so the widgets sync into the
-    # hidden inputs on user edit.
-    assert "wb-time-picker" in response.text
-    assert "initTimePicker" in response.text
+    # Time fields render as Flatpickr-enhanced inputs, one per field.
+    assert response.text.count('class="wb-time-flatpickr wb-time-picker__input"') == 3
     # Both class-type combos and the submit button carry the disabled
     # marker when the picker is empty.
     assert response.text.count("disabled") >= 3
 
 
-def test_new_form_time_pickers_render_hour_and_minute_selects(
+def test_new_form_uses_flatpickr_for_time_inputs(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The 24h picker exposes hour options 00-23 and minute options 00-55."""
+    """All three time fields render as Flatpickr-enhanced text inputs
+    (not native ``type="time"``, which would surface AM/PM on 12h
+    locales)."""
     _, subject = seed_operator(provider="microsoft", display_name="Alice")
     app = app_factory()
 
@@ -524,14 +517,13 @@ def test_new_form_time_pickers_render_hour_and_minute_selects(
         response = client.get("/rules/new")
 
     assert response.status_code == 200
-    # Sample of hour options — should span the full 24h range.
-    assert '<option value="00">00</option>' in response.text
-    assert '<option value="12">12</option>' in response.text
-    assert '<option value="23">23</option>' in response.text
-    # Sample of minute options at 5-minute granularity.
-    assert '<option value="00">00</option>' in response.text
-    assert '<option value="30">30</option>' in response.text
-    assert '<option value="55">55</option>' in response.text
-    # And crucially: no native <input type="time"> that would surface
-    # AM/PM on 12h locales.
+    # One Flatpickr input per time field.
+    for name in ("class_time", "booking_opens_at", "second_shot_class_time"):
+        assert f'name="{name}"' in response.text
+    # Flatpickr CDN loaded and configured with time_24hr:true.
+    assert "flatpickr@4.6.13" in response.text
+    assert "time_24hr: true" in response.text
+    assert "dateFormat: 'H:i'" in response.text
+    # No native <input type="time"> anywhere — that would render
+    # AM/PM on 12h-locale browsers.
     assert 'type="time"' not in response.text
