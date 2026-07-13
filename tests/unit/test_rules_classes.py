@@ -1,12 +1,12 @@
 """Unit tests for the class-list extractor (US-005 form uplift).
 
 The pure :func:`extract_available_classes` takes a full LoadClass
-payload and unions the two arrays it exposes:
+payload and unions two sources:
 
-- ``ClasesFiltradas`` (full daily schedule, fields ``NombreE`` +
-  ``Hora``)
-- ``Data`` (the operator's own weekly slots, fields ``Nombre`` +
-  ``HoraComienzo``)
+- ``ClasesFiltradas`` — flat rows, fields ``NombreE`` + ``Hora``.
+- ``Data`` — time-slot buckets, each carrying its own ``Hora`` plus
+  ``Valores[j].Valor`` with the concrete class instance's
+  ``Nombre`` + ``HoraComienzo``.
 
 Tests exercise each source independently plus the union edge cases.
 
@@ -28,8 +28,16 @@ def _clases_filtradas(*items: dict[str, Any]) -> dict[str, Any]:
     return {"ClasesFiltradas": list(items)}
 
 
-def _data(*items: dict[str, Any]) -> dict[str, Any]:
-    return {"Data": list(items)}
+def _data_bucket(hora: str, *instances: dict[str, Any]) -> dict[str, Any]:
+    """Build a Data[i] time-slot bucket wrapping instances under Valor."""
+    return {
+        "Hora": hora,
+        "Valores": [{"Valor": inst} for inst in instances],
+    }
+
+
+def _data(*buckets: dict[str, Any]) -> dict[str, Any]:
+    return {"Data": list(buckets)}
 
 
 # ---------------------------------------------------------------------------
@@ -90,24 +98,61 @@ def test_extract_ignores_malformed_time_strings() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_extract_from_data_uses_nombre_and_horacomienzo() -> None:
+def test_extract_from_data_walks_valores_valor_for_class_types() -> None:
     payload = _data(
-        {"Id": 42, "Nombre": "WOD", "HoraComienzo": "21:30:00"},
-        {"Id": 43, "Nombre": "Cross Training", "HoraComienzo": "07:30:00"},
+        _data_bucket(
+            "21:30:00",
+            {"Id": 42, "Nombre": "WOD", "HoraComienzo": "21:30:00"},
+        ),
+        _data_bucket(
+            "07:30:00",
+            {"Id": 43, "Nombre": "Cross Training", "HoraComienzo": "07:30:00"},
+        ),
     )
     result = extract_available_classes(payload)
     assert result.class_types == ["Cross Training", "WOD"]
     assert result.time_slots == ["07:30", "21:30"]
 
 
-def test_extract_from_data_only_when_clases_filtradas_missing() -> None:
-    """Regression: operator with populated Data but empty ClasesFiltradas
-    must still get a non-empty picker."""
+def test_extract_uses_bucket_hora_even_when_valores_missing_name() -> None:
+    """Regression: buckets should still contribute their ``Hora`` to
+    the time slots even when the nested ``Valor`` is unparseable."""
+    payload = _data(
+        _data_bucket("22:40:00"),  # empty Valores list
+        {"Hora": "07:30:00"},  # bucket without Valores key at all
+    )
+    result = extract_available_classes(payload)
+    assert result.class_types == []
+    assert result.time_slots == ["07:30", "22:40"]
+
+
+def test_extract_from_data_only_when_clases_filtradas_empty() -> None:
+    """The real regression: prod payload had ClasesFiltradas=[] and
+    Data populated with the operator's own slots. Must still yield
+    a non-empty picker."""
     payload = {
         "ClasesFiltradas": [],
         "Data": [
-            {"Id": 42, "Nombre": "WOD", "HoraComienzo": "21:30:00"},
+            _data_bucket(
+                "21:30:00",
+                {"Id": 42, "Nombre": "WOD", "HoraComienzo": "21:30:00"},
+            ),
         ],
+    }
+    result = extract_available_classes(payload)
+    assert result.class_types == ["WOD"]
+    assert result.time_slots == ["21:30"]
+
+
+def test_extract_accepts_bare_dict_in_valores_without_wrapper() -> None:
+    """Defensive: some entries may skip the ``Valor`` layer."""
+    payload = {
+        "Data": [
+            {
+                "Hora": "21:30:00",
+                "Valores": [{"Id": 99, "Nombre": "WOD", "HoraComienzo": "21:30:00"}],
+            }
+        ]
     }
     result = extract_available_classes(payload)
     assert result.class_types == ["WOD"]
@@ -126,10 +171,16 @@ def test_extract_unions_both_sources_and_dedupes() -> None:
             {"NombreE": "WOD", "Hora": "21:30:00"},
         ],
         "Data": [
-            # Same slot as one in ClasesFiltradas — deduped.
-            {"Id": 42, "Nombre": "WOD", "HoraComienzo": "21:30:00"},
-            # New slot only visible via Data.
-            {"Id": 43, "Nombre": "Halterofilia", "HoraComienzo": "20:30:00"},
+            _data_bucket(
+                "21:30:00",
+                # Same slot as one in ClasesFiltradas — deduped.
+                {"Id": 42, "Nombre": "WOD", "HoraComienzo": "21:30:00"},
+            ),
+            _data_bucket(
+                "20:30:00",
+                # New slot only visible via Data.
+                {"Id": 43, "Nombre": "Halterofilia", "HoraComienzo": "20:30:00"},
+            ),
         ],
     }
     result = extract_available_classes(payload)
