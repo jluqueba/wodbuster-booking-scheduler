@@ -483,7 +483,7 @@ def test_new_form_disables_selects_when_picker_unavailable(
     seed_operator: Callable[..., tuple[int, str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """When the picker fails, dropdowns and submit are disabled."""
+    """When the picker fails, the class-type combo and submit are disabled."""
     _, subject = seed_operator(provider="microsoft", display_name="Alice")
     app = app_factory()
 
@@ -493,9 +493,45 @@ def test_new_form_disables_selects_when_picker_unavailable(
     assert response.status_code == 200
     # The picker note explains the empty state.
     assert "Live class list unavailable" in response.text
-    # Class-type / class-time selects are rendered as disabled selects
-    # (no free-text fallback — a typo would silently create a rule
-    # that never books).
+    # Class-type stays a <select> (must match schedule string exactly).
     assert "<select" in response.text
-    # Both dropdowns and the submit button carry the disabled marker.
+    # Time fields render as the custom wb-time-picker widget (no
+    # AM/PM ambiguity, always 24h; wire format remains HH:MM via the
+    # hidden input).
+    assert 'class="wb-time-picker"' in response.text
+    assert response.text.count('data-time-picker="class_time"') == 1
+    assert response.text.count('data-time-picker="booking_opens_at"') == 1
+    assert response.text.count('data-time-picker="second_shot_class_time"') == 1
+    # The init script is present so the widgets sync into the
+    # hidden inputs on user edit.
+    assert "wb-time-picker" in response.text
+    assert "initTimePicker" in response.text
+    # Both class-type combos and the submit button carry the disabled
+    # marker when the picker is empty.
     assert response.text.count("disabled") >= 3
+
+
+def test_new_form_time_pickers_render_hour_and_minute_selects(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The 24h picker exposes hour options 00-23 and minute options 00-55."""
+    _, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/rules/new")
+
+    assert response.status_code == 200
+    # Sample of hour options — should span the full 24h range.
+    assert '<option value="00">00</option>' in response.text
+    assert '<option value="12">12</option>' in response.text
+    assert '<option value="23">23</option>' in response.text
+    # Sample of minute options at 5-minute granularity.
+    assert '<option value="00">00</option>' in response.text
+    assert '<option value="30">30</option>' in response.text
+    assert '<option value="55">55</option>' in response.text
+    # And crucially: no native <input type="time"> that would surface
+    # AM/PM on 12h locales.
+    assert 'type="time"' not in response.text
