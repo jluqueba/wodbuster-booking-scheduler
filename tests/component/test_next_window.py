@@ -21,6 +21,18 @@ from sqlalchemy.orm import Session, sessionmaker
 from wodbuster_worker.heartbeat.next_window import compute_next_window
 
 
+@pytest.fixture(autouse=True)
+def _pin_utc_timezone(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin ``WORKER_TIMEZONE=UTC`` so numeric assertions stay readable.
+
+    The scheduler interprets every rule's ``HH:MM`` in the operator
+    zone (default ``Europe/Madrid``). These component tests were
+    written against UTC; pinning here keeps them independent of the
+    active DST offset. The Madrid path is covered by the unit tests.
+    """
+    monkeypatch.setenv("WORKER_TIMEZONE", "UTC")
+
+
 @pytest.fixture
 def session_factory(postgres_engine: Engine) -> sessionmaker[Session]:
     return sessionmaker(

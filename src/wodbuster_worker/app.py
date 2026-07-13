@@ -311,7 +311,7 @@ def _register_routes(app: FastAPI) -> None:
             next_window_iso = (
                 next_window.isoformat() if next_window is not None else None
             )
-            return templates.TemplateResponse(
+            response = templates.TemplateResponse(
                 request=request,
                 name="dashboard.html",
                 context={
@@ -322,6 +322,13 @@ def _register_routes(app: FastAPI) -> None:
                     "csrf_token": get_csrf_token(request) or "",
                 },
             )
+            # Prevent the browser back-button restoring a stale
+            # snapshot after a mutation (e.g. rule delete). The
+            # countdown script also listens for ``pageshow.persisted``
+            # as a belt-and-braces fallback for browsers that ignore
+            # ``no-store`` for bfcache.
+            response.headers["Cache-Control"] = "no-store"
+            return response
         return templates.TemplateResponse(
             request=request,
             name="landing.html",

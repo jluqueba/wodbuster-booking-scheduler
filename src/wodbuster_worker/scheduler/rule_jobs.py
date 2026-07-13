@@ -23,10 +23,12 @@ crash inside the job" we revisit.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from datetime import UTC, datetime, time, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import structlog
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -48,13 +50,27 @@ SessionFactory = Callable[[], AbstractContextManager[Any]]
 # ---------------------------------------------------------------------------
 
 
+def _operator_timezone() -> ZoneInfo:
+    """Return the timezone in which every rule's ``HH:MM`` is interpreted.
+
+    Reads ``WORKER_TIMEZONE`` from the environment (default
+    ``Europe/Madrid``). Kept as a lazy lookup so tests can override
+    via ``monkeypatch.setenv``. The gym runs on the operator's local
+    clock; treating ``HH:MM`` as UTC (as an earlier draft did) fires
+    the scheduler at the wrong instant.
+    """
+    return ZoneInfo(os.environ.get("WORKER_TIMEZONE", "Europe/Madrid"))
+
+
 def next_window_open_for_rule(rule: SchedulerRule, now: datetime) -> datetime:
     """Return the next booking-window open instant for ``rule``.
 
     Trigger day is ``(day_of_week - booking_opens_days_before) mod 7``;
-    the window opens on that weekday at ``booking_opens_at``. If today
-    matches and the time is still in the future, the same-day instant
-    is returned. Otherwise the function rolls forward one week.
+    the window opens on that weekday at ``booking_opens_at``
+    interpreted in the operator's timezone (see
+    :func:`_operator_timezone`). If today matches and the time is
+    still in the future, the same-day instant is returned. Otherwise
+    the function rolls forward one week. Returned datetime is UTC.
     """
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
@@ -66,17 +82,23 @@ def next_window_open_for_rule(rule: SchedulerRule, now: datetime) -> datetime:
 def target_slot_for_window(rule: SchedulerRule, window_open: datetime) -> datetime:
     """Return the class-start datetime paired with ``window_open``.
 
-    The attendance day is exactly ``booking_opens_days_before`` days
-    after the window opens; the class starts at ``class_time`` on
-    that day.
+    Class start day is ``booking_opens_days_before`` days after the
+    window opens; the clock time is ``class_time`` in the operator's
+    timezone. Returned datetime is UTC.
     """
     if window_open.tzinfo is None:
         raise ValueError("window_open must be timezone-aware")
     class_time = _parse_hhmm(rule.class_time)
-    class_day = window_open + timedelta(days=rule.booking_opens_days_before)
-    return class_day.replace(
+    tz = _operator_timezone()
+    # Move to the operator's local zone so day arithmetic uses local
+    # midnight (avoids off-by-one when the UTC window and local day
+    # straddle midnight).
+    local_window = window_open.astimezone(tz)
+    class_day_local = local_window + timedelta(days=rule.booking_opens_days_before)
+    local_start = class_day_local.replace(
         hour=class_time.hour, minute=class_time.minute, second=0, microsecond=0
-    ).astimezone(UTC)
+    )
+    return local_start.astimezone(UTC)
 
 
 def _parse_hhmm(value: str) -> time:
@@ -85,15 +107,22 @@ def _parse_hhmm(value: str) -> time:
 
 
 def _next_occurrence(*, now: datetime, day_of_week: int, at: time) -> datetime:
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    days_ahead = (day_of_week - now.weekday()) % 7
-    candidate = (
-        (today + timedelta(days=days_ahead))
-        .replace(hour=at.hour, minute=at.minute)
-        .astimezone(UTC)
+    """Next ``day_of_week`` at ``at`` (in the operator's tz), as UTC.
+
+    Both weekday arithmetic and the ``at`` clock time are anchored
+    in the operator's local zone so DST transitions and non-UTC
+    operators do not mis-fire.
+    """
+    tz = _operator_timezone()
+    local_now = now.astimezone(tz)
+    local_today = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    days_ahead = (day_of_week - local_now.weekday()) % 7
+    local_candidate = (local_today + timedelta(days=days_ahead)).replace(
+        hour=at.hour, minute=at.minute
     )
+    candidate = local_candidate.astimezone(UTC)
     if candidate <= now:
-        candidate += timedelta(days=7)
+        candidate = (local_candidate + timedelta(days=7)).astimezone(UTC)
     return candidate
 
 

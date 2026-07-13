@@ -34,6 +34,19 @@ from wodbuster_worker.scheduler.rule_jobs import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _pin_utc_timezone(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin ``WORKER_TIMEZONE=UTC`` for the arithmetic tests.
+
+    Real deployments read ``WORKER_TIMEZONE`` (default
+    ``Europe/Madrid``) and interpret every rule's ``HH:MM`` in that
+    zone. Pinning to UTC here keeps the numeric assertions readable —
+    a dedicated ``test_operator_timezone_is_honored_*`` case exercises
+    the real Madrid path.
+    """
+    monkeypatch.setenv("WORKER_TIMEZONE", "UTC")
+
+
 def _rule(
     rule_id: int = 42,
     *,
@@ -99,6 +112,21 @@ def test_next_window_open_wraps_across_week_boundary() -> None:
     assert result == datetime(2026, 7, 10, 22, 40, tzinfo=UTC)
 
 
+def test_operator_timezone_is_honored_for_next_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # July 13 2026 is a Monday. CEST = UTC+2, so 22:40 Madrid on Mon
+    # July 13 is 20:40 UTC. Verifies the operator's HH:MM is
+    # interpreted in the configured zone rather than UTC.
+    monkeypatch.setenv("WORKER_TIMEZONE", "Europe/Madrid")
+    now = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+    rule = _rule(day_of_week=0, booking_opens_days_before=0, booking_opens_at="22:40")
+
+    result = next_window_open_for_rule(rule, now=now)
+
+    assert result == datetime(2026, 7, 13, 20, 40, tzinfo=UTC)
+
+
 # ---------------------------------------------------------------------------
 # target_slot_for_window
 # ---------------------------------------------------------------------------
@@ -128,6 +156,22 @@ def test_target_slot_naive_raises() -> None:
     rule = _rule()
     with pytest.raises(ValueError, match="timezone-aware"):
         target_slot_for_window(rule, datetime(2026, 7, 13, 21, 30))
+
+
+def test_target_slot_uses_operator_timezone_for_class_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Window opens Fri 22:40 Madrid (= 20:40 UTC). Class time is
+    # 07:30 Madrid on the following Monday. Verifies that both the
+    # day arithmetic and the HH:MM hop through the operator zone.
+    monkeypatch.setenv("WORKER_TIMEZONE", "Europe/Madrid")
+    window_open = datetime(2026, 7, 10, 20, 40, tzinfo=UTC)  # Fri 22:40 Madrid
+    rule = _rule(class_time="07:30", booking_opens_days_before=3)
+
+    result = target_slot_for_window(rule, window_open)
+
+    # Mon 07:30 Madrid == Mon 05:30 UTC (CEST).
+    assert result == datetime(2026, 7, 13, 5, 30, tzinfo=UTC)
 
 
 # ---------------------------------------------------------------------------

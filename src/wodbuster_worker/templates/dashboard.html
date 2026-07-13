@@ -28,6 +28,22 @@
 
   {% include "_banners.html" %}
 
+  {# Reload on bfcache restore. Without this, tapping the browser
+     back button (e.g. after deleting a rule and hitting "back")
+     restores a stale snapshot of the dashboard: the countdown keeps
+     ticking against the deleted rule's window. ``pageshow`` fires
+     on both fresh loads and restores; only reload when the page was
+     served from the back/forward cache. #}
+  <script>
+    (function () {
+      window.addEventListener('pageshow', function (event) {
+        if (event.persisted) {
+          window.location.reload();
+        }
+      });
+    })();
+  </script>
+
   {# Countdown to the next booking-window open. Only rendered when
      the operator has at least one active rule; otherwise a call-to-
      action nudges them to /rules to set one up. #}
@@ -76,6 +92,7 @@
                 month: 'short',
                 hour: '2-digit',
                 minute: '2-digit',
+                hour12: false,
               });
           }
           paint();
