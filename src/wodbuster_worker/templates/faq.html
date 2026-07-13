@@ -1,0 +1,265 @@
+{# Frequently Asked Questions.
+
+   Static content. Structured as a semantic <dl>+<details> block so
+   answers collapse cleanly on mobile and the browser handles
+   expand/collapse natively (no JS).
+#}
+{% extends "base.html" %}
+
+{% block title %}FAQ — WodBuster Booking Scheduler{% endblock %}
+
+{% block nav %}
+  {% set active_nav = "faq" %}
+  {% include "_nav.html" %}
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .wb-faq {
+    max-width: 44rem;
+    margin: 0 auto;
+  }
+  .wb-faq details {
+    background: var(--wb-bg-card);
+    border: 1px solid var(--wb-border);
+    border-radius: var(--wb-radius);
+    padding: 0.9rem 1.15rem;
+    margin-bottom: 0.75rem;
+  }
+  .wb-faq details[open] {
+    border-color: var(--wb-border-strong);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  }
+  .wb-faq summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--wb-text);
+    padding: 0.15rem 0;
+    outline: none;
+    list-style: none;
+  }
+  .wb-faq summary::-webkit-details-marker {
+    display: none;
+  }
+  .wb-faq summary::before {
+    content: "▸";
+    display: inline-block;
+    margin-right: 0.55rem;
+    color: var(--wb-accent);
+    transition: transform 0.15s ease;
+  }
+  .wb-faq details[open] summary::before {
+    transform: rotate(90deg);
+  }
+  .wb-faq__answer {
+    margin: 0.75rem 0 0;
+    color: var(--wb-text-muted);
+    line-height: 1.55;
+    font-size: 0.95rem;
+  }
+  .wb-faq__answer code {
+    background: var(--wb-bg-inset);
+    padding: 0.05rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.85em;
+  }
+  .wb-faq__section-title {
+    color: var(--wb-text);
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 2rem 0 0.75rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid var(--wb-border);
+  }
+  .wb-faq__section-title:first-of-type {
+    margin-top: 1rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+  <span class="wb-page-title__eyebrow">Help</span>
+  <h1 class="wb-page-title">❓ Frequently asked questions</h1>
+  <p class="wb-page-subtitle">
+    Everything you need to run bookings on autopilot. Tap a question
+    to expand it.
+  </p>
+
+  <div class="wb-faq">
+
+    <h2 class="wb-faq__section-title">Getting started</h2>
+
+    <details>
+      <summary>What is this app?</summary>
+      <p class="wb-faq__answer">
+        A background worker that books your WodBuster classes the
+        moment the reservation window opens. You configure your
+        weekly schedule once (Rules), keep a valid session cookie on
+        file (Cookie), and the app fires the booking on your behalf.
+        Every attempt is logged on the History page.
+      </p>
+    </details>
+
+    <details>
+      <summary>How do I make my first booking?</summary>
+      <p class="wb-faq__answer">
+        Three steps: (1) paste a fresh <code>.WBAuth</code> cookie on
+        the <a href="/cookie">Cookie</a> page, (2) create a rule on
+        the <a href="/rules">Rules</a> page describing which class
+        you attend, at what time, and when WodBuster opens the
+        reservation window for it, (3) wait — the scheduler fires
+        automatically at the window-open instant.
+      </p>
+    </details>
+
+    <h2 class="wb-faq__section-title">Cookie</h2>
+
+    <details>
+      <summary>Where do I get the cookie value from?</summary>
+      <p class="wb-faq__answer">
+        Log in to WodBuster normally in your browser, open the
+        developer tools (F12), go to the Application (or Storage)
+        tab, expand Cookies for the gym subdomain, and copy the
+        value of the cookie named <code>.WBAuth</code>. Paste it
+        into the Cookie page here.
+      </p>
+    </details>
+
+    <details>
+      <summary>How often do I need to refresh the cookie?</summary>
+      <p class="wb-faq__answer">
+        WodBuster's session cookie lives for about 30 days. The app
+        checks it hourly and pushes a banner + Telegram alert 24 h
+        before the projected expiry so you have time to paste a
+        fresh one without missing a booking window.
+      </p>
+    </details>
+
+    <details>
+      <summary>The dashboard says "Cookie rejected". What now?</summary>
+      <p class="wb-faq__answer">
+        WodBuster refused the stored cookie mid-flight — usually
+        because you logged out from the website, or the session was
+        invalidated remotely. Grab a fresh cookie from the browser
+        and paste it. The alert closes automatically on the next
+        successful heartbeat.
+      </p>
+    </details>
+
+    <h2 class="wb-faq__section-title">Rules</h2>
+
+    <details>
+      <summary>What is a rule?</summary>
+      <p class="wb-faq__answer">
+        A recurring weekly booking. It says: on this day of the
+        week, book this class type at this time. The app also asks
+        how many days before the class WodBuster opens the
+        reservation window and at what clock time — this is what
+        the scheduler uses to fire the booking at the right instant.
+      </p>
+    </details>
+
+    <details>
+      <summary>What is the "second shot"?</summary>
+      <p class="wb-faq__answer">
+        An optional fallback. If the primary class is already full
+        when the worker tries to book it, the second shot is a
+        different class type or time to attempt as a backup. Leave
+        it blank if you have no alternative.
+      </p>
+    </details>
+
+    <details>
+      <summary>Can I book multiple days from one form?</summary>
+      <p class="wb-faq__answer">
+        Yes — pick every attendance day in the day pills and the
+        create form fans out into one rule per selected day. Edit
+        each row afterwards to tweak a specific day.
+      </p>
+    </details>
+
+    <details>
+      <summary>The class-type dropdown is empty. Why?</summary>
+      <p class="wb-faq__answer">
+        The picker is seeded from a live WodBuster call. If it is
+        empty, the cookie is missing, invalid, or the upstream call
+        failed. Paste a fresh cookie and refresh. If it stays empty
+        after that, hit <code>/rules/api/classes/debug</code> in
+        your browser — the JSON response shows what the picker sees.
+      </p>
+    </details>
+
+    <h2 class="wb-faq__section-title">History &amp; cancel</h2>
+
+    <details>
+      <summary>How do I cancel a booking?</summary>
+      <p class="wb-faq__answer">
+        Go to the <a href="/history">History</a> page, find the
+        booking (it must be granted and its class start must still
+        be in the future), and tap Cancel. The app calls WodBuster,
+        flips the row to <em>cancelled</em>, and sends a Telegram
+        notification.
+      </p>
+    </details>
+
+    <details>
+      <summary>What happens if I tap Cancel twice?</summary>
+      <p class="wb-faq__answer">
+        The second tap is a no-op. The app detects the row is
+        already cancelled and shows "Already cancelled" without
+        calling WodBuster again.
+      </p>
+    </details>
+
+    <details>
+      <summary>Why do some booked classes have no Cancel button?</summary>
+      <p class="wb-faq__answer">
+        Cancel is only shown for rows that are <em>granted</em> and
+        whose class start is in the future. Past bookings, full
+        outcomes, and rows already cancelled cannot be cancelled
+        from the app.
+      </p>
+    </details>
+
+    <h2 class="wb-faq__section-title">Notifications</h2>
+
+    <details>
+      <summary>Where do notifications go?</summary>
+      <p class="wb-faq__answer">
+        Every mutating event (booking granted, booking failed, cookie
+        expiring, cookie rejected) produces a banner on the
+        dashboard <em>and</em> a Telegram message — as long as you
+        have registered your Telegram chat id against your operator
+        profile. Web-only alerts still work if Telegram is not
+        wired.
+      </p>
+    </details>
+
+    <h2 class="wb-faq__section-title">Troubleshooting</h2>
+
+    <details>
+      <summary>The scheduler did not fire at the expected time.</summary>
+      <p class="wb-faq__answer">
+        Check the History page: if the row is there with a
+        non-granted outcome (full, class-not-visible,
+        upstream-unavailable), the scheduler tried but WodBuster
+        refused. If no row exists at all, the scheduler did not
+        fire — usually because the rule is inactive, the cookie is
+        missing, or the container restarted moments before the
+        window and did not re-register the job.
+      </p>
+    </details>
+
+    <details>
+      <summary>I want to sign in from a different provider.</summary>
+      <p class="wb-faq__answer">
+        Log out, then hit the sign-in provider you want on the
+        landing page. The app matches identities by subject id
+        provided by the OAuth callback — an account you have not
+        signed in with before will be rejected because the operator
+        allow-list is single-user for now.
+      </p>
+    </details>
+
+  </div>
+{% endblock %}

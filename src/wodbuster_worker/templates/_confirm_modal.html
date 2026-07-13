@@ -1,0 +1,112 @@
+{# Reusable custom confirm modal (wbConfirm).
+
+   Renders a hidden dialog + inline script. Any form that wants to
+   ask for confirmation before submitting swaps its
+   ``onsubmit="return confirm('...')"`` handler for
+   ``onsubmit="return wbConfirm(this, event, '...')"``. The
+   function returns ``false`` on first invocation, opens the
+   modal, and re-submits the form when the operator taps Confirm.
+
+   Uses the native <dialog> element (baseline available in every
+   modern browser as of 2023+); no external JS dependency. Falls
+   back to the browser confirm() when <dialog> is missing.
+#}
+
+<dialog id="wb-confirm-dialog" class="wb-confirm">
+  <form method="dialog" class="wb-confirm__form">
+    <h3 class="wb-confirm__title" id="wb-confirm-title">Are you sure?</h3>
+    <p class="wb-confirm__body" id="wb-confirm-body">
+      This action cannot be undone.
+    </p>
+    <div class="wb-confirm__actions">
+      <button
+        type="button"
+        class="wb-btn wb-confirm__cancel"
+        value="cancel"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="wb-btn wb-btn--danger wb-confirm__ok"
+        value="ok"
+      >
+        Confirm
+      </button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  (function () {
+    var pendingForm = null;
+
+    function ready(fn) {
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', fn);
+      } else {
+        fn();
+      }
+    }
+
+    window.wbConfirm = function (formEl, event, message) {
+      var dialog = document.getElementById('wb-confirm-dialog');
+      // Fallback: browser confirm if <dialog> is unavailable.
+      if (!dialog || typeof dialog.showModal !== 'function') {
+        return window.confirm(message || 'Are you sure?');
+      }
+      // If we are the re-submit triggered by the Confirm click,
+      // let it through unchanged.
+      if (formEl.dataset.wbConfirmed === '1') {
+        formEl.dataset.wbConfirmed = '';
+        return true;
+      }
+      if (event && typeof event.preventDefault === 'function') {
+        event.preventDefault();
+      }
+      pendingForm = formEl;
+      var bodyEl = document.getElementById('wb-confirm-body');
+      if (bodyEl && message) bodyEl.textContent = message;
+      dialog.showModal();
+      return false;
+    };
+
+    ready(function () {
+      var dialog = document.getElementById('wb-confirm-dialog');
+      if (!dialog) return;
+      var ok = dialog.querySelector('.wb-confirm__ok');
+      var cancel = dialog.querySelector('.wb-confirm__cancel');
+      if (ok) {
+        ok.addEventListener('click', function () {
+          var form = pendingForm;
+          pendingForm = null;
+          dialog.close();
+          if (form) {
+            form.dataset.wbConfirmed = '1';
+            // requestSubmit fires the same submit/onsubmit lifecycle
+            // as a click on a submit button — critical so hx-post
+            // handlers still fire when we adopt HTMX for these.
+            if (typeof form.requestSubmit === 'function') {
+              form.requestSubmit();
+            } else {
+              form.submit();
+            }
+          }
+        });
+      }
+      if (cancel) {
+        cancel.addEventListener('click', function () {
+          pendingForm = null;
+          dialog.close();
+        });
+      }
+      // Backdrop click = cancel.
+      dialog.addEventListener('click', function (ev) {
+        if (ev.target === dialog) {
+          pendingForm = null;
+          dialog.close();
+        }
+      });
+    });
+  })();
+</script>

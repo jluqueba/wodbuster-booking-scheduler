@@ -169,7 +169,7 @@
               {% if picker_unavailable %}disabled{% endif %}>Save changes</button>
       {% if delete_url %}
         <form method="post" action="{{ delete_url }}" style="display: inline; margin: 0;"
-              onsubmit="return confirm('Delete this rule?')">
+              onsubmit="return wbConfirm(this, event, 'Delete this rule?')">
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button type="submit" class="wb-btn wb-btn--danger">Delete rule</button>
         </form>
