@@ -33,8 +33,18 @@ from ..persistence.cookie_store import CookieStore
 from ..persistence.engine import get_session
 from ..persistence.models import SchedulerRule
 from ..scheduler.rule_jobs import register_rule_job, unregister_rule_job
-from ..wodbuster_client.client import WodBusterClient
-from .classes import AvailableClasses, fetch_available_classes
+from ..wodbuster_client.client import (
+    WodBusterAuthError,
+    WodBusterClient,
+    WodBusterProtocolError,
+    WodBusterTransportError,
+)
+from .classes import (
+    AvailableClasses,
+    _today_ticks_utc,
+    extract_available_classes,
+    fetch_available_classes,
+)
 from .forms import parse_create_rule_form, parse_edit_rule_form
 from .service import (
     create_rules_for_days,
@@ -227,6 +237,97 @@ def rules_api_classes(
             "available": True,
         }
     )
+
+
+@router.get("/api/classes/debug", name="rules_api_classes_debug")
+def rules_api_classes_debug(
+    request: Request, operator_id: int = Depends(require_session)
+) -> Response:
+    """Return diagnostics for the picker fetch.
+
+    The regular ``/api/classes`` endpoint hides its failure modes so
+    the front end can render a fallback. This endpoint exposes them
+    for troubleshooting "the dropdown is empty" from the operator's
+    browser. Response shape:
+
+    - ``stage`` — where the pipeline stopped (``ok`` / ``no_cookie_stack``
+      / ``no_cookie`` / ``upstream_error`` / ``parsed``).
+    - ``sources`` — parsed counts from each LoadClass source.
+    - ``result`` — the same shape ``/api/classes`` would return.
+
+    Never returns raw payload fragments (would leak other athletes'
+    names — PII).
+    """
+    store = getattr(request.app.state, "cookie_store", None)
+    client = getattr(request.app.state, "wodbuster_client", None)
+    if not isinstance(store, CookieStore) or not isinstance(client, WodBusterClient):
+        return JSONResponse(
+            {
+                "stage": "no_cookie_stack",
+                "sources": {},
+                "result": None,
+            }
+        )
+
+    with get_session() as session:
+        cookie_value = store.load(session, operator_id)
+    if cookie_value is None:
+        return JSONResponse(
+            {"stage": "no_cookie", "sources": {}, "result": None}
+        )
+
+    try:
+        loaded = client.load_class(cookie_value, _today_ticks_utc())
+    except (
+        WodBusterAuthError,
+        WodBusterTransportError,
+        WodBusterProtocolError,
+    ) as exc:
+        return JSONResponse(
+            {
+                "stage": "upstream_error",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "sources": {},
+                "result": None,
+            }
+        )
+
+    payload = loaded.payload
+    clases = payload.get("ClasesFiltradas")
+    data = payload.get("Data")
+    result = extract_available_classes(payload)
+    return JSONResponse(
+        {
+            "stage": "parsed",
+            "sources": {
+                "top_level_keys": sorted(payload.keys()) if isinstance(payload, dict) else None,
+                "clases_filtradas_len": len(clases) if isinstance(clases, list) else None,
+                "clases_filtradas_sample_keys": _sample_keys(clases),
+                "data_len": len(data) if isinstance(data, list) else None,
+                "data_sample_keys": _sample_keys(data),
+            },
+            "result": {
+                "class_types": result.class_types,
+                "time_slots": result.time_slots,
+                "available": not result.is_empty,
+            },
+        }
+    )
+
+
+def _sample_keys(value: Any) -> list[str] | None:
+    """Return the sorted keys of the first dict in ``value`` (list).
+
+    Only field names — no values — so the endpoint is safe to expose
+    without redacting the athletes' PII carried on ``Data[i]``.
+    """
+    if not isinstance(value, list):
+        return None
+    for entry in value:
+        if isinstance(entry, dict):
+            return sorted(entry.keys())
+    return []
 
 
 @router.get("/{rule_id}", name="rules_edit")
