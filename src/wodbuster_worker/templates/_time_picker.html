@@ -1,62 +1,41 @@
-{# 24-hour time picker macro.
+{# 24-hour time picker macro (Flatpickr).
 
-   Renders two <select> dropdowns (hour 00-23 + minute 00/05/../55)
-   plus a hidden <input name="{{ name }}"> that carries the combined
-   HH:MM value the server expects. A small inline JS keeps the hidden
-   input in sync with the selects and initialises the selects from
-   the existing value on page load.
+   Renders a single text <input> that Flatpickr enhances into a
+   compact hour/minute popover. Configuration:
 
-   Rationale for going custom over <input type="time">: the native
-   widget displays in the browser/OS locale, so users on 12h locales
-   see AM/PM in the picker even though the submitted value is always
-   24h. Two selects are always 24h and add no dependency on device
-   settings.
+   - ``time_24hr: true`` forces 24h regardless of browser/OS locale
+     (this is the whole reason we swapped the native widget out).
+   - ``noCalendar: true`` + ``enableTime: true`` yields the
+     time-only floating panel.
+   - ``dateFormat: 'H:i'`` pins the wire value to ``HH:MM``, which
+     is exactly what the form parser expects — zero server-side
+     normalisation.
+   - Clock icon is a background SVG on the input itself so it moves
+     with focus/hover states.
 
-   Wire format is unchanged from the previous <input type="time">
-   implementation — the hidden field is still named ``{{ name }}``
-   and still carries a ``HH:MM`` string. The form parser and DB
-   column shape remain untouched. Off-grid stored minutes (e.g.
-   ``22:37`` with 5-min steps) are preserved: the hidden input keeps
-   the exact value until the operator picks a new one, and the
-   minute select initialises to the nearest lower step.
+   The macro emits both the visible input and a hidden fallback
+   input holding the same value. If Flatpickr fails to load (CDN
+   outage, blocked script), the plain input still works: the
+   operator can type HH:MM by hand and the server accepts it.
 
-   Usage: at the top of a template, do
+   Usage:
        {% import "_time_picker.html" as widgets %}
-   and then in the form
        {{ widgets.time_picker("class_time", form_values.get("class_time"), required=true) }}
 #}
 
-{% macro time_picker(name, value, required=false, step=5) -%}
+{% macro time_picker(name, value, required=false) -%}
   {% set safe_id = name | replace('_', '-') %}
-  <div class="wb-time-picker" data-time-picker="{{ name }}">
-    <select
-      id="{{ safe_id }}-hour"
-      class="wb-time-picker__hour"
-      aria-label="Hour"
-      {% if required %}required{% endif %}
-    >
-      {% for hh in range(24) %}
-        {% set label = '%02d'|format(hh) %}
-        <option value="{{ label }}">{{ label }}</option>
-      {% endfor %}
-    </select>
-    <span class="wb-time-picker__sep">:</span>
-    <select
-      id="{{ safe_id }}-minute"
-      class="wb-time-picker__minute"
-      aria-label="Minute"
-      {% if required %}required{% endif %}
-    >
-      {% for mm in range(0, 60, step) %}
-        {% set label = '%02d'|format(mm) %}
-        <option value="{{ label }}">{{ label }}</option>
-      {% endfor %}
-    </select>
+  <div class="wb-time-picker">
     <input
-      type="hidden"
+      type="text"
       id="{{ safe_id }}"
       name="{{ name }}"
       value="{{ value or '' }}"
+      class="wb-time-flatpickr wb-time-picker__input"
+      autocomplete="off"
+      placeholder="HH:MM"
+      pattern="[0-9]{2}:[0-9]{2}"
+      inputmode="numeric"
       {% if required %}required{% endif %}
     >
   </div>

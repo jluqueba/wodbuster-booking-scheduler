@@ -805,39 +805,14 @@ fieldset legend {
 
 
 /* --------------------------------------------------------------------------
-   24h time picker (hour + minute selects that mimic a native picker)
+   24h time picker wrapper (Flatpickr-enhanced input)
+
+   The visible <input> lives inside .wb-time-picker. Icon and popover
+   styling come from static/flatpickr-theme.css so this file stays
+   framework-agnostic.
    -------------------------------------------------------------------------- */
 
 .wb-time-picker {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-}
-
-.wb-time-picker__hour,
-.wb-time-picker__minute {
-  min-width: 4.25rem;
-  padding: 0.5rem 0.6rem;
-  font-family: var(--wb-mono);
-  font-size: 1rem;
-  text-align: center;
-  text-align-last: center;
-  border-radius: 8px;
-  background: var(--wb-bg-inset);
-  color: var(--wb-text);
-  border: 1px solid var(--wb-border);
-  margin-bottom: 0;
-}
-
-.wb-time-picker__hour:focus-visible,
-.wb-time-picker__minute:focus-visible {
-  outline: 2px solid var(--wb-accent);
-  outline-offset: 2px;
-}
-
-.wb-time-picker__sep {
-  color: var(--wb-text-muted);
-  font-family: var(--wb-mono);
-  font-weight: 600;
-  font-size: 1.1rem;
 }
