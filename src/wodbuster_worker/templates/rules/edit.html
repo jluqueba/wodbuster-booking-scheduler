@@ -4,6 +4,7 @@
    dropdown — an edit retargets one rule, no fan-out.
 #}
 {% extends "base.html" %}
+{% import "_time_picker.html" as widgets %}
 
 {% block title %}{{ heading }} — WodBuster Booking Worker{% endblock %}
 
@@ -92,15 +93,7 @@
         </div>
         <div>
           <label for="class_time">Class time</label>
-          <input
-            id="class_time"
-            name="class_time"
-            type="time"
-            step="60"
-            list="wb-class-times"
-            value="{{ form_values.get('class_time', '') }}"
-            required
-          >
+          {{ widgets.time_picker("class_time", form_values.get("class_time", ""), required=true) }}
           {% if errors.get('class_time') %}
             <p class="wb-field-error">{{ errors['class_time'] }}</p>
           {% endif %}
@@ -129,14 +122,7 @@
         </div>
         <div>
           <label for="booking_opens_at">Opens at</label>
-          <input
-            id="booking_opens_at"
-            name="booking_opens_at"
-            type="time"
-            step="60"
-            value="{{ form_values.get('booking_opens_at', '22:40') }}"
-            required
-          >
+          {{ widgets.time_picker("booking_opens_at", form_values.get("booking_opens_at", "22:40"), required=true) }}
           {% if errors.get('booking_opens_at') %}
             <p class="wb-field-error">{{ errors['booking_opens_at'] }}</p>
           {% endif %}
@@ -170,14 +156,7 @@
         </div>
         <div>
           <label for="second_shot_class_time">Alternative time</label>
-          <input
-            id="second_shot_class_time"
-            name="second_shot_class_time"
-            type="time"
-            step="60"
-            list="wb-class-times"
-            value="{{ form_values.get('second_shot_class_time', '') }}"
-          >
+          {{ widgets.time_picker("second_shot_class_time", form_values.get("second_shot_class_time", ""), required=false) }}
           {% if errors.get('second_shot_class_time') %}
             <p class="wb-field-error">{{ errors['second_shot_class_time'] }}</p>
           {% endif %}
@@ -196,18 +175,9 @@
         </form>
       {% endif %}
     </div>
-
-    {# Autocomplete suggestions for both class-time inputs. Browsers
-       that support datalist on type=time (Chrome, Edge, Firefox)
-       surface the gym's canonical time slots while still allowing
-       any HH:MM value; Safari / iOS ignore the datalist and fall
-       back to the plain native time picker. HTML5 spec pins the
-       submitted value to 24h ``HH:MM`` regardless of display locale,
-       so no server-side normalisation is required. #}
-    <datalist id="wb-class-times">
-      {% for slot in picker_time_slots %}
-        <option value="{{ slot }}">{{ slot }}</option>
-      {% endfor %}
-    </datalist>
   </form>
+
+  {# Initialise every wb-time-picker widget on the page. Included
+     once per page; the script guards against double-registration. #}
+  {% include "_time_picker_script.html" %}
 {% endblock %}
