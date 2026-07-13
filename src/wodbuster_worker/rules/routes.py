@@ -159,7 +159,7 @@ def rules_new(
         template="rules/create.html",
         heading="New rule",
         action_url="/rules",
-        form_values={"booking_opens_days_before": "2", "booking_opens_at": "21:30"},
+        form_values={"booking_opens_days_before": "3", "booking_opens_at": "22:40"},
         errors={},
         picker=picker,
     )

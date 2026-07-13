@@ -461,7 +461,10 @@ def test_api_classes_returns_unavailable_when_stack_not_wired(
 ) -> None:
     """Missing cookie stack (no gym / idu) collapses to ``available=false``.
 
-    The form still renders; it just falls back to free-text inputs.
+    The form still renders, but the class-type / time dropdowns are
+    disabled and the submit button is greyed out until the operator
+    seeds a cookie. Free-text entry is intentionally NOT offered — a
+    typo would silently create a rule that never books.
     """
     _, subject = seed_operator(provider="microsoft", display_name="Alice")
     app = app_factory()
@@ -475,12 +478,12 @@ def test_api_classes_returns_unavailable_when_stack_not_wired(
     assert body == {"class_types": [], "time_slots": [], "available": False}
 
 
-def test_new_form_renders_free_text_fallback_when_picker_unavailable(
+def test_new_form_disables_selects_when_picker_unavailable(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The empty picker path renders the free-text hint copy."""
+    """When the picker fails, dropdowns and submit are disabled."""
     _, subject = seed_operator(provider="microsoft", display_name="Alice")
     app = app_factory()
 
@@ -488,4 +491,11 @@ def test_new_form_renders_free_text_fallback_when_picker_unavailable(
         response = client.get("/rules/new")
 
     assert response.status_code == 200
+    # The picker note explains the empty state.
     assert "Live class list unavailable" in response.text
+    # Class-type / class-time selects are rendered as disabled selects
+    # (no free-text fallback — a typo would silently create a rule
+    # that never books).
+    assert "<select" in response.text
+    # Both dropdowns and the submit button carry the disabled marker.
+    assert response.text.count("disabled") >= 3
