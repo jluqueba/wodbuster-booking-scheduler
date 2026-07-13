@@ -32,12 +32,14 @@ from .booking.executor import BookingExecutor
 from .booking.routes import router as history_router
 from .config import Settings, get_settings
 from .cookie.routes import router as cookie_router
+from .heartbeat.next_window import compute_next_window
 from .heartbeat.probe import HeartbeatProbe
 from .notifications.banners import load_banners_for_operator
 from .notifications.dispatcher import NotificationDispatcher
 from .observability import configure_logging
 from .persistence.cookie_store import CookieStore
 from .persistence.engine import get_session
+from .routes.static_pages import router as static_pages_router
 from .rules.routes import router as rules_router
 from .scheduler.scheduler import (
     build_scheduler,
@@ -276,6 +278,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(cookie_router)
     app.include_router(rules_router)
     app.include_router(history_router)
+    app.include_router(static_pages_router)
     app.add_api_route("/health", health, methods=["GET"])
     # Static assets (brand CSS, later JS / images). Mounted after
     # routers so a stray path collision would surface as an app-side
@@ -299,8 +302,15 @@ def _register_routes(app: FastAPI) -> None:
             # back to an empty string when it is missing rather than
             # a placeholder — the template picks its own copy.
             display_name = request.session.get("display_name") or ""
+            from datetime import UTC, datetime
+
+            now = datetime.now(tz=UTC)
             with get_session() as session:
                 banners = load_banners_for_operator(session, operator_id)
+                next_window = compute_next_window(session, operator_id, now)
+            next_window_iso = (
+                next_window.isoformat() if next_window is not None else None
+            )
             return templates.TemplateResponse(
                 request=request,
                 name="dashboard.html",
@@ -308,6 +318,7 @@ def _register_routes(app: FastAPI) -> None:
                     "operator_id": operator_id,
                     "display_name": display_name,
                     "banners": banners,
+                    "next_window_iso": next_window_iso,
                     "csrf_token": get_csrf_token(request) or "",
                 },
             )

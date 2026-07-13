@@ -126,7 +126,7 @@
                   method="post"
                   action="/bookings/{{ row.id }}/cancel"
                   style="display: inline; margin: 0;"
-                  onsubmit="return confirm('Cancel this booking on WodBuster?')"
+                  onsubmit="return wbConfirm(this, event, 'Cancel this booking on WodBuster?')"
                 >
                   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                   <button type="submit" class="wb-btn wb-btn--danger">

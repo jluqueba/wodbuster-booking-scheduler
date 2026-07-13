@@ -1,7 +1,7 @@
 {# Post-sign-in dashboard. Replaces the old ``index.html``. #}
 {% extends "base.html" %}
 
-{% block title %}Dashboard — WodBuster Booking Worker{% endblock %}
+{% block title %}Dashboard — WodBuster Booking Scheduler{% endblock %}
 
 {% block nav %}
   {% set active_nav = "dashboard" %}
@@ -27,6 +27,74 @@
   </p>
 
   {% include "_banners.html" %}
+
+  {# Countdown to the next booking-window open. Only rendered when
+     the operator has at least one active rule; otherwise a call-to-
+     action nudges them to /rules to set one up. #}
+  {% if next_window_iso %}
+    <section
+      class="wb-countdown"
+      data-next-window="{{ next_window_iso }}"
+      aria-live="polite"
+    >
+      <div class="wb-countdown__label">Next booking window opens in</div>
+      <div class="wb-countdown__timer" data-role="timer">…</div>
+      <div class="wb-countdown__hint" data-role="hint">
+        {{ next_window_iso }}
+      </div>
+    </section>
+    <script>
+      (function () {
+        function fmt(n, w) {
+          return String(n).padStart(w || 2, '0');
+        }
+        function tick(root) {
+          var target = new Date(root.getAttribute('data-next-window'));
+          var timer = root.querySelector('[data-role="timer"]');
+          var hint = root.querySelector('[data-role="hint"]');
+          function paint() {
+            var ms = target.getTime() - Date.now();
+            if (ms <= 0) {
+              timer.textContent = '00:00:00';
+              root.classList.add('wb-countdown--firing');
+              hint.textContent =
+                'Firing now — refresh in a few seconds to see the outcome on History.';
+              return;
+            }
+            var s = Math.floor(ms / 1000);
+            var days = Math.floor(s / 86400);
+            var hours = Math.floor((s % 86400) / 3600);
+            var mins = Math.floor((s % 3600) / 60);
+            var secs = s % 60;
+            var head = days > 0 ? days + 'd ' : '';
+            timer.textContent =
+              head + fmt(hours) + ':' + fmt(mins) + ':' + fmt(secs);
+            hint.textContent =
+              'Fires at ' + target.toLocaleString(undefined, {
+                weekday: 'short',
+                day: '2-digit',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+          }
+          paint();
+          setInterval(paint, 1000);
+        }
+        var el = document.querySelector('.wb-countdown[data-next-window]');
+        if (el) tick(el);
+      })();
+    </script>
+  {% else %}
+    <section class="wb-countdown wb-countdown--empty">
+      <div class="wb-countdown__label">No upcoming booking</div>
+      <div class="wb-countdown__timer">—</div>
+      <div class="wb-countdown__hint">
+        <a href="/rules">Add a rule</a> to schedule your first
+        automatic booking.
+      </div>
+    </section>
+  {% endif %}
 
   <div class="wb-feature-grid">
     <a href="/rules" class="wb-card wb-card--interactive">

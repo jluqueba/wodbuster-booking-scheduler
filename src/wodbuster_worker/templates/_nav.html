@@ -2,11 +2,12 @@
 
    The ``active_nav`` context variable determines which link gets the
    ``aria-current="page"`` marker. Values match the route family:
-   ``dashboard``, ``cookie``, ``rules``, ``history``.
+   ``dashboard``, ``cookie``, ``rules``, ``history``, ``faq``.
 #}
 <nav class="wb-nav">
-  <a href="/" class="wb-nav__brand" aria-label="WodBuster Booking Worker">
-    WodBuster
+  <a href="/" class="wb-nav__brand" aria-label="WodBuster Booking Scheduler">
+    <span class="wb-nav__brand-full">WodBuster Booking Scheduler</span>
+    <span class="wb-nav__brand-short">WodBuster</span>
   </a>
   <ul class="wb-nav__links">
     <li>
@@ -28,6 +29,11 @@
       <a href="/cookie"
          {% if active_nav == "cookie" %}aria-current="page"{% endif %}
       >🍪 Cookie</a>
+    </li>
+    <li>
+      <a href="/faq"
+         {% if active_nav == "faq" %}aria-current="page"{% endif %}
+      >❓ FAQ</a>
     </li>
   </ul>
   <form method="post" action="/auth/logout">
