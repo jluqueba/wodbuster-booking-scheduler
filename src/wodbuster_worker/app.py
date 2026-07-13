@@ -29,6 +29,7 @@ from .auth.oauth import build_oauth
 from .auth.routes import router as auth_router
 from .auth.session import IdleTimeoutMiddleware, build_session_middleware
 from .booking.executor import BookingExecutor
+from .booking.routes import router as history_router
 from .config import Settings, get_settings
 from .cookie.routes import router as cookie_router
 from .heartbeat.probe import HeartbeatProbe
@@ -274,6 +275,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(auth_router)
     app.include_router(cookie_router)
     app.include_router(rules_router)
+    app.include_router(history_router)
     app.add_api_route("/health", health, methods=["GET"])
     # Static assets (brand CSS, later JS / images). Mounted after
     # routers so a stray path collision would surface as an app-side

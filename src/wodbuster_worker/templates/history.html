@@ -1,0 +1,143 @@
+{# Booking history page (US6.2, H.1 lite).
+
+   Lists the operator's most recent booking attempts, newest first,
+   with a "Cancel" button on every ``granted`` row whose class start
+   is still in the future. Every terminal status gets a chip with a
+   colour that maps to its severity.
+
+   The cancel button posts to /bookings/{id}/cancel which redirects
+   back here with a ``?flash=...&flash_kind=...`` query.
+#}
+{% extends "base.html" %}
+
+{% block title %}History — WodBuster Booking Worker{% endblock %}
+
+{% block head_extra %}
+<style>
+  .wb-history-table td.wb-cell-actions {
+    text-align: right;
+  }
+  .wb-chip--granted {
+    background: rgba(74, 222, 128, 0.14);
+    color: var(--wb-success);
+    border-color: var(--wb-success);
+  }
+  .wb-chip--full,
+  .wb-chip--class-not-visible,
+  .wb-chip--upstream-unavailable {
+    background: rgba(251, 191, 36, 0.12);
+    color: var(--wb-warning);
+    border-color: var(--wb-warning);
+  }
+  .wb-chip--cookie-invalid {
+    background: rgba(248, 113, 113, 0.12);
+    color: var(--wb-danger);
+    border-color: var(--wb-danger);
+  }
+  .wb-chip--cancelled {
+    background: rgba(96, 165, 250, 0.12);
+    color: var(--wb-info);
+    border-color: var(--wb-info);
+  }
+  .wb-flash {
+    padding: 0.75rem 1rem;
+    border-radius: var(--wb-radius);
+    border-left: 4px solid var(--wb-info);
+    background: rgba(96, 165, 250, 0.06);
+    color: var(--wb-text);
+    margin-bottom: 1.25rem;
+  }
+  .wb-flash--warning {
+    border-left-color: var(--wb-warning);
+    background: rgba(251, 191, 36, 0.06);
+  }
+  .wb-flash--error {
+    border-left-color: var(--wb-danger);
+    background: rgba(248, 113, 113, 0.06);
+  }
+</style>
+{% endblock %}
+
+{% block nav %}
+  {% set active_nav = "history" %}
+  {% include "_nav.html" %}
+{% endblock %}
+
+{% block content %}
+  <span class="wb-page-title__eyebrow">Activity</span>
+  <h1 class="wb-page-title">📜 Booking history</h1>
+  <p class="wb-page-subtitle">
+    Every booking attempt the worker has made, newest first. Use the
+    Cancel button on any upcoming granted class to release your slot
+    (this also updates WodBuster and pushes a Telegram notification).
+  </p>
+
+  {% if flash %}
+    <div class="wb-flash wb-flash--{{ flash_kind }}" role="status">
+      {{ flash }}
+    </div>
+  {% endif %}
+
+  {% if not rows %}
+    <div class="wb-empty-state">
+      <p class="wb-empty-state__title">🕓 No bookings yet</p>
+      <p>
+        Once the scheduler fires against one of your rules, the
+        outcome will show up here.
+      </p>
+    </div>
+  {% else %}
+    <table class="wb-rules-table wb-history-table">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Class</th>
+          <th>Result</th>
+          <th>Attempted</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>
+              <span class="wb-chip wb-chip--accent">{{ row.day_label }}</span>
+              <span class="wb-tabular">{{ row.slot_label }}</span>
+            </td>
+            <td>
+              <code>{{ row.target_class }}</code>
+              {% if row.fallback_index == 1 %}
+                <span class="wb-muted" style="font-size: 0.78rem;">
+                  (second shot)
+                </span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="wb-chip wb-chip--{{ row.terminal_status | replace('_', '-') }}">
+                {{ row.terminal_status | replace('_', ' ') }}
+              </span>
+            </td>
+            <td class="wb-tabular">
+              {{ row.attempted_at.strftime("%d %b %H:%M UTC") }}
+            </td>
+            <td class="wb-cell-actions">
+              {% if row.cancellable %}
+                <form
+                  method="post"
+                  action="/bookings/{{ row.id }}/cancel"
+                  style="display: inline; margin: 0;"
+                  onsubmit="return confirm('Cancel this booking on WodBuster?')"
+                >
+                  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                  <button type="submit" class="wb-btn wb-btn--danger">
+                    Cancel
+                  </button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+{% endblock %}
