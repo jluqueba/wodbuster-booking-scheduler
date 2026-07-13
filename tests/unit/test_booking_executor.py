@@ -130,9 +130,7 @@ def _executor(
     )
     writer = writer or _RecordingWriter()
     if monkeypatch is not None:
-        monkeypatch.setattr(
-            "wodbuster_worker.booking.executor.persist_outcome", writer
-        )
+        monkeypatch.setattr("wodbuster_worker.booking.executor.persist_outcome", writer)
 
     time_iter = iter(time_series or [])
     # Once the scripted series is exhausted, advance in large steps so
@@ -209,9 +207,7 @@ def _load_class_payload(
     for slot in slots:
         hora = slot.get("HoraComienzo", "00:00:00")
         buckets.setdefault(hora, []).append({"Valor": slot})
-    data = [
-        {"Hora": hora, "Valores": valores} for hora, valores in buckets.items()
-    ]
+    data = [{"Hora": hora, "Valores": valores} for hora, valores in buckets.items()]
     return LoadClassResponse(
         status_code=200,
         latency_ms=10.0,
@@ -273,7 +269,9 @@ def test_primary_slot_granted_persists_granted_with_index_zero(
         monkeypatch=monkeypatch,
     )
 
-    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+    result = ex.book(
+        rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    )
 
     assert result.terminal_status == "granted"
     assert result.fallback_index == 0
@@ -336,7 +334,9 @@ def test_primary_full_no_second_shot_persists_full(
         monkeypatch=monkeypatch,
     )
 
-    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+    result = ex.book(
+        rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    )
 
     assert result.terminal_status == "full"
     assert result.fallback_index is None
@@ -391,7 +391,9 @@ def test_missing_cookie_short_circuits_to_cookie_invalid(
         monkeypatch=monkeypatch,
     )
 
-    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+    result = ex.book(
+        rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    )
 
     assert result.terminal_status == "cookie_invalid"
     # No HTTP call was ever made.
@@ -409,7 +411,9 @@ def test_inscribir_cookie_invalid_res_marks_terminal_cookie_invalid(
         monkeypatch=monkeypatch,
     )
 
-    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+    result = ex.book(
+        rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    )
 
     assert result.terminal_status == "cookie_invalid"
     assert writer.calls[0]["target_class"] == "WOD"
@@ -424,7 +428,9 @@ def test_inscribir_auth_error_maps_to_cookie_invalid(
         monkeypatch=monkeypatch,
     )
 
-    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+    result = ex.book(
+        rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    )
 
     assert result.terminal_status == "cookie_invalid"
     assert "auth error" in writer.calls[0]["response_payload"]
@@ -439,7 +445,9 @@ def test_inscribir_transport_error_maps_to_upstream_unavailable(
         monkeypatch=monkeypatch,
     )
 
-    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+    result = ex.book(
+        rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    )
 
     assert result.terminal_status == "upstream_unavailable"
 
@@ -453,7 +461,9 @@ def test_inscribir_unknown_res_escalates_to_upstream_unavailable(
         monkeypatch=monkeypatch,
     )
 
-    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+    result = ex.book(
+        rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    )
 
     assert result.terminal_status == "upstream_unavailable"
     # The raw Res string is preserved on the response_payload so the
@@ -482,7 +492,9 @@ def test_class_not_visible_retries_until_deadline_then_marks_terminal(
         time_series=[0.0, 5.0, 5.0, 10.0, 10.0, 15.0, 15.0, 20.0, 20.0, 25.0],
     )
 
-    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+    result = ex.book(
+        rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    )
 
     assert result.terminal_status == "class_not_visible"
     # Bounded number of load_class calls (the loop must terminate).
@@ -504,7 +516,9 @@ def test_class_becomes_visible_on_retry_and_gets_booked(
         time_series=[0.0, 1.0, 1.0, 2.0, 2.0, 3.0],
     )
 
-    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+    result = ex.book(
+        rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    )
 
     assert result.terminal_status == "granted"
     # Two LoadClass calls: first empty, second returned the slot.
@@ -525,7 +539,9 @@ def test_transport_error_during_find_retries_then_succeeds(
         time_series=[0.0, 1.0, 1.0, 2.0, 2.0, 3.0],
     )
 
-    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+    result = ex.book(
+        rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    )
 
     assert result.terminal_status == "granted"
     assert len(client.load_class_calls) == 2

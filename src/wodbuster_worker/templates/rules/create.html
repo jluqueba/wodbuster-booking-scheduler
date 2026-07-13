@@ -147,15 +147,15 @@
         </div>
         <div>
           <label for="class_time">Class time</label>
-          <select id="class_time" name="class_time" required
-                  {% if not picker_time_slots %}disabled{% endif %}>
-            <option value=""></option>
-            {% for slot in picker_time_slots %}
-              <option value="{{ slot }}"
-                {% if form_values.get('class_time') == slot %}selected{% endif %}
-              >{{ slot }}</option>
-            {% endfor %}
-          </select>
+          <input
+            id="class_time"
+            name="class_time"
+            type="time"
+            step="60"
+            list="wb-class-times"
+            value="{{ form_values.get('class_time', '') }}"
+            required
+          >
           {% if errors.get('class_time') %}
             <p class="wb-field-error">{{ errors['class_time'] }}</p>
           {% endif %}
@@ -223,15 +223,14 @@
         </div>
         <div>
           <label for="second_shot_class_time">Alternative time</label>
-          <select id="second_shot_class_time" name="second_shot_class_time"
-                  {% if not picker_time_slots %}disabled{% endif %}>
-            <option value=""></option>
-            {% for slot in picker_time_slots %}
-              <option value="{{ slot }}"
-                {% if form_values.get('second_shot_class_time') == slot %}selected{% endif %}
-              >{{ slot }}</option>
-            {% endfor %}
-          </select>
+          <input
+            id="second_shot_class_time"
+            name="second_shot_class_time"
+            type="time"
+            step="60"
+            list="wb-class-times"
+            value="{{ form_values.get('second_shot_class_time', '') }}"
+          >
           {% if errors.get('second_shot_class_time') %}
             <p class="wb-field-error">{{ errors['second_shot_class_time'] }}</p>
           {% endif %}
@@ -247,5 +246,18 @@
       <button type="submit" class="wb-btn--primary"
               {% if picker_unavailable %}disabled{% endif %}>Create rule</button>
     </div>
+
+    {# Autocomplete suggestions for both class-time inputs. Browsers
+       that support datalist on type=time (Chrome, Edge, Firefox)
+       surface the gym's canonical time slots while still allowing
+       any HH:MM value; Safari / iOS ignore the datalist and fall
+       back to the plain native time picker. HTML5 spec pins the
+       submitted value to 24h ``HH:MM`` regardless of display locale,
+       so no server-side normalisation is required. #}
+    <datalist id="wb-class-times">
+      {% for slot in picker_time_slots %}
+        <option value="{{ slot }}">{{ slot }}</option>
+      {% endfor %}
+    </datalist>
   </form>
 {% endblock %}
