@@ -73,13 +73,18 @@ def test_dashboard_shows_only_own_operator_id(
     assert "Bob-Doe-42" not in body
 
 
-@pytest.mark.xfail(strict=False, reason="H.1 GET /history not yet implemented")
 def test_history_route_scopes_to_operator(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],
     monkeypatch: pytest.MonkeyPatch,
-) -> None:  # pragma: no cover - placeholder
-    """Placeholder for H.1: GET /history returns only own outcomes."""
+) -> None:
+    """H.1: GET /history renders only the current operator's outcomes.
+
+    Fuller cross-operator isolation lives in
+    ``tests/component/test_history_and_cancel.py``. Kept here as a
+    lightweight smoke check that the route exists and Alice does
+    not see Bob's display name (nor any of his data).
+    """
     _, subject_a = seed_operator(provider="microsoft", display_name="Alice")
     seed_operator(provider="microsoft", display_name="Bob-Doe-42")
 
