@@ -438,6 +438,16 @@ button, .wb-btn, [role="button"] {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  /* Guarantee identical box model between ``<a class="wb-btn">``
+     and ``<button class="wb-btn">`` — anchors otherwise ship a
+     different default line-height and no text-decoration reset,
+     which is what made "Edit" and "Delete" appear slightly
+     different sizes side-by-side. */
+  box-sizing: border-box;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 button:hover:not(:disabled),
 .wb-btn:hover {
@@ -457,16 +467,21 @@ button.wb-btn--primary:hover,
   border-color: var(--wb-accent-hover);
   color: var(--wb-accent-ink);
 }
+/* Danger buttons keep the red foreground but wear the same visible
+   border + subtle fill as neutral buttons, so a row of "Edit /
+   Delete" actions lines up on the same baseline instead of Edit
+   looking like a boxed button and Delete looking like a bare link. */
 button.wb-btn--danger,
 .wb-btn--danger {
   color: var(--wb-danger);
-  border-color: transparent;
-  background: transparent;
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
 }
 button.wb-btn--danger:hover,
 .wb-btn--danger:hover {
-  background: rgba(248, 113, 113, 0.10);
-  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.16);
+  border-color: rgba(248, 113, 113, 0.55);
+  color: var(--wb-danger);
 }
 
 /* --------------------------------------------------------------------------
@@ -906,15 +921,30 @@ dialog.wb-confirm::backdrop {
   margin-top: 0.9rem;
 }
 
+/* Cancel button inside the confirm modal. Locked to a neutral
+   palette so it can never pick up the yellow accent (via Pico's
+   ``--pico-primary`` default on ``<button>`` or the ``:hover``
+   ``--wb-border-focus`` rule) that would clash with the red
+   Confirm sitting next to it. */
+button.wb-confirm__cancel,
 .wb-confirm__cancel {
-  background: transparent;
-  color: var(--wb-text-muted);
-  border-color: var(--wb-border);
-}
-.wb-confirm__cancel:hover {
+  background: var(--wb-bg-elevated);
   color: var(--wb-text);
   border-color: var(--wb-border-strong);
-  background: var(--wb-bg-inset);
+}
+button.wb-confirm__cancel:hover,
+.wb-confirm__cancel:hover {
+  color: var(--wb-text);
+  border-color: var(--wb-text-muted);
+  background: var(--wb-bg-card);
+}
+button.wb-confirm__cancel:focus,
+.wb-confirm__cancel:focus,
+button.wb-confirm__cancel:focus-visible,
+.wb-confirm__cancel:focus-visible {
+  border-color: var(--wb-text-muted);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.25);
 }
 
 /* -- Countdown block on the dashboard ------------------------------------ */

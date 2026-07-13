@@ -111,6 +111,15 @@ class Settings(BaseSettings):
     # can shorten it in tests without patching module constants.
     cookie_projected_ttl_ceiling_days: int = 30
 
+    # Timezone in which every ``HH:MM`` value on a scheduler rule is
+    # interpreted. WodBuster clocks run on the gym's local time and
+    # the operator enters class times / opens-at times in their own
+    # wall-clock — treating them as UTC (as an earlier draft did)
+    # fires the scheduler at the wrong instant. Default matches the
+    # single-user deployment (Spain); override via ``WORKER_TIMEZONE``
+    # env var when the app is used from another zone.
+    worker_timezone: str = "Europe/Madrid"
+
     @model_validator(mode="after")
     def _apply_env_defaults(self) -> Settings:
         """Fill mode-dependent Postgres defaults.

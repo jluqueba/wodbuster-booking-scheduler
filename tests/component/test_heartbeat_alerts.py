@@ -69,6 +69,18 @@ def session_factory(postgres_engine: Engine) -> sessionmaker[Session]:
     )
 
 
+@pytest.fixture(autouse=True)
+def _pin_utc_timezone(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin ``WORKER_TIMEZONE=UTC`` for the heartbeat-alert scenarios.
+
+    The scheduler interprets every rule's ``HH:MM`` in the operator
+    zone (default ``Europe/Madrid``). These scenarios anchor
+    ``_NEXT_WINDOW`` against 21:30 UTC directly, so pinning here
+    keeps them independent of the active DST offset.
+    """
+    monkeypatch.setenv("WORKER_TIMEZONE", "UTC")
+
+
 def _make_operator(engine: Engine, *, telegram_chat_id: str | None = None) -> int:
     with engine.begin() as conn:
         return int(
