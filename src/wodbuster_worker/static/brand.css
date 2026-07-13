@@ -433,6 +433,11 @@ button, .wb-btn, [role="button"] {
   font-size: 0.92rem;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
+  /* Anchor icon (emoji / SVG) alongside the label with breathing
+     room; matches the app's "icon + word" button style. */
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 button:hover:not(:disabled),
 .wb-btn:hover {
