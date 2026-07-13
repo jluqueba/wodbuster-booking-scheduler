@@ -80,9 +80,7 @@ def test_unexpected_redirect_raises_protocol_error() -> None:
         return httpx.Response(302, headers={"location": "/maintenance"})
 
     with pytest.raises(WodBusterProtocolError, match="unexpected redirect"):
-        _client(httpx.MockTransport(handler)).load_class(
-            cookie_value="any", ticks=1
-        )
+        _client(httpx.MockTransport(handler)).load_class(cookie_value="any", ticks=1)
 
 
 @pytest.mark.parametrize("status", [401, 403])
@@ -91,9 +89,7 @@ def test_401_and_403_raise_auth_error(status: int) -> None:
         return httpx.Response(status)
 
     with pytest.raises(WodBusterAuthError, match=str(status)):
-        _client(httpx.MockTransport(handler)).load_class(
-            cookie_value="any", ticks=1
-        )
+        _client(httpx.MockTransport(handler)).load_class(cookie_value="any", ticks=1)
 
 
 def test_non_2xx_non_auth_raises_protocol_error() -> None:
@@ -101,9 +97,7 @@ def test_non_2xx_non_auth_raises_protocol_error() -> None:
         return httpx.Response(500)
 
     with pytest.raises(WodBusterProtocolError, match="500"):
-        _client(httpx.MockTransport(handler)).load_class(
-            cookie_value="any", ticks=1
-        )
+        _client(httpx.MockTransport(handler)).load_class(cookie_value="any", ticks=1)
 
 
 def test_html_soft_200_raises_auth_error() -> None:
@@ -118,9 +112,7 @@ def test_html_soft_200_raises_auth_error() -> None:
         )
 
     with pytest.raises(WodBusterAuthError, match="content-type"):
-        _client(httpx.MockTransport(handler)).load_class(
-            cookie_value="any", ticks=1
-        )
+        _client(httpx.MockTransport(handler)).load_class(cookie_value="any", ticks=1)
 
 
 def test_invalid_json_body_raises_protocol_error() -> None:
@@ -132,9 +124,7 @@ def test_invalid_json_body_raises_protocol_error() -> None:
         )
 
     with pytest.raises(WodBusterProtocolError, match="invalid JSON"):
-        _client(httpx.MockTransport(handler)).load_class(
-            cookie_value="any", ticks=1
-        )
+        _client(httpx.MockTransport(handler)).load_class(cookie_value="any", ticks=1)
 
 
 def test_json_array_body_raises_protocol_error() -> None:
@@ -149,9 +139,7 @@ def test_json_array_body_raises_protocol_error() -> None:
         )
 
     with pytest.raises(WodBusterProtocolError, match="expected JSON object"):
-        _client(httpx.MockTransport(handler)).load_class(
-            cookie_value="any", ticks=1
-        )
+        _client(httpx.MockTransport(handler)).load_class(cookie_value="any", ticks=1)
 
 
 def test_transport_error_wraps_httpx_exception() -> None:
@@ -159,9 +147,7 @@ def test_transport_error_wraps_httpx_exception() -> None:
         raise httpx.ConnectError("simulated DNS failure")
 
     with pytest.raises(WodBusterTransportError, match="DNS"):
-        _client(httpx.MockTransport(handler)).load_class(
-            cookie_value="any", ticks=1
-        )
+        _client(httpx.MockTransport(handler)).load_class(cookie_value="any", ticks=1)
 
 
 def test_constructor_rejects_empty_gym_and_idu() -> None:
