@@ -272,9 +272,7 @@ def rules_api_classes_debug(
     with get_session() as session:
         cookie_value = store.load(session, operator_id)
     if cookie_value is None:
-        return JSONResponse(
-            {"stage": "no_cookie", "sources": {}, "result": None}
-        )
+        return JSONResponse({"stage": "no_cookie", "sources": {}, "result": None})
 
     try:
         loaded = client.load_class(cookie_value, _today_ticks_utc())
@@ -301,11 +299,20 @@ def rules_api_classes_debug(
         {
             "stage": "parsed",
             "sources": {
-                "top_level_keys": sorted(payload.keys()) if isinstance(payload, dict) else None,
-                "clases_filtradas_len": len(clases) if isinstance(clases, list) else None,
+                "top_level_keys": (
+                    sorted(payload.keys()) if isinstance(payload, dict) else None
+                ),
+                "clases_filtradas_len": (
+                    len(clases) if isinstance(clases, list) else None
+                ),
                 "clases_filtradas_sample_keys": _sample_keys(clases),
                 "data_len": len(data) if isinstance(data, list) else None,
                 "data_sample_keys": _sample_keys(data),
+                # Data[] entries wrap the concrete class instances in
+                # Valores[j].Valor. Surface the shape here so a picker
+                # regression is one debug hit away from diagnosis.
+                "data_valores_sample_keys": _nested_valores_keys(data),
+                "data_valor_sample_keys": _nested_valor_keys(data),
             },
             "result": {
                 "class_types": result.class_types,
@@ -327,6 +334,35 @@ def _sample_keys(value: Any) -> list[str] | None:
     for entry in value:
         if isinstance(entry, dict):
             return sorted(entry.keys())
+    return []
+
+
+def _nested_valores_keys(data: Any) -> list[str] | None:
+    """Return the keys of the first ``Data[i].Valores[j]`` entry."""
+    if not isinstance(data, list):
+        return None
+    for bucket in data:
+        if not isinstance(bucket, dict):
+            continue
+        return _sample_keys(bucket.get("Valores"))
+    return []
+
+
+def _nested_valor_keys(data: Any) -> list[str] | None:
+    """Return the keys of the first ``Data[i].Valores[j].Valor`` object."""
+    if not isinstance(data, list):
+        return None
+    for bucket in data:
+        if not isinstance(bucket, dict):
+            continue
+        valores = bucket.get("Valores")
+        if not isinstance(valores, list):
+            continue
+        for entry in valores:
+            if isinstance(entry, dict) and isinstance(entry.get("Valor"), dict):
+                return sorted(entry["Valor"].keys())
+            if isinstance(entry, dict):
+                return sorted(entry.keys())
     return []
 
 

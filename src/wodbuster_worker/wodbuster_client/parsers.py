@@ -7,23 +7,38 @@ parsing lives here so tests can drive it with synthetic payloads.
 
 Vocabulary anchored on the Spanish field names WodBuster exposes:
 
-- ``Data[]`` — filtered list of the operator's slots for the queried
-  week. Each row is a class instance.
-- ``Data[i].Id`` — integer instance id (the executor passes this to
-  ``inscribir``). ``0`` when the row is a placeholder rather than a
-  bookable instance.
-- ``Data[i].Nombre`` — class-type label (e.g. ``"WOD"``,
-  ``"Cross Training"``).
-- ``Data[i].HoraComienzo`` — ``HH:MM:SS`` start time.
-- ``Data[i].TipoEstado`` — ``Inscribible`` / ``Borrable`` / ``Avisable``.
-- ``Data[i].Plazas`` — total capacity (int).
-- ``Data[i].AtletasEnListaDeEspera`` — waitlist length (int).
+- ``Data[]`` is a per-day list of *time-slot buckets*, not of
+  individual class instances. Each bucket carries:
+
+  - ``Data[i].Hora`` — ``HH:MM:SS`` start time for the bucket.
+  - ``Data[i].Valores[]`` — list of concrete class instances at that
+    time. Each entry wraps the payload under a ``Valor`` key.
+
+- ``Data[i].Valores[j].Valor`` — the concrete class instance:
+
+  - ``Id`` — integer instance id (the executor passes this to
+    ``inscribir``). ``0`` when the row is a placeholder rather than a
+    bookable instance.
+  - ``Nombre`` — class-type label (``"WOD"``, ``"Cross Training"``).
+  - ``HoraComienzo`` — ``HH:MM:SS`` start time (matches the parent
+    bucket's ``Hora``).
+  - ``TipoEstado`` — ``Inscribible`` / ``Borrable`` / ``Avisable``.
+  - ``Plazas`` — total capacity (int).
+  - ``AtletasEnListaDeEspera`` — waitlist length (int).
+
 - ``SegundosHastaPublicacion`` — float. Positive means the reservation
   window is still in the future; negative means already open.
+
+The nested shape was confirmed empirically by the
+``/rules/api/classes/debug`` endpoint after an early implementation
+tried to walk ``Data[]`` as if each entry were a class instance and
+silently returned no slots. :func:`_iter_class_instances` isolates
+that walk so both the executor and the picker read it the same way.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -39,7 +54,7 @@ ClassStatus = Literal[
 
 @dataclass(frozen=True)
 class ClassSlot:
-    """One bookable class instance parsed from ``Data[]``."""
+    """One bookable class instance parsed from a LoadClass payload."""
 
     id: int
     nombre: str
@@ -49,19 +64,21 @@ class ClassSlot:
     waitlist_length: int | None
 
 
-def parse_data_row(row: Any) -> ClassSlot | None:
-    """Convert one raw ``Data[i]`` dict into a :class:`ClassSlot`.
+def parse_class_instance(row: Any) -> ClassSlot | None:
+    """Convert a single class-instance dict into a :class:`ClassSlot`.
 
-    Returns ``None`` when the row is not a dict, or when the required
-    fields (``Id``, ``Nombre``, ``HoraComienzo``) are missing or of an
-    unexpected type. Placeholder rows with ``Id == 0`` are also
-    filtered out — Phase 0 confirmed those come from the filtered
-    calendar view and are not bookable.
+    Accepts either the wrapped form (``{"Valor": {...}}``) or a bare
+    dict, so callers that already unwrapped ``Valor`` can pass the
+    inner object. Returns ``None`` when the row is not a dict, when
+    required fields are missing / of unexpected type, or when
+    ``Id == 0`` (placeholder rows from the filtered calendar view).
     """
+    if isinstance(row, dict) and isinstance(row.get("Valor"), dict):
+        row = row["Valor"]
     if not isinstance(row, dict):
         return None
     raw_id = row.get("Id")
-    if not isinstance(raw_id, int) or raw_id <= 0:
+    if not isinstance(raw_id, int) or isinstance(raw_id, bool) or raw_id <= 0:
         return None
     nombre = row.get("Nombre")
     if not isinstance(nombre, str) or not nombre.strip():
@@ -83,19 +100,29 @@ def parse_data_row(row: Any) -> ClassSlot | None:
 def extract_class_slots(payload: dict[str, Any]) -> list[ClassSlot]:
     """Return every parseable :class:`ClassSlot` from a LoadClass payload.
 
-    Reads the ``Data`` key and drops any row that :func:`parse_data_row`
-    rejects. Callers wanting a specific slot then filter by
-    ``nombre`` / ``hora_comienzo`` — see :func:`find_matching_slot`.
+    Walks ``Data[i].Valores[j]`` and unwraps each ``Valor`` entry via
+    :func:`parse_class_instance`. Malformed rows are dropped. Callers
+    wanting a specific slot then filter by ``nombre`` + ``hora_comienzo``
+    via :func:`find_matching_slot`.
     """
-    raw = payload.get("Data")
-    if not isinstance(raw, list):
-        return []
-    slots: list[ClassSlot] = []
-    for row in raw:
-        parsed = parse_data_row(row)
-        if parsed is not None:
-            slots.append(parsed)
-    return slots
+    return list(_iter_class_instances(payload))
+
+
+def _iter_class_instances(payload: dict[str, Any]) -> Iterator[ClassSlot]:
+    """Yield every parseable class instance under ``Data[].Valores[]``."""
+    data = payload.get("Data")
+    if not isinstance(data, list):
+        return
+    for bucket in data:
+        if not isinstance(bucket, dict):
+            continue
+        valores = bucket.get("Valores")
+        if not isinstance(valores, list):
+            continue
+        for entry in valores:
+            parsed = parse_class_instance(entry)
+            if parsed is not None:
+                yield parsed
 
 
 def find_matching_slot(
@@ -149,5 +176,5 @@ __all__ = [
     "extract_class_slots",
     "extract_seconds_until_publication",
     "find_matching_slot",
-    "parse_data_row",
+    "parse_class_instance",
 ]

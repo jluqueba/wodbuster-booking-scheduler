@@ -187,6 +187,13 @@ def _load_class_payload(
     *,
     slots: list[dict[str, Any]] | None = None,
 ) -> LoadClassResponse:
+    """Build a LoadClass response wrapping ``slots`` in the real shape.
+
+    Real payload nests instances under ``Data[i].Valores[j].Valor``.
+    Callers pass a flat list of instance dicts; this helper groups
+    them into buckets by ``HoraComienzo`` and wraps each under the
+    ``Valor`` layer.
+    """
     if slots is None:
         slots = [
             {
@@ -198,10 +205,17 @@ def _load_class_payload(
                 "AtletasEnListaDeEspera": 0,
             }
         ]
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    for slot in slots:
+        hora = slot.get("HoraComienzo", "00:00:00")
+        buckets.setdefault(hora, []).append({"Valor": slot})
+    data = [
+        {"Hora": hora, "Valores": valores} for hora, valores in buckets.items()
+    ]
     return LoadClassResponse(
         status_code=200,
         latency_ms=10.0,
-        payload={"Data": slots, "SegundosHastaPublicacion": -100.0},
+        payload={"Data": data, "SegundosHastaPublicacion": -100.0},
     )
 
 

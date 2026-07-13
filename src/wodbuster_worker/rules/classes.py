@@ -86,9 +86,7 @@ def fetch_available_classes(
     try:
         loaded = client.load_class(cookie_value, ticks)
     except WodBusterAuthError as exc:
-        _log.warning(
-            "rules.picker.auth_error", operator_id=operator_id, error=str(exc)
-        )
+        _log.warning("rules.picker.auth_error", operator_id=operator_id, error=str(exc))
         return None
     except (WodBusterTransportError, WodBusterProtocolError) as exc:
         _log.warning(
@@ -114,10 +112,16 @@ def fetch_available_classes(
 def extract_available_classes(payload: dict[str, Any]) -> AvailableClasses:
     """Extract class types + time slots from a LoadClass payload.
 
-    Unions two sources:
+    Unions two sources with slightly different shapes:
 
-    - ``ClasesFiltradas[i]``: ``NombreE`` (name), ``Hora`` (HH:MM:SS).
-    - ``Data[i]``: ``Nombre`` (name), ``HoraComienzo`` (HH:MM:SS).
+    - ``ClasesFiltradas[i]`` — flat rows with ``NombreE`` (name) and
+      ``Hora`` (``HH:MM:SS``).
+    - ``Data[i]`` — time-slot buckets with a top-level ``Hora`` plus
+      a nested ``Valores[j].Valor`` carrying the concrete class
+      instance with ``Nombre`` and ``HoraComienzo``. Empirically
+      ``Data`` is populated even when ``ClasesFiltradas`` comes back
+      empty, so it is the source of truth for the operator's own
+      schedule.
 
     Duplicates are collapsed via set membership; ``HH:MM:SS`` values
     are truncated to ``HH:MM`` because that is the format the rest
@@ -136,14 +140,22 @@ def extract_available_classes(payload: dict[str, Any]) -> AvailableClasses:
             time_slots=time_slots,
         )
 
-    for item in _iter_dicts(payload.get("Data")):
-        _accumulate(
-            item,
-            name_key="Nombre",
-            time_key="HoraComienzo",
-            class_types=class_types,
-            time_slots=time_slots,
-        )
+    for bucket in _iter_dicts(payload.get("Data")):
+        # The bucket's own Hora is a reliable time slot.
+        hora = bucket.get("Hora")
+        if isinstance(hora, str) and len(hora) >= 5 and hora[2] == ":":
+            time_slots.add(hora[:5])
+        # Concrete class instances live under Valores[j].Valor.
+        for entry in _iter_dicts(bucket.get("Valores")):
+            valor = entry.get("Valor")
+            target = valor if isinstance(valor, dict) else entry
+            _accumulate(
+                target,
+                name_key="Nombre",
+                time_key="HoraComienzo",
+                class_types=class_types,
+                time_slots=time_slots,
+            )
 
     return AvailableClasses(
         class_types=sorted(class_types),
