@@ -18,7 +18,9 @@ so FastAPI does not try to parse ``api`` as an integer.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Mapping
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
@@ -26,9 +28,11 @@ from fastapi.templating import Jinja2Templates
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
+from ..booking.executor import BookingExecutor
 from ..persistence.cookie_store import CookieStore
 from ..persistence.engine import get_session
 from ..persistence.models import SchedulerRule
+from ..scheduler.rule_jobs import register_rule_job, unregister_rule_job
 from ..wodbuster_client.client import WodBusterClient
 from .classes import AvailableClasses, fetch_available_classes
 from .forms import parse_create_rule_form, parse_edit_rule_form
@@ -187,7 +191,7 @@ async def rules_create(
     assert parsed.booking_opens_days_before is not None
     assert parsed.booking_opens_at is not None
     with get_session() as session:
-        create_rules_for_days(
+        created_rules = create_rules_for_days(
             session,
             operator_id=operator_id,
             days_of_week=parsed.days_of_week,
@@ -199,6 +203,7 @@ async def rules_create(
             second_shot_class_time=parsed.second_shot_class_time,
         )
 
+    _sync_after_create(request, list(created_rules))
     return RedirectResponse(url="/rules", status_code=303)
 
 
@@ -284,7 +289,7 @@ async def rules_update(
         assert parsed.class_time is not None
         assert parsed.booking_opens_days_before is not None
         assert parsed.booking_opens_at is not None
-        update_rule(
+        updated = update_rule(
             session,
             rule,
             day_of_week=parsed.day_of_week,
@@ -296,6 +301,7 @@ async def rules_update(
             second_shot_class_time=parsed.second_shot_class_time,
         )
 
+    _sync_after_update(request, updated)
     return RedirectResponse(url="/rules", status_code=303)
 
 
@@ -316,6 +322,7 @@ def rules_delete(
         if rule is None:
             raise HTTPException(status_code=404)
         delete_rule(session, rule)
+    _sync_after_delete(request, rule_id)
     return RedirectResponse(url="/rules", status_code=303)
 
 
@@ -338,6 +345,72 @@ def _rule_to_form_values(rule: SchedulerRule) -> dict[str, str]:
 def _str_only(form_data: Mapping[str, object]) -> dict[str, str]:
     """Filter Starlette FormData to text-only entries."""
     return {k: v for k, v in form_data.items() if isinstance(v, str)}
+
+
+# ---------------------------------------------------------------------------
+# Scheduler sync (US1.10 hot reload)
+# ---------------------------------------------------------------------------
+
+
+def _scheduler_bits(request: Request) -> tuple[Any, BookingExecutor] | None:
+    """Return (scheduler, executor) from app.state if booking is wired.
+
+    Missing when the operator has not seeded ``wodbuster_gym`` /
+    ``wodbuster_idu`` / cookie encryption key. In that state the app
+    still serves rules CRUD but bookings cannot fire; rule mutations
+    are no-ops from the scheduler's perspective.
+    """
+    scheduler = getattr(request.app.state, "booking_scheduler", None)
+    executor = getattr(request.app.state, "booking_executor", None)
+    if scheduler is None or executor is None:
+        return None
+    return scheduler, executor
+
+
+def _sync_after_create(request: Request, rules: list[SchedulerRule]) -> None:
+    """Register a booking job for every newly-created rule."""
+    bits = _scheduler_bits(request)
+    if bits is None:
+        return
+    scheduler, executor = bits
+    for rule in rules:
+        try:
+            register_rule_job(
+                scheduler,
+                rule,
+                executor=executor,
+                session_factory=get_session,
+            )
+        except ValueError:
+            # Malformed HH:MM would be a data bug; the form validator
+            # already blocks this. Silence rather than crash the
+            # request — the operator's data is on file even if the
+            # scheduler skipped it.
+            continue
+
+
+def _sync_after_update(request: Request, rule: SchedulerRule) -> None:
+    """Re-register the rule's job with fresh timing (idempotent)."""
+    bits = _scheduler_bits(request)
+    if bits is None:
+        return
+    scheduler, executor = bits
+    with contextlib.suppress(ValueError):
+        register_rule_job(
+            scheduler,
+            rule,
+            executor=executor,
+            session_factory=get_session,
+        )
+
+
+def _sync_after_delete(request: Request, rule_id: int) -> None:
+    """Remove the booking job for the deleted rule."""
+    bits = _scheduler_bits(request)
+    if bits is None:
+        return
+    scheduler, _executor = bits
+    unregister_rule_job(scheduler, rule_id)
 
 
 __all__ = ["router"]

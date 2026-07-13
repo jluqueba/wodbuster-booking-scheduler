@@ -28,6 +28,7 @@ from .auth.deps import AuthRedirectRequired
 from .auth.oauth import build_oauth
 from .auth.routes import router as auth_router
 from .auth.session import IdleTimeoutMiddleware, build_session_middleware
+from .booking.executor import BookingExecutor
 from .config import Settings, get_settings
 from .cookie.routes import router as cookie_router
 from .heartbeat.probe import HeartbeatProbe
@@ -41,6 +42,7 @@ from .scheduler.scheduler import (
     build_scheduler,
     register_dispatcher_job,
     register_heartbeat_job,
+    register_rule_bootstrap_jobs,
 )
 from .security.cipher import Cipher
 from .security.cookie import CookieValidator
@@ -134,8 +136,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             settings, app.state.cookie_store, app.state.cookie_validator
         )
     # Scheduler: build lazily and register the heartbeat + dispatcher
-    # jobs. Tests that inject their own scheduler (or want none at all)
-    # can pre-seed ``app.state.scheduler``.
+    # jobs plus a per-rule booking job. Tests that inject their own
+    # scheduler (or want none at all) can pre-seed ``app.state.scheduler``.
     if not hasattr(app.state, "scheduler") or app.state.scheduler is None:
         app.state.scheduler = None
         if app.state.heartbeat_probe is not None:
@@ -147,6 +149,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
             app.state.notification_dispatcher = dispatcher
             register_dispatcher_job(scheduler, dispatcher)
+            # Booking wiring: only when the cookie store + wodbuster
+            # client are both live. Missing dependencies mean bookings
+            # cannot fire; the scheduler still hosts heartbeat and
+            # dispatcher jobs so the operator sees the cookie state.
+            if (
+                app.state.cookie_store is not None
+                and app.state.wodbuster_client is not None
+            ):
+                executor = BookingExecutor(
+                    client=app.state.wodbuster_client,
+                    session_factory=get_session,
+                    cookie_store=app.state.cookie_store,
+                )
+                app.state.booking_executor = executor
+                app.state.booking_scheduler = scheduler
+                register_rule_bootstrap_jobs(
+                    scheduler,
+                    executor=executor,
+                    session_factory=get_session,
+                )
             scheduler.start()
             app.state.scheduler = scheduler
     try:

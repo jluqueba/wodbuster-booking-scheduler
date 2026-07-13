@@ -12,12 +12,13 @@ Design choices worth calling out:
   matches the work; an ``AsyncIOScheduler`` would require wrapping
   every job in ``run_in_executor`` and would tangle the scheduler's
   lifecycle with FastAPI's event loop.
-- **In-memory jobstore for the heartbeat.** Jobs are recreated on
-  every startup so we do not need job-run history to survive
-  restarts. Slice for US-001 (booking core) will introduce a
-  ``SQLAlchemyJobStore`` for date-triggered booking jobs whose loss
-  across restarts would be a correctness bug; the heartbeat has no
-  such requirement.
+- **In-memory jobstore.** Jobs are recreated on every startup so we
+  do not need job-run history to survive restarts. Booking rule jobs
+  are rehydrated by :func:`register_rule_bootstrap_jobs` from the
+  ``scheduler_rule`` table on startup, which is the source of truth.
+  A :class:`SQLAlchemyJobStore` was considered and rejected: it
+  would couple APScheduler's internal schema to our migration story
+  without buying us anything the bootstrap step does not already.
 - **Run once immediately on startup.** Fresh deployments should not
   wait an hour to observe the cookie state. ``next_run_time=now`` on
   the trigger fires the first tick right after startup.
@@ -35,9 +36,12 @@ import structlog
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
+from ..booking.executor import BookingExecutor
 from ..heartbeat.probe import HeartbeatProbe
 from ..notifications.dispatcher import NotificationDispatcher
+from ..persistence.models import SchedulerRule
 from .heartbeat_tick import SessionFactory, run_heartbeat_tick
+from .rule_jobs import register_rule_job
 
 _log = structlog.get_logger(__name__)
 
@@ -129,10 +133,59 @@ def register_dispatcher_job(
     )
 
 
+def register_rule_bootstrap_jobs(
+    scheduler: BackgroundScheduler,
+    *,
+    executor: BookingExecutor,
+    session_factory: SessionFactory,
+) -> int:
+    """Register a booking-window job for every active scheduler rule.
+
+    Called once on app startup. Iterates every active rule, computes
+    the next window open time, and registers a DateTrigger job. Rules
+    added later go through :func:`rule_jobs.register_rule_job` from
+    the mutation hook in :mod:`rules.routes` (US1.10).
+
+    Returns the number of jobs registered so the caller can log a
+    coarse count.
+    """
+    from sqlalchemy import select  # local import: rare hot path.
+
+    registered = 0
+    with session_factory() as session:
+        rules = (
+            session.execute(select(SchedulerRule).where(SchedulerRule.active.is_(True)))
+            .scalars()
+            .all()
+        )
+        for rule in rules:
+            try:
+                register_rule_job(
+                    scheduler,
+                    rule,
+                    executor=executor,
+                    session_factory=session_factory,
+                )
+            except ValueError as exc:
+                _log.warning(
+                    "scheduler.booking.bootstrap_skip",
+                    rule_id=rule.id,
+                    error=str(exc),
+                )
+                continue
+            registered += 1
+    _log.info(
+        "scheduler.booking.bootstrap_done",
+        rules_registered=registered,
+    )
+    return registered
+
+
 __all__ = [
     "DISPATCHER_JOB_ID",
     "HEARTBEAT_JOB_ID",
     "build_scheduler",
     "register_dispatcher_job",
     "register_heartbeat_job",
+    "register_rule_bootstrap_jobs",
 ]
