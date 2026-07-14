@@ -60,13 +60,8 @@ def build_oauth(settings: Settings, secrets: Secrets) -> OAuth:
     return oauth
 
 
-def _maybe_register_microsoft(
-    oauth: OAuth, settings: Settings, secrets: Secrets
-) -> None:
-    if (
-        not settings.oauth_microsoft_client_id
-        or not secrets.oauth_microsoft_client_secret
-    ):
+def _maybe_register_microsoft(oauth: OAuth, settings: Settings, secrets: Secrets) -> None:
+    if not settings.oauth_microsoft_client_id or not secrets.oauth_microsoft_client_secret:
         return
     oauth.register(
         name="microsoft",
@@ -104,9 +99,7 @@ def _maybe_register_google(oauth: OAuth, settings: Settings, secrets: Secrets) -
         name="google",
         client_id=settings.oauth_google_client_id,
         client_secret=secrets.oauth_google_client_secret,
-        server_metadata_url=(
-            "https://accounts.google.com/.well-known/openid-configuration"
-        ),
+        server_metadata_url=("https://accounts.google.com/.well-known/openid-configuration"),
         client_kwargs={"scope": "openid email profile"},
     )
 

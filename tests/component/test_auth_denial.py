@@ -87,12 +87,8 @@ def test_callback_denies_non_allow_listed_identity(
 
     # No operator_profile was created as a side effect.
     with postgres_engine.connect() as conn:
-        op_count = conn.execute(
-            text("SELECT COUNT(*) FROM operator_profile")
-        ).scalar_one()
-        ident_count = conn.execute(
-            text("SELECT COUNT(*) FROM federated_identity")
-        ).scalar_one()
+        op_count = conn.execute(text("SELECT COUNT(*) FROM operator_profile")).scalar_one()
+        ident_count = conn.execute(text("SELECT COUNT(*) FROM federated_identity")).scalar_one()
     assert op_count == 0
     assert ident_count == 0
 

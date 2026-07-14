@@ -50,10 +50,7 @@ def _make_operator(engine: Engine, name: str = "Op") -> int:
     with engine.begin() as conn:
         return int(
             conn.execute(
-                text(
-                    "INSERT INTO operator_profile (display_name) "
-                    "VALUES (:n) RETURNING id"
-                ),
+                text("INSERT INTO operator_profile (display_name) VALUES (:n) RETURNING id"),
                 {"n": name},
             ).scalar_one()
         )
@@ -219,9 +216,7 @@ def test_operator_scope_isolation(
 
     with session_factory() as session:
         assert compute_next_window(session, op_a, now) is None
-        assert compute_next_window(session, op_b, now) == datetime(
-            2026, 7, 8, 20, 30, tzinfo=UTC
-        )
+        assert compute_next_window(session, op_b, now) == datetime(2026, 7, 8, 20, 30, tzinfo=UTC)
 
 
 def test_zero_days_before_uses_same_day_as_attendance(

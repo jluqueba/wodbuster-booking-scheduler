@@ -97,9 +97,7 @@ def _format_window_opens(rule: SchedulerRule, now: datetime) -> str:
 def _templates(request: Request) -> Jinja2Templates:
     templates = getattr(request.app.state, "templates", None)
     if templates is None:  # pragma: no cover - misconfiguration
-        raise RuntimeError(
-            "app.state.templates is not configured; wire it in lifespan()."
-        )
+        raise RuntimeError("app.state.templates is not configured; wire it in lifespan().")
     assert isinstance(templates, Jinja2Templates)
     return templates
 
@@ -151,9 +149,7 @@ def _render_form(
 
 
 @router.get("", name="rules_list")
-def rules_list(
-    request: Request, operator_id: int = Depends(require_session)
-) -> Response:
+def rules_list(request: Request, operator_id: int = Depends(require_session)) -> Response:
     """Render the operator's rule list."""
     templates = _templates(request)
     now = datetime.now(tz=UTC)
@@ -186,9 +182,7 @@ def rules_list(
 
 
 @router.get("/new", name="rules_new")
-def rules_new(
-    request: Request, operator_id: int = Depends(require_session)
-) -> Response:
+def rules_new(request: Request, operator_id: int = Depends(require_session)) -> Response:
     """Render an empty create form pre-seeded with the picker options."""
     picker = _picker_or_none(request, operator_id)
     return _render_form(
@@ -203,9 +197,7 @@ def rules_new(
 
 
 @router.post("", name="rules_create", dependencies=[Depends(verify_csrf)])
-async def rules_create(
-    request: Request, operator_id: int = Depends(require_session)
-) -> Response:
+async def rules_create(request: Request, operator_id: int = Depends(require_session)) -> Response:
     """Fan-out create: N rules for N selected days."""
     form_data = _str_only(dict(await request.form()))
     parsed = parse_create_rule_form(form_data)
@@ -245,9 +237,7 @@ async def rules_create(
 
 
 @router.get("/api/classes", name="rules_api_classes")
-def rules_api_classes(
-    request: Request, operator_id: int = Depends(require_session)
-) -> Response:
+def rules_api_classes(request: Request, operator_id: int = Depends(require_session)) -> Response:
     """Return the distinct class-types and time-slots from the gym schedule.
 
     Consumed both by the form (server-side render seeds the dropdowns)
@@ -326,12 +316,8 @@ def rules_api_classes_debug(
         {
             "stage": "parsed",
             "sources": {
-                "top_level_keys": (
-                    sorted(payload.keys()) if isinstance(payload, dict) else None
-                ),
-                "clases_filtradas_len": (
-                    len(clases) if isinstance(clases, list) else None
-                ),
+                "top_level_keys": (sorted(payload.keys()) if isinstance(payload, dict) else None),
+                "clases_filtradas_len": (len(clases) if isinstance(clases, list) else None),
                 "clases_filtradas_sample_keys": _sample_keys(clases),
                 "data_len": len(data) if isinstance(data, list) else None,
                 "data_sample_keys": _sample_keys(data),

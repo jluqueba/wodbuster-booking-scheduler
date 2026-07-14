@@ -170,10 +170,7 @@ def seed_operator(postgres_engine: Engine) -> Callable[..., tuple[int, str]]:
         actual_subject = subject_id or f"sub-{uuid.uuid4().hex[:12]}"
         with postgres_engine.begin() as conn:
             op_id = conn.execute(
-                text(
-                    "INSERT INTO operator_profile (display_name) "
-                    "VALUES (:n) RETURNING id"
-                ),
+                text("INSERT INTO operator_profile (display_name) VALUES (:n) RETURNING id"),
                 {"n": display_name},
             ).scalar_one()
             conn.execute(

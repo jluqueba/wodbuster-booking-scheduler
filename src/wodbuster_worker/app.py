@@ -59,9 +59,7 @@ _STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 def _build_cookie_stack(
     settings: Settings, secrets: Secrets
-) -> tuple[
-    Cipher | None, WodBusterClient | None, CookieValidator | None, CookieStore | None
-]:
+) -> tuple[Cipher | None, WodBusterClient | None, CookieValidator | None, CookieStore | None]:
     """Build the four cookie-flow singletons if their inputs are present.
 
     Each dependency is optional so partial local setups still boot:
@@ -84,9 +82,7 @@ def _build_cookie_stack(
 
     wodbuster_client: WodBusterClient | None = None
     if settings.wodbuster_gym and settings.wodbuster_idu:
-        wodbuster_client = WodBusterClient(
-            gym=settings.wodbuster_gym, idu=settings.wodbuster_idu
-        )
+        wodbuster_client = WodBusterClient(gym=settings.wodbuster_gym, idu=settings.wodbuster_idu)
 
     validator = CookieValidator(wodbuster_client) if wodbuster_client else None
     store = CookieStore(cipher) if cipher else None
@@ -157,10 +153,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # client are both live. Missing dependencies mean bookings
             # cannot fire; the scheduler still hosts heartbeat and
             # dispatcher jobs so the operator sees the cookie state.
-            if (
-                app.state.cookie_store is not None
-                and app.state.wodbuster_client is not None
-            ):
+            if app.state.cookie_store is not None and app.state.wodbuster_client is not None:
                 executor = BookingExecutor(
                     client=app.state.wodbuster_client,
                     session_factory=get_session,
@@ -186,9 +179,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state.scheduler = None
 
 
-def create_app(
-    *, settings: Settings | None = None, secrets: Secrets | None = None
-) -> FastAPI:
+def create_app(*, settings: Settings | None = None, secrets: Secrets | None = None) -> FastAPI:
     """Build a fresh FastAPI instance.
 
     The default entry point (module-level ``app``) uses this with no
@@ -203,9 +194,7 @@ def create_app(
     middleware means the session runs first on the inbound leg.
     """
     effective_settings = settings if settings is not None else get_settings()
-    effective_secrets = (
-        secrets if secrets is not None else load_secrets(effective_settings)
-    )
+    effective_secrets = secrets if secrets is not None else load_secrets(effective_settings)
 
     session_middleware = build_session_middleware(effective_settings, effective_secrets)
 
@@ -220,16 +209,12 @@ def create_app(
     app.state.secrets = effective_secrets
     app.state.oauth = build_oauth(effective_settings, effective_secrets)
     app.state.templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
-    cipher, wb_client, validator, store = _build_cookie_stack(
-        effective_settings, effective_secrets
-    )
+    cipher, wb_client, validator, store = _build_cookie_stack(effective_settings, effective_secrets)
     app.state.cipher = cipher
     app.state.wodbuster_client = wb_client
     app.state.cookie_validator = validator
     app.state.cookie_store = store
-    app.state.heartbeat_probe = _build_heartbeat_probe(
-        effective_settings, store, validator
-    )
+    app.state.heartbeat_probe = _build_heartbeat_probe(effective_settings, store, validator)
     # The scheduler itself is built lazily inside the lifespan hook
     # so tests that construct an app without entering its lifespan
     # never spin up a real BackgroundScheduler thread.
@@ -254,9 +239,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
     """
 
     @app.exception_handler(AuthRedirectRequired)
-    async def _redirect_on_anon(
-        _request: Request, exc: AuthRedirectRequired
-    ) -> Response:
+    async def _redirect_on_anon(_request: Request, exc: AuthRedirectRequired) -> Response:
         return RedirectResponse(url=exc.location, status_code=302)
 
 
@@ -311,14 +294,10 @@ def _register_routes(app: FastAPI) -> None:
                 banners = load_banners_for_operator(session, operator_id)
                 next_booking = compute_next_booking(session, operator_id, now)
             next_window_iso = (
-                next_booking.window_open.isoformat()
-                if next_booking is not None
-                else None
+                next_booking.window_open.isoformat() if next_booking is not None else None
             )
             target_slot_iso = (
-                next_booking.target_slot.isoformat()
-                if next_booking is not None
-                else None
+                next_booking.target_slot.isoformat() if next_booking is not None else None
             )
             response = templates.TemplateResponse(
                 request=request,

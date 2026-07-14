@@ -172,10 +172,7 @@ def test_minimal_rows_round_trip_through_every_table(
 
     with migrated_engine.begin() as conn:
         op_id = conn.execute(
-            text(
-                "INSERT INTO operator_profile (display_name) "
-                "VALUES (:name) RETURNING id"
-            ),
+            text("INSERT INTO operator_profile (display_name) VALUES (:name) RETURNING id"),
             {"name": "Alice"},
         ).scalar_one()
 
@@ -192,8 +189,7 @@ def test_minimal_rows_round_trip_through_every_table(
 
         alert_id = conn.execute(
             text(
-                "INSERT INTO alert (operator_id, kind) "
-                "VALUES (:op, 'cookie_expiring') RETURNING id"
+                "INSERT INTO alert (operator_id, kind) VALUES (:op, 'cookie_expiring') RETURNING id"
             ),
             {"op": op_id},
         ).scalar_one()
@@ -254,8 +250,6 @@ def test_minimal_rows_round_trip_through_every_table(
             assert count >= 1, f"expected at least one row in {table}, got {count}"
 
         stored_ct = bytes(
-            conn.execute(
-                text("SELECT cookie_ciphertext FROM cookie_credential")
-            ).scalar_one()
+            conn.execute(text("SELECT cookie_ciphertext FROM cookie_credential")).scalar_one()
         )
         assert stored_ct == b"\x00\x01"

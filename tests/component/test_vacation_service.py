@@ -66,12 +66,8 @@ class _StubClient:
             class_time=self.class_time,
         )
 
-    def borrar(
-        self, cookie_value: str, *, class_id: int, ticks: int
-    ) -> BookingActionResponse:
-        self.borrar_calls.append(
-            {"class_id": class_id, "ticks": ticks}
-        )
+    def borrar(self, cookie_value: str, *, class_id: int, ticks: int) -> BookingActionResponse:
+        self.borrar_calls.append({"class_id": class_id, "ticks": ticks})
         return BookingActionResponse(
             status_code=200,
             latency_ms=1.0,
@@ -118,18 +114,13 @@ def _make_operator(engine: Engine, name: str = "Op") -> int:
     with engine.begin() as conn:
         return int(
             conn.execute(
-                text(
-                    "INSERT INTO operator_profile (display_name) "
-                    "VALUES (:n) RETURNING id"
-                ),
+                text("INSERT INTO operator_profile (display_name) VALUES (:n) RETURNING id"),
                 {"n": name},
             ).scalar_one()
         )
 
 
-def _seed_cookie(
-    engine: Engine, operator_id: int, cookie: str = ".WBAuth-abc"
-) -> CookieStore:
+def _seed_cookie(engine: Engine, operator_id: int, cookie: str = ".WBAuth-abc") -> CookieStore:
     """Insert a stored cookie so ``cancel_booking`` finds one."""
     import os
 
@@ -208,8 +199,7 @@ def test_enable_bulk_cancels_only_bookings_inside_range(
 
     with session_factory() as session:
         rows = {
-            int(o.id): o.terminal_status
-            for o in session.execute(select(BookingOutcome)).scalars()
+            int(o.id): o.terminal_status for o in session.execute(select(BookingOutcome)).scalars()
         }
     assert rows[b1] == "cancelled"
     assert rows[b2] == "cancelled"

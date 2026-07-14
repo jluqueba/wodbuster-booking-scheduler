@@ -84,9 +84,7 @@ def test_register_heartbeat_job_is_idempotent_with_custom_interval() -> None:
 
 def test_register_dispatcher_job_adds_expected_job() -> None:
     scheduler = build_scheduler()
-    dispatcher = NotificationDispatcher(
-        bot_token=None, session_factory=_null_session_factory
-    )
+    dispatcher = NotificationDispatcher(bot_token=None, session_factory=_null_session_factory)
 
     register_dispatcher_job(scheduler, dispatcher)
 
@@ -104,9 +102,7 @@ def test_register_dispatcher_job_adds_expected_job() -> None:
 
 def test_register_dispatcher_job_is_idempotent() -> None:
     scheduler = build_scheduler()
-    dispatcher = NotificationDispatcher(
-        bot_token=None, session_factory=_null_session_factory
-    )
+    dispatcher = NotificationDispatcher(bot_token=None, session_factory=_null_session_factory)
 
     register_dispatcher_job(scheduler, dispatcher, interval_seconds=5)
     # Re-register with a different cadence: must overwrite, not error.

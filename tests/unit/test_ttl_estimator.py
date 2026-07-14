@@ -16,9 +16,7 @@ def _valid() -> Valid:
 
 
 def test_valid_with_no_previous_returns_now_plus_ceiling() -> None:
-    result = project_ttl(
-        verdict=_valid(), now=_NOW, ceiling=_CEILING, previous=None
-    )
+    result = project_ttl(verdict=_valid(), now=_NOW, ceiling=_CEILING, previous=None)
     assert result == _NOW + _CEILING
 
 
@@ -27,9 +25,7 @@ def test_valid_with_lower_previous_keeps_previous() -> None:
     # probe would suggest 30 days; ``min`` keeps the pessimistic value.
     previous = _NOW + timedelta(days=29)
 
-    result = project_ttl(
-        verdict=_valid(), now=_NOW, ceiling=_CEILING, previous=previous
-    )
+    result = project_ttl(verdict=_valid(), now=_NOW, ceiling=_CEILING, previous=previous)
 
     assert result == previous
 
@@ -41,9 +37,7 @@ def test_valid_with_higher_previous_lowers_to_ceiling() -> None:
     # the estimator lowers it.
     previous = _NOW + timedelta(days=60)
 
-    result = project_ttl(
-        verdict=_valid(), now=_NOW, ceiling=_CEILING, previous=previous
-    )
+    result = project_ttl(verdict=_valid(), now=_NOW, ceiling=_CEILING, previous=previous)
 
     assert result == _NOW + _CEILING
 

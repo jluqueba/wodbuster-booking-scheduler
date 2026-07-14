@@ -48,9 +48,7 @@ def _templates(request: Request) -> Jinja2Templates:
     """
     templates = getattr(request.app.state, "templates", None)
     if templates is None:  # pragma: no cover - misconfiguration
-        raise RuntimeError(
-            "app.state.templates is not configured; wire it in lifespan()."
-        )
+        raise RuntimeError("app.state.templates is not configured; wire it in lifespan().")
     assert isinstance(templates, Jinja2Templates)
     return templates
 

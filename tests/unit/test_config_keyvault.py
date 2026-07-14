@@ -53,9 +53,7 @@ def test_prod_mode_calls_resolver_for_every_secret() -> None:
         wodbuster_env="prod",
         key_vault_url="https://kv.example.vault.azure.net/",  # type: ignore[arg-type]
     )
-    fake = _FakeResolver(
-        {name: f"value-of-{name}" for name in _EXPECTED_SECRET_NAMES}
-    )
+    fake = _FakeResolver({name: f"value-of-{name}" for name in _EXPECTED_SECRET_NAMES})
 
     secrets = load_secrets(settings, resolver_factory=lambda _url: fake)
 
@@ -63,10 +61,7 @@ def test_prod_mode_calls_resolver_for_every_secret() -> None:
     assert secrets.cookie_encryption_key == "value-of-wodbuster-cookie-encryption-key"
     assert secrets.session_encryption_secret == "value-of-session-encryption-secret"
     assert secrets.telegram_bot_token == "value-of-telegram-bot-token"
-    assert (
-        secrets.oauth_microsoft_client_secret
-        == "value-of-oauth-microsoft-client-secret"
-    )
+    assert secrets.oauth_microsoft_client_secret == "value-of-oauth-microsoft-client-secret"
     assert secrets.oauth_github_client_secret == "value-of-oauth-github-client-secret"
     assert secrets.oauth_google_client_secret == "value-of-oauth-google-client-secret"
     assert secrets.healthchecks_ping_url == "value-of-healthchecks-ping-url"

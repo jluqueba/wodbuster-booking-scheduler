@@ -68,8 +68,7 @@ def main() -> int:
         ).scalar_one_or_none()
         if existing is not None:
             print(
-                f"already registered: {provider}/{subject_id} -> "
-                f"operator_id={existing.operator_id}"
+                f"already registered: {provider}/{subject_id} -> operator_id={existing.operator_id}"
             )
             return 0
 
@@ -86,9 +85,7 @@ def main() -> int:
         session.add(identity)
 
         # Commit happens on context-manager exit.
-        print(
-            f"registered: {provider}/{subject_id} -> operator_id={operator.id}"
-        )
+        print(f"registered: {provider}/{subject_id} -> operator_id={operator.id}")
     return 0
 
 

@@ -66,9 +66,7 @@ class Cipher:
             # of a confusing type error inside cryptography.
             raise TypeError(f"key must be bytes, got {type(key).__name__}")
         if len(key) != _KEY_LENGTH_BYTES:
-            raise ValueError(
-                f"AES-256-GCM key must be {_KEY_LENGTH_BYTES} bytes; got {len(key)}"
-            )
+            raise ValueError(f"AES-256-GCM key must be {_KEY_LENGTH_BYTES} bytes; got {len(key)}")
         self._aead = AESGCM(key)
 
     @classmethod

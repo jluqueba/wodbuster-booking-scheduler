@@ -135,10 +135,7 @@ def _pin_projection(
 ) -> None:
     with session_factory() as session:
         session.execute(
-            text(
-                "UPDATE cookie_credential SET projected_ttl_at = :ttl "
-                "WHERE operator_id = :op"
-            ),
+            text("UPDATE cookie_credential SET projected_ttl_at = :ttl WHERE operator_id = :op"),
             {"ttl": projected_ttl_at, "op": operator_id},
         )
         session.commit()
@@ -166,9 +163,7 @@ def _run_one_cycle(
             now=outcome.probed_at,
             previous_heartbeat_at=prev_at,
         )
-        alert_id = apply_alert_action(
-            session, operator_id, action, now=outcome.probed_at
-        )
+        alert_id = apply_alert_action(session, operator_id, action, now=outcome.probed_at)
         session.commit()
         return alert_id
 
@@ -232,10 +227,7 @@ def test_no_telegram_binding_writes_only_banner_row(
 
     with session_factory() as session:
         kinds = [
-            row.kind
-            for row in session.query(NotificationOutbox)
-            .filter_by(operator_id=op_id)
-            .all()
+            row.kind for row in session.query(NotificationOutbox).filter_by(operator_id=op_id).all()
         ]
         assert kinds == ["banner"]
 
@@ -259,9 +251,7 @@ def test_re_emission_updates_last_emitted_and_appends_outbox_rows(
         assert alert.first_emitted_at == _NOW
         assert alert.last_emitted_at == now_2
         # Two cycles x two outbox rows (banner + telegram) = 4 total.
-        outbox_count = (
-            session.query(NotificationOutbox).filter_by(operator_id=op_id).count()
-        )
+        outbox_count = session.query(NotificationOutbox).filter_by(operator_id=op_id).count()
         assert outbox_count == 4
 
 
@@ -282,9 +272,7 @@ def test_recent_ack_suppresses_the_next_cycle(
     _run_one_cycle(session_factory, probe, op_id, now_2)
 
     with session_factory() as session:
-        outbox_count = (
-            session.query(NotificationOutbox).filter_by(operator_id=op_id).count()
-        )
+        outbox_count = session.query(NotificationOutbox).filter_by(operator_id=op_id).count()
         # Cycle 1 wrote 2 outbox rows; cycle 2 Suppresses.
         assert outbox_count == 2
         alert = session.get(Alert, alert_id)
@@ -307,9 +295,7 @@ def test_projection_recovers_and_open_alert_is_cleared(
 
     with session_factory() as session:
         alert = session.execute(
-            select(Alert).where(
-                Alert.operator_id == op_id, Alert.kind == "cookie_expiring"
-            )
+            select(Alert).where(Alert.operator_id == op_id, Alert.kind == "cookie_expiring")
         ).scalar_one()
         assert alert.closed_at == now_2
 
@@ -330,9 +316,7 @@ def test_close_open_cookie_expiring_on_paste_clears_alert(
     assert closed_id is not None
     with session_factory() as session:
         alert = session.execute(
-            select(Alert).where(
-                Alert.operator_id == op_id, Alert.kind == "cookie_expiring"
-            )
+            select(Alert).where(Alert.operator_id == op_id, Alert.kind == "cookie_expiring")
         ).scalar_one()
         assert alert.closed_at == paste_time
 
@@ -362,9 +346,7 @@ def test_no_rule_produces_no_alert(
     assert alert_id is None
     with session_factory() as session:
         assert session.query(Alert).filter_by(operator_id=op_id).count() == 0
-        assert (
-            session.query(NotificationOutbox).filter_by(operator_id=op_id).count() == 0
-        )
+        assert session.query(NotificationOutbox).filter_by(operator_id=op_id).count() == 0
 
 
 def test_heartbeat_reading_row_is_written_alongside_alert(

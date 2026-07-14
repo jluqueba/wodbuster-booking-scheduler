@@ -37,23 +37,25 @@ class BannerItem:
     last_emitted_at: datetime
 
 
-def load_banners_for_operator(
-    session: Session, operator_id: int
-) -> list[BannerItem]:
+def load_banners_for_operator(session: Session, operator_id: int) -> list[BannerItem]:
     """Return every open alert for ``operator_id`` as a banner item.
 
     Rows are ordered by ``first_emitted_at`` descending so the newest
     condition sits at the top of the banner stack — matches how the
     operator's attention actually flows.
     """
-    rows = session.execute(
-        select(Alert)
-        .where(
-            Alert.operator_id == operator_id,
-            Alert.closed_at.is_(None),
+    rows = (
+        session.execute(
+            select(Alert)
+            .where(
+                Alert.operator_id == operator_id,
+                Alert.closed_at.is_(None),
+            )
+            .order_by(Alert.first_emitted_at.desc())
         )
-        .order_by(Alert.first_emitted_at.desc())
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [_to_banner_item(alert) for alert in rows]
 
 

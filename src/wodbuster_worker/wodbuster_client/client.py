@@ -370,23 +370,17 @@ class WodBusterClient:
             )
 
         if response.status_code in (401, 403):
-            raise WodBusterAuthError(
-                f"server returned {response.status_code}"
-            )
+            raise WodBusterAuthError(f"server returned {response.status_code}")
 
         if response.status_code != 200:
-            raise WodBusterProtocolError(
-                f"unexpected status {response.status_code}"
-            )
+            raise WodBusterProtocolError(f"unexpected status {response.status_code}")
 
         content_type = response.headers.get("content-type", "").lower()
         # Phase 0 fingerprint of a rejected cookie served as a soft 200:
         # WodBuster renders the login page as HTML with a 200 status.
         # Detect by content type rather than parsing the body.
         if "json" not in content_type:
-            raise WodBusterAuthError(
-                f"expected JSON, got content-type {content_type!r}"
-            )
+            raise WodBusterAuthError(f"expected JSON, got content-type {content_type!r}")
 
         try:
             payload = response.json()
@@ -394,9 +388,7 @@ class WodBusterClient:
             raise WodBusterProtocolError(f"invalid JSON body: {exc}") from exc
 
         if not isinstance(payload, dict):
-            raise WodBusterProtocolError(
-                f"expected JSON object, got {type(payload).__name__}"
-            )
+            raise WodBusterProtocolError(f"expected JSON object, got {type(payload).__name__}")
 
         return response.status_code, elapsed_ms, payload
 

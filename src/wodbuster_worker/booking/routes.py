@@ -118,9 +118,7 @@ def booking_cancel(
         except BookingNotFoundError:
             raise HTTPException(status_code=404) from None
         except BookingAlreadyCancelledError:
-            return _redirect_with_flash(
-                "Already cancelled — no action taken.", kind="info"
-            )
+            return _redirect_with_flash("Already cancelled — no action taken.", kind="info")
         except CancellationUpstreamError as exc:
             _log.warning(
                 "booking.cancel.upstream_error",
@@ -128,13 +126,9 @@ def booking_cancel(
                 booking_id=booking_id,
                 error=str(exc),
             )
-            return _redirect_with_flash(
-                f"Cancel failed: {exc}", kind="error"
-            )
+            return _redirect_with_flash(f"Cancel failed: {exc}", kind="error")
 
-    return _redirect_with_flash(
-        "Booking cancelled. WodBuster and Telegram updated.", kind="info"
-    )
+    return _redirect_with_flash("Booking cancelled. WodBuster and Telegram updated.", kind="info")
 
 
 def _redirect_with_flash(message: str, *, kind: str) -> RedirectResponse:

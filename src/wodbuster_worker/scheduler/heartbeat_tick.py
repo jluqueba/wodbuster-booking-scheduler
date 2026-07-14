@@ -93,9 +93,7 @@ def run_heartbeat_tick(
                     now=outcome.probed_at,
                     previous_heartbeat_at=prev_at,
                 )
-                alert_id = apply_alert_action(
-                    session, operator_id, action, now=outcome.probed_at
-                )
+                alert_id = apply_alert_action(session, operator_id, action, now=outcome.probed_at)
         except NoCookieOnFile:
             # Normal state for a freshly seeded operator; skip quietly.
             _log.info("heartbeat.tick.skipped_no_cookie", operator_id=operator_id)
@@ -115,9 +113,7 @@ def run_heartbeat_tick(
             reading_id=outcome.reading_id,
             result=outcome.result,
             projected_ttl_at=(
-                outcome.projected_ttl_at.isoformat()
-                if outcome.projected_ttl_at
-                else None
+                outcome.projected_ttl_at.isoformat() if outcome.projected_ttl_at else None
             ),
             alert_action=type(action).__name__,
             alert_id=alert_id,

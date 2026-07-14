@@ -379,9 +379,7 @@ def test_edit_rule_of_other_operator_returns_404(
 
     factory = sessionmaker(bind=postgres_engine)
     with factory() as session:
-        alice_rule_id = (
-            session.query(SchedulerRule).filter_by(operator_id=op_a_id).one().id
-        )
+        alice_rule_id = session.query(SchedulerRule).filter_by(operator_id=op_a_id).one().id
 
     with _sign_in(app, subject_b, "Bob", monkeypatch) as client:
         assert client.get(f"/rules/{alice_rule_id}").status_code == 404

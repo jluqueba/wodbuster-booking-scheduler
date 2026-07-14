@@ -118,9 +118,7 @@ class HeartbeatProbe:
         # Read the current projection under the caller's session so the
         # estimator sees an up-to-date value in the same transaction.
         credential = session.execute(
-            select(CookieCredential).where(
-                CookieCredential.operator_id == operator_id
-            )
+            select(CookieCredential).where(CookieCredential.operator_id == operator_id)
         ).scalar_one()
         new_projection = project_ttl(
             verdict=verdict,

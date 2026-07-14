@@ -169,9 +169,7 @@ def test_banner_row_marks_dispatched_without_invoking_sender(
     postgres_engine: Engine, session_factory
 ) -> None:
     op_id = _seed_operator(postgres_engine)
-    row_id = _seed_outbox(
-        postgres_engine, operator_id=op_id, kind="banner", target=str(op_id)
-    )
+    row_id = _seed_outbox(postgres_engine, operator_id=op_id, kind="banner", target=str(op_id))
     sender = _RecordingSender()
     dispatcher = NotificationDispatcher(
         bot_token="secret", session_factory=session_factory, telegram_sender=sender
@@ -189,9 +187,7 @@ def test_dispatcher_falls_back_to_operator_chat_id_when_target_empty(
     postgres_engine: Engine, session_factory
 ) -> None:
     op_id = _seed_operator(postgres_engine, telegram_chat_id="op-tg")
-    row_id = _seed_outbox(
-        postgres_engine, operator_id=op_id, kind="telegram", target=""
-    )
+    row_id = _seed_outbox(postgres_engine, operator_id=op_id, kind="telegram", target="")
     sender = _RecordingSender()
     dispatcher = NotificationDispatcher(
         bot_token="secret", session_factory=session_factory, telegram_sender=sender
@@ -204,9 +200,7 @@ def test_dispatcher_falls_back_to_operator_chat_id_when_target_empty(
     assert row.dispatched_at is not None
 
 
-def test_tick_processes_rows_in_id_order(
-    postgres_engine: Engine, session_factory
-) -> None:
+def test_tick_processes_rows_in_id_order(postgres_engine: Engine, session_factory) -> None:
     op_id = _seed_operator(postgres_engine, telegram_chat_id="tg-1")
     id_first = _seed_outbox(
         postgres_engine,
@@ -242,9 +236,7 @@ def test_transient_error_leaves_row_pending_and_increments_attempts(
     postgres_engine: Engine, session_factory
 ) -> None:
     op_id = _seed_operator(postgres_engine, telegram_chat_id="tg-1")
-    row_id = _seed_outbox(
-        postgres_engine, operator_id=op_id, kind="telegram", target="tg-1"
-    )
+    row_id = _seed_outbox(postgres_engine, operator_id=op_id, kind="telegram", target="tg-1")
     sender = _RecordingSender(script=[TransientTelegramError("429 rate limited")])
     dispatcher = NotificationDispatcher(
         bot_token="secret",
@@ -264,12 +256,8 @@ def test_transient_errors_reach_max_attempts_and_mark_exhausted(
     postgres_engine: Engine, session_factory
 ) -> None:
     op_id = _seed_operator(postgres_engine, telegram_chat_id="tg-1")
-    row_id = _seed_outbox(
-        postgres_engine, operator_id=op_id, kind="telegram", target="tg-1"
-    )
-    sender = _RecordingSender(
-        script=[TransientTelegramError("boom")] * 3
-    )
+    row_id = _seed_outbox(postgres_engine, operator_id=op_id, kind="telegram", target="tg-1")
+    sender = _RecordingSender(script=[TransientTelegramError("boom")] * 3)
     dispatcher = NotificationDispatcher(
         bot_token="secret",
         session_factory=session_factory,
@@ -292,9 +280,7 @@ def test_permanent_error_marks_exhausted_after_single_attempt(
     postgres_engine: Engine, session_factory
 ) -> None:
     op_id = _seed_operator(postgres_engine, telegram_chat_id="tg-1")
-    row_id = _seed_outbox(
-        postgres_engine, operator_id=op_id, kind="telegram", target="tg-1"
-    )
+    row_id = _seed_outbox(postgres_engine, operator_id=op_id, kind="telegram", target="tg-1")
     sender = _RecordingSender(script=[PermanentTelegramError("400 bad chat")])
     dispatcher = NotificationDispatcher(
         bot_token="secret",
@@ -315,9 +301,7 @@ def test_missing_bot_token_treats_row_as_transient_and_keeps_pending(
     postgres_engine: Engine, session_factory
 ) -> None:
     op_id = _seed_operator(postgres_engine, telegram_chat_id="tg-1")
-    row_id = _seed_outbox(
-        postgres_engine, operator_id=op_id, kind="telegram", target="tg-1"
-    )
+    row_id = _seed_outbox(postgres_engine, operator_id=op_id, kind="telegram", target="tg-1")
     sender = _RecordingSender()
     dispatcher = NotificationDispatcher(
         bot_token=None, session_factory=session_factory, telegram_sender=sender
@@ -335,9 +319,7 @@ def test_missing_operator_chat_id_with_empty_target_is_permanent(
     postgres_engine: Engine, session_factory
 ) -> None:
     op_id = _seed_operator(postgres_engine, telegram_chat_id=None)
-    row_id = _seed_outbox(
-        postgres_engine, operator_id=op_id, kind="telegram", target=""
-    )
+    row_id = _seed_outbox(postgres_engine, operator_id=op_id, kind="telegram", target="")
     sender = _RecordingSender()
     dispatcher = NotificationDispatcher(
         bot_token="secret", session_factory=session_factory, telegram_sender=sender
@@ -351,16 +333,12 @@ def test_missing_operator_chat_id_with_empty_target_is_permanent(
     assert sender.calls == []
 
 
-def test_unknown_kind_is_marked_exhausted(
-    postgres_engine: Engine, session_factory
-) -> None:
+def test_unknown_kind_is_marked_exhausted(postgres_engine: Engine, session_factory) -> None:
     op_id = _seed_operator(postgres_engine)
     # Insert with a kind not in the enum vocabulary would fail at the
     # DB layer, so simulate by creating a legit row then re-labelling
     # via SQL bypassing the enum check.
-    row_id = _seed_outbox(
-        postgres_engine, operator_id=op_id, kind="banner", target=str(op_id)
-    )
+    row_id = _seed_outbox(postgres_engine, operator_id=op_id, kind="banner", target=str(op_id))
     # ALTER TYPE to add a bogus kind is heavy; simpler: patch the row
     # in-place to a kind the code doesn't know about. But the enum
     # forbids that too. So we test unknown-kind handling by seeding a
@@ -379,13 +357,9 @@ def test_unknown_kind_is_marked_exhausted(
 # --- Idempotency / concurrency ---------------------------------------
 
 
-def test_second_tick_on_dispatched_row_is_noop(
-    postgres_engine: Engine, session_factory
-) -> None:
+def test_second_tick_on_dispatched_row_is_noop(postgres_engine: Engine, session_factory) -> None:
     op_id = _seed_operator(postgres_engine, telegram_chat_id="tg-1")
-    _seed_outbox(
-        postgres_engine, operator_id=op_id, kind="telegram", target="tg-1"
-    )
+    _seed_outbox(postgres_engine, operator_id=op_id, kind="telegram", target="tg-1")
     sender = _RecordingSender()
     dispatcher = NotificationDispatcher(
         bot_token="secret", session_factory=session_factory, telegram_sender=sender
@@ -397,9 +371,7 @@ def test_second_tick_on_dispatched_row_is_noop(
     assert len(sender.calls) == 1
 
 
-def test_empty_outbox_tick_is_noop(
-    postgres_engine: Engine, session_factory
-) -> None:
+def test_empty_outbox_tick_is_noop(postgres_engine: Engine, session_factory) -> None:
     sender = _RecordingSender()
     dispatcher = NotificationDispatcher(
         bot_token="secret", session_factory=session_factory, telegram_sender=sender

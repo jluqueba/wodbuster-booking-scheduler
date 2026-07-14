@@ -116,9 +116,7 @@ class _EntraTokenProvider:
         return _CachedToken(value=access.token, expires_at=float(access.expires_on))
 
 
-def _install_entra_token_listener(
-    engine: Engine, provider: _EntraTokenProvider
-) -> None:
+def _install_entra_token_listener(engine: Engine, provider: _EntraTokenProvider) -> None:
     """Attach a ``do_connect`` listener that injects a fresh token.
 
     SQLAlchemy fires ``do_connect`` immediately before the DBAPI
@@ -164,9 +162,7 @@ def build_engine(url_or_settings: str | Settings) -> Engine:
         connect_args: dict[str, Any] = {}
         if settings.postgres_password:
             connect_args["password"] = settings.postgres_password
-        return create_engine(
-            url, future=True, connect_args=connect_args, **_POOL_KWARGS
-        )
+        return create_engine(url, future=True, connect_args=connect_args, **_POOL_KWARGS)
     # Raw URL path. Trusted for tests that construct their own DSN.
     return create_engine(url_or_settings, future=True, **_POOL_KWARGS)
 

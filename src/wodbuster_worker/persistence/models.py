@@ -113,9 +113,7 @@ class FederatedIdentity(Base):
 
     __tablename__ = "federated_identity"
     __table_args__ = (
-        UniqueConstraint(
-            "provider", "subject_id", name="uq_federated_identity_provider_subject"
-        ),
+        UniqueConstraint("provider", "subject_id", name="uq_federated_identity_provider_subject"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -132,12 +130,8 @@ class FederatedIdentity(Base):
     # AES-256-GCM ciphertext of the OAuth refresh token, when a provider
     # issues one. Null until a token is captured. ADR-0005 forbids any
     # plaintext refresh-token column.
-    refresh_token_ciphertext: Mapped[bytes | None] = mapped_column(
-        LargeBinary, nullable=True
-    )
-    refresh_token_nonce: Mapped[bytes | None] = mapped_column(
-        LargeBinary, nullable=True
-    )
+    refresh_token_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    refresh_token_nonce: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -184,16 +178,10 @@ class SchedulerRule(Base):
     # Second shot — if the primary class is unavailable at booking time,
     # the worker retries with these fields. Both null when the operator
     # did not fill the alternative section.
-    second_shot_class_type: Mapped[str | None] = mapped_column(
-        String(200), nullable=True
-    )
-    second_shot_class_time: Mapped[str | None] = mapped_column(
-        String(5), nullable=True
-    )
+    second_shot_class_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    second_shot_class_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
 
-    active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=sa.true()
-    )
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.true())
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -203,6 +191,8 @@ class SchedulerRule(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
 class CookieCredential(Base):
     """Encrypted ``.WBAuth`` blob (ADR-0002, ADR-0005, FR-020).
 
@@ -212,9 +202,7 @@ class CookieCredential(Base):
     """
 
     __tablename__ = "cookie_credential"
-    __table_args__ = (
-        UniqueConstraint("operator_id", name="uq_cookie_credential_operator"),
-    )
+    __table_args__ = (UniqueConstraint("operator_id", name="uq_cookie_credential_operator"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     operator_id: Mapped[int] = mapped_column(
@@ -232,9 +220,7 @@ class CookieCredential(Base):
         DateTime(timezone=True), nullable=True
     )
     last_probe_status: Mapped[str | None] = mapped_column(
-        Enum(
-            *_COOKIE_PROBE_STATUSES, name="cookie_probe_status_enum", native_enum=True
-        ),
+        Enum(*_COOKIE_PROBE_STATUSES, name="cookie_probe_status_enum", native_enum=True),
         nullable=True,
     )
 
@@ -255,9 +241,7 @@ class BookingOutcome(Base):
         ForeignKey("scheduler_rule.id", ondelete="SET NULL"), nullable=True
     )
     target_class: Mapped[str] = mapped_column(String(100), nullable=False)
-    target_slot: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    target_slot: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     attempted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -277,9 +261,7 @@ class BookingOutcome(Base):
     # than enough and keeps the schema portable if we ever need to
     # introspect via psql without json path syntax.
     response_payload: Mapped[str | None] = mapped_column(Text, nullable=True)
-    notified_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class VacationWindow(Base):
@@ -298,16 +280,12 @@ class VacationWindow(Base):
     # TODO: plan says "date range". Kept as DateTime here; if a UI
     # exposes date-only pickers, add a Date column and let SQLAlchemy
     # coerce.
-    start_date: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     end_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    closed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class HeartbeatReading(Base):
@@ -377,12 +355,8 @@ class Alert(Base):
     last_emitted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    acknowledged_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    closed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class NotificationOutbox(Base):
@@ -416,12 +390,8 @@ class NotificationOutbox(Base):
     enqueued_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    dispatched_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    attempt_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("0")
-    )
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
 
 
 __all__ = [

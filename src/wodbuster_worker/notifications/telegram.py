@@ -78,14 +78,10 @@ def send_message(
         return
     # Rate limiting and server-side blips are worth another try.
     if status == 429 or 500 <= status < 600:
-        raise TransientTelegramError(
-            f"telegram {status}: {response.text[:200]}"
-        )
+        raise TransientTelegramError(f"telegram {status}: {response.text[:200]}")
     # Anything else (400 bad chat id, 401 revoked token) is not going
     # to fix itself; do not spend more attempts on it.
-    raise PermanentTelegramError(
-        f"telegram {status}: {response.text[:200]}"
-    )
+    raise PermanentTelegramError(f"telegram {status}: {response.text[:200]}")
 
 
 __all__ = [

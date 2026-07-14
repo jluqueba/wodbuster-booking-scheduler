@@ -116,9 +116,7 @@ def cancel_booking(
             operator_id=operator_id,
             booking_id=booking_id,
         )
-        raise BookingAlreadyCancelledError(
-            f"booking {booking_id} already cancelled"
-        )
+        raise BookingAlreadyCancelledError(f"booking {booking_id} already cancelled")
 
     if booking.terminal_status != "granted":
         # Nothing to undo — the booking never succeeded. Treat as
@@ -158,15 +156,11 @@ def cancel_booking(
     # else is a soft failure the operator will see reflected in the
     # persisted row.
     if response.outcome not in {"granted", "unknown"}:
-        raise CancellationUpstreamError(
-            f"WodBuster refused cancel: {response.raw_res!r}"
-        )
+        raise CancellationUpstreamError(f"WodBuster refused cancel: {response.raw_res!r}")
 
     booking.terminal_status = "cancelled"
     booking.notified_at = None  # re-notify on the new terminal
-    booking.response_payload = (
-        f"cancelled by operator; borrar Res={response.raw_res!r}"
-    )
+    booking.response_payload = f"cancelled by operator; borrar Res={response.raw_res!r}"
 
     _enqueue_cancel_outbox(
         session,
@@ -217,10 +211,7 @@ def _enqueue_cancel_outbox(
     now: datetime,
 ) -> None:
     """Add the banner + Telegram rows for the cancellation."""
-    text = (
-        f"Cancelled {booking.target_class} for "
-        f"{_format_slot(booking.target_slot)}."
-    )
+    text = f"Cancelled {booking.target_class} for {_format_slot(booking.target_slot)}."
     payload: dict[str, Any] = {
         "kind": "booking_result",
         "terminal_status": "cancelled",

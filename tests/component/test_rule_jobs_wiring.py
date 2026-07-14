@@ -82,9 +82,7 @@ def _seed_scheduler_on_app(app: FastAPI) -> BackgroundScheduler:
 
 
 def _booking_jobs(scheduler: BackgroundScheduler) -> list[str]:
-    return [
-        j.id for j in scheduler.get_jobs() if j.id.startswith(BOOKING_JOB_ID_PREFIX)
-    ]
+    return [j.id for j in scheduler.get_jobs() if j.id.startswith(BOOKING_JOB_ID_PREFIX)]
 
 
 # ---------------------------------------------------------------------------
@@ -127,9 +125,7 @@ def test_update_replaces_the_existing_job_with_fresh_trigger(
 
     with _sign_in(app, subject, "Alice", monkeypatch) as client:
         csrf = client.cookies["wodbuster_csrf"]
-        client.post(
-            "/rules", data=_valid_form(csrf, days=(2,)), headers=_csrf_headers(client)
-        )
+        client.post("/rules", data=_valid_form(csrf, days=(2,)), headers=_csrf_headers(client))
         # Grab the rule id straight from the DB.
         from sqlalchemy.orm import sessionmaker
 
@@ -173,9 +169,7 @@ def test_delete_removes_the_job(
 
     with _sign_in(app, subject, "Alice", monkeypatch) as client:
         csrf = client.cookies["wodbuster_csrf"]
-        client.post(
-            "/rules", data=_valid_form(csrf, days=(2,)), headers=_csrf_headers(client)
-        )
+        client.post("/rules", data=_valid_form(csrf, days=(2,)), headers=_csrf_headers(client))
         from sqlalchemy.orm import sessionmaker
 
         factory = sessionmaker(bind=postgres_engine)

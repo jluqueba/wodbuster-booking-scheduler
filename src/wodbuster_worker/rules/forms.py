@@ -81,9 +81,7 @@ def parse_edit_rule_form(form: dict[str, str]) -> EditRuleFormResult:
 def _parse_shared_fields(
     form: dict[str, str], result: CreateRuleFormResult | EditRuleFormResult
 ) -> None:
-    result.class_type = _parse_required_str(
-        form, "class_type", "Pick a class type.", result.errors
-    )
+    result.class_type = _parse_required_str(form, "class_type", "Pick a class type.", result.errors)
     result.class_time = _parse_required_time(
         form, "class_time", "Pick a class time.", result.errors
     )
@@ -153,9 +151,7 @@ def _parse_required_time(
 def _parse_days_before(form: dict[str, str], errors: dict[str, str]) -> int | None:
     raw = (form.get("booking_opens_days_before") or "").strip()
     if not raw:
-        errors["booking_opens_days_before"] = (
-            "How many days before class does the window open?"
-        )
+        errors["booking_opens_days_before"] = "How many days before class does the window open?"
         return None
     try:
         value = int(raw)

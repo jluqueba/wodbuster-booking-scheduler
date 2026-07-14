@@ -67,9 +67,7 @@ def test_redirect_to_login_raises_auth_error() -> None:
         )
 
     with pytest.raises(WodBusterAuthError, match="redirected to login"):
-        _client(httpx.MockTransport(handler)).load_class(
-            cookie_value="stale-cookie", ticks=1
-        )
+        _client(httpx.MockTransport(handler)).load_class(cookie_value="stale-cookie", ticks=1)
 
 
 def test_unexpected_redirect_raises_protocol_error() -> None:
@@ -238,9 +236,7 @@ def test_inscribir_full_slot_returns_full_outcome() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return _booking_ok_response("Completa")
 
-    result = _client(httpx.MockTransport(handler)).inscribir(
-        cookie_value="c", class_id=1, ticks=1
-    )
+    result = _client(httpx.MockTransport(handler)).inscribir(cookie_value="c", class_id=1, ticks=1)
     assert result.outcome == "full"
     assert result.raw_res == "Completa"
 
@@ -249,9 +245,7 @@ def test_inscribir_cookie_invalid_mid_flight_returns_cookie_invalid() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return _booking_ok_response("SinAcceso")
 
-    result = _client(httpx.MockTransport(handler)).inscribir(
-        cookie_value="c", class_id=1, ticks=1
-    )
+    result = _client(httpx.MockTransport(handler)).inscribir(cookie_value="c", class_id=1, ticks=1)
     assert result.outcome == "cookie_invalid"
 
 
@@ -259,9 +253,7 @@ def test_inscribir_unknown_res_preserves_raw_and_classifies_unknown() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return _booking_ok_response("SomethingNewFromWodBuster")
 
-    result = _client(httpx.MockTransport(handler)).inscribir(
-        cookie_value="c", class_id=1, ticks=1
-    )
+    result = _client(httpx.MockTransport(handler)).inscribir(cookie_value="c", class_id=1, ticks=1)
     assert result.outcome == "unknown"
     # Raw value preserved so the executor can log / persist for
     # post-mortem — the classifier extension lives on this string.
@@ -276,23 +268,17 @@ def test_inscribir_missing_res_field_returns_unknown() -> None:
             content=json.dumps({"Data": []}).encode(),
         )
 
-    result = _client(httpx.MockTransport(handler)).inscribir(
-        cookie_value="c", class_id=1, ticks=1
-    )
+    result = _client(httpx.MockTransport(handler)).inscribir(cookie_value="c", class_id=1, ticks=1)
     assert result.outcome == "unknown"
     assert result.raw_res is None
 
 
 def test_inscribir_redirect_to_login_raises_auth_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            302, headers={"location": "/account/login.aspx?ReturnUrl=%2f"}
-        )
+        return httpx.Response(302, headers={"location": "/account/login.aspx?ReturnUrl=%2f"})
 
     with pytest.raises(WodBusterAuthError):
-        _client(httpx.MockTransport(handler)).inscribir(
-            cookie_value="c", class_id=1, ticks=1
-        )
+        _client(httpx.MockTransport(handler)).inscribir(cookie_value="c", class_id=1, ticks=1)
 
 
 def test_inscribir_timeout_raises_transport_error() -> None:
@@ -300,9 +286,7 @@ def test_inscribir_timeout_raises_transport_error() -> None:
         raise httpx.ReadTimeout("slow")
 
     with pytest.raises(WodBusterTransportError):
-        _client(httpx.MockTransport(handler)).inscribir(
-            cookie_value="c", class_id=1, ticks=1
-        )
+        _client(httpx.MockTransport(handler)).inscribir(cookie_value="c", class_id=1, ticks=1)
 
 
 def test_inscribir_5xx_raises_protocol_error() -> None:
@@ -310,9 +294,7 @@ def test_inscribir_5xx_raises_protocol_error() -> None:
         return httpx.Response(503)
 
     with pytest.raises(WodBusterProtocolError, match="503"):
-        _client(httpx.MockTransport(handler)).inscribir(
-            cookie_value="c", class_id=1, ticks=1
-        )
+        _client(httpx.MockTransport(handler)).inscribir(cookie_value="c", class_id=1, ticks=1)
 
 
 def test_borrar_uses_borrar_endpoint_and_shares_classifier() -> None:
@@ -336,9 +318,7 @@ def test_borrar_accepts_int_class_id_and_stringifies() -> None:
         captured["id"] = request.url.params["id"]
         return _booking_ok_response("Ok")
 
-    _client(httpx.MockTransport(handler)).borrar(
-        cookie_value="c", class_id=555, ticks=1
-    )
+    _client(httpx.MockTransport(handler)).borrar(cookie_value="c", class_id=555, ticks=1)
     # httpx serialises ints to str; the client must not stringify twice
     # or lose the value in a numeric edge (leading zeros etc).
     assert captured["id"] == "555"

@@ -112,9 +112,7 @@ class _FakeWodBusterClient:
     def borrar(
         self, cookie_value: str, *, class_id: str | int, ticks: int
     ) -> BookingActionResponse:
-        self.borrar_calls.append(
-            {"cookie": cookie_value, "class_id": class_id, "ticks": ticks}
-        )
+        self.borrar_calls.append({"cookie": cookie_value, "class_id": class_id, "ticks": ticks})
         if isinstance(self._borrar_response, Exception):
             raise self._borrar_response
         if self._borrar_response is None:
@@ -290,9 +288,7 @@ def test_cancel_granted_booking_flips_row_and_enqueues_outbox(
     store = CookieStore(cipher)
     factory = sessionmaker(bind=postgres_engine)
     with factory() as session:
-        store.save(
-            session, op_id, ".WBAuth-tok", validated_at=datetime.now(tz=UTC)
-        )
+        store.save(session, op_id, ".WBAuth-tok", validated_at=datetime.now(tz=UTC))
         session.commit()
 
     with _sign_in(app, subject, "Alice", monkeypatch) as client:

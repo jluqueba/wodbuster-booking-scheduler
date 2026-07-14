@@ -96,9 +96,7 @@ def test_parse_class_instance_rejects_empty_or_missing_nombre(
     assert parse_class_instance(_valor(Nombre=bad_nombre)) is None
 
 
-@pytest.mark.parametrize(
-    "bad_hora", [None, "", "21", "21:3", "2130", "not-a-time"]
-)
+@pytest.mark.parametrize("bad_hora", [None, "", "21", "21:3", "2130", "not-a-time"])
 def test_parse_class_instance_rejects_malformed_hora(bad_hora: Any) -> None:
     assert parse_class_instance(_valor(HoraComienzo=bad_hora)) is None
 
@@ -224,9 +222,7 @@ def test_find_matching_slot_exact_match_returns_slot() -> None:
 
 def test_find_matching_slot_class_type_is_case_insensitive() -> None:
     slots = [_slot(nombre="Cross Training", hora_comienzo="07:30")]
-    match = find_matching_slot(
-        slots, class_type="cross training", class_time="07:30"
-    )
+    match = find_matching_slot(slots, class_type="cross training", class_time="07:30")
     assert match is not None
 
 
@@ -237,10 +233,7 @@ def test_find_matching_slot_time_must_match_exactly() -> None:
 
 def test_find_matching_slot_no_match_returns_none() -> None:
     slots = [_slot(nombre="WOD", hora_comienzo="21:30")]
-    assert (
-        find_matching_slot(slots, class_type="Halterofilia", class_time="21:30")
-        is None
-    )
+    assert find_matching_slot(slots, class_type="Halterofilia", class_time="21:30") is None
 
 
 def test_find_matching_slot_returns_first_match_when_duplicates_exist() -> None:
@@ -267,13 +260,8 @@ def test_find_matching_slot_returns_first_match_when_duplicates_exist() -> None:
         (5, 5.0),
     ],
 )
-def test_extract_seconds_until_publication_returns_float(
-    value: Any, expected: float
-) -> None:
-    assert (
-        extract_seconds_until_publication({"SegundosHastaPublicacion": value})
-        == expected
-    )
+def test_extract_seconds_until_publication_returns_float(value: Any, expected: float) -> None:
+    assert extract_seconds_until_publication({"SegundosHastaPublicacion": value}) == expected
 
 
 @pytest.mark.parametrize(
@@ -281,9 +269,7 @@ def test_extract_seconds_until_publication_returns_float(
     [None, "not-a-number", True, False, [1.0]],
 )
 def test_extract_seconds_until_publication_bad_types_return_none(value: Any) -> None:
-    assert (
-        extract_seconds_until_publication({"SegundosHastaPublicacion": value}) is None
-    )
+    assert extract_seconds_until_publication({"SegundosHastaPublicacion": value}) is None
 
 
 def test_extract_seconds_until_publication_missing_key_returns_none() -> None:

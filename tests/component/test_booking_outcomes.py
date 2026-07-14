@@ -61,9 +61,7 @@ def _seed_rule(engine: Engine, *, operator_id: int) -> int:
 
 
 def _session_factory(engine: Engine) -> sessionmaker:
-    return sessionmaker(
-        bind=engine, autoflush=False, autocommit=False, expire_on_commit=False
-    )
+    return sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
 def test_granted_outcome_writes_row_and_banner_only_when_no_chat_id(

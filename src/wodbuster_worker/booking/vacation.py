@@ -85,15 +85,11 @@ def enable(
     _now = now or datetime.now(tz=UTC)
 
     if start_date.tzinfo is None or end_date.tzinfo is None:
-        raise VacationRangeError(
-            "start_date and end_date must be timezone-aware"
-        )
+        raise VacationRangeError("start_date and end_date must be timezone-aware")
     normalized_start = _floor_day(start_date)
     normalized_end = _ceil_day(end_date)
     if normalized_start > normalized_end:
-        raise VacationRangeError(
-            "start_date must be on or before end_date"
-        )
+        raise VacationRangeError("start_date must be on or before end_date")
 
     window = VacationWindow(
         operator_id=operator_id,

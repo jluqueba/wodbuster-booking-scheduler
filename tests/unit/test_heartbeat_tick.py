@@ -123,7 +123,9 @@ def test_tick_runs_probe_for_every_operator_in_order() -> None:
     factory = _FakeSessionFactory()
 
     outcomes = run_heartbeat_tick(
-        probe, factory, operator_ids=_ids([1, 2, 3])  # type: ignore[arg-type]
+        probe,
+        factory,
+        operator_ids=_ids([1, 2, 3]),  # type: ignore[arg-type]
     )
 
     assert probe.calls == [1, 2, 3]
@@ -137,7 +139,9 @@ def test_tick_skips_operators_without_a_cookie() -> None:
     factory = _FakeSessionFactory()
 
     outcomes = run_heartbeat_tick(
-        probe, factory, operator_ids=_ids([1, 2, 3, 4])  # type: ignore[arg-type]
+        probe,
+        factory,
+        operator_ids=_ids([1, 2, 3, 4]),  # type: ignore[arg-type]
     )
 
     # Skipped operators produce no outcome and no error.
@@ -151,7 +155,9 @@ def test_tick_isolates_failures_across_operators() -> None:
     factory = _FakeSessionFactory()
 
     outcomes = run_heartbeat_tick(
-        probe, factory, operator_ids=_ids([1, 2, 3])  # type: ignore[arg-type]
+        probe,
+        factory,
+        operator_ids=_ids([1, 2, 3]),  # type: ignore[arg-type]
     )
 
     # Failed operator absent; the others complete.
@@ -164,7 +170,9 @@ def test_tick_with_no_operators_returns_empty_list() -> None:
     factory = _FakeSessionFactory()
 
     outcomes = run_heartbeat_tick(
-        probe, factory, operator_ids=_ids([])  # type: ignore[arg-type]
+        probe,
+        factory,
+        operator_ids=_ids([]),  # type: ignore[arg-type]
     )
 
     assert outcomes == []

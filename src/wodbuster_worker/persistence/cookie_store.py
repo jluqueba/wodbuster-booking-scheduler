@@ -97,9 +97,7 @@ class CookieStore:
         ciphertext, nonce = self._cipher.encrypt(cookie_value.encode("utf-8"))
 
         existing = session.execute(
-            select(CookieCredential).where(
-                CookieCredential.operator_id == operator_id
-            )
+            select(CookieCredential).where(CookieCredential.operator_id == operator_id)
         ).scalar_one_or_none()
 
         if existing is None:
@@ -142,16 +140,12 @@ class CookieStore:
         leak whether the key or the payload was wrong.
         """
         row = session.execute(
-            select(CookieCredential).where(
-                CookieCredential.operator_id == operator_id
-            )
+            select(CookieCredential).where(CookieCredential.operator_id == operator_id)
         ).scalar_one_or_none()
         if row is None:
             return None
         try:
-            plaintext = self._cipher.decrypt(
-                bytes(row.cookie_ciphertext), bytes(row.cookie_nonce)
-            )
+            plaintext = self._cipher.decrypt(bytes(row.cookie_ciphertext), bytes(row.cookie_nonce))
         except InvalidCipherText as exc:
             raise CookieDecryptError(
                 f"cookie for operator {operator_id} failed authentication"
