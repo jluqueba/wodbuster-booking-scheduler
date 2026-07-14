@@ -33,9 +33,7 @@ def _sign_in(
     return tc
 
 
-_CSRF_PATTERN = re.compile(
-    r'action="/settings/language"[\s\S]*?name="_csrf" value="([^"]+)"'
-)
+_CSRF_PATTERN = re.compile(r'action="/settings/language"[\s\S]*?name="_csrf" value="([^"]+)"')
 
 
 def _extract_csrf(html: str) -> str:

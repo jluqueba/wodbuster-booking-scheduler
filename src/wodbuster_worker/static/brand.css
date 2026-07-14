@@ -455,6 +455,39 @@ hr {
 }
 .wb-hero__cta::after { content: "→"; font-weight: 400; }
 
+.wb-hero__ctas {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+.wb-hero__cta-secondaries {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.wb-hero__cta--secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1.1rem;
+  background: transparent;
+  color: var(--wb-text-muted);
+  border: 1px solid var(--wb-border-strong);
+  border-radius: var(--wb-radius-sm);
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.wb-hero__cta--secondary:hover {
+  background: var(--wb-bg-inset);
+  color: var(--wb-text);
+  border-color: var(--wb-accent);
+  text-decoration: none;
+}
+
 @keyframes wb-pulse {
   0%, 100% { box-shadow: 0 0 0 0 var(--wb-accent-glow); }
   50%      { box-shadow: 0 0 0 12px transparent; }
