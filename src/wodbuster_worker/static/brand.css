@@ -1181,3 +1181,22 @@ button.wb-confirm__cancel:focus-visible,
   padding: 0.3rem 0.6rem;
   font-size: 0.82rem;
 }
+
+/* Small status chip inside an upcoming slot (granted vs pending). */
+.wb-upcoming__chip {
+  font-size: 0.72rem;
+  padding: 0.12rem 0.5rem;
+}
+/* ``.wb-chip--pending`` is scoped to the upcoming grid — no other
+   surface uses a "pending" state today. Muted blue to avoid
+   competing with the accent yellow used by the "granted" chip. */
+.wb-chip--pending {
+  background: rgba(96, 165, 250, 0.10);
+  color: var(--wb-info);
+  border-color: var(--wb-info);
+}
+/* Push the chip to the right when the slot has no Cancel button
+   (pending slots) so the row still lines up nicely. */
+.wb-upcoming__item--pending .wb-upcoming__chip {
+  margin-left: auto;
+}

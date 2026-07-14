@@ -303,7 +303,7 @@ def test_history_upcoming_section_empty_state_when_nothing_future(
     postgres_engine: Engine,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No future-granted bookings → helper hint replaces the grid."""
+    """No future-granted bookings and no active rules → helper hint."""
     op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
     _seed_booking(
         postgres_engine,
@@ -318,7 +318,47 @@ def test_history_upcoming_section_empty_state_when_nothing_future(
         response = client.get("/history")
 
     assert response.status_code == 200
-    assert "No granted bookings on the horizon" in response.text
+    assert "No granted or scheduled bookings on the horizon" in response.text
+
+
+def test_history_upcoming_section_projects_pending_rule_attempts(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rule whose next window has not fired yet appears as a
+    ``⏱️ scheduled`` slot in the upcoming grid — that's the operator
+    question "what am I about to book next?" the granted-only view
+    could not answer."""
+    monkeypatch.setenv("WORKER_TIMEZONE", "UTC")
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+
+    # Insert an active rule directly. Attendance day = today's
+    # weekday + 1 mod 7 so the projection always lands in the
+    # future regardless of when the suite runs.
+    now = datetime.now(tz=UTC)
+    attend_dow = (now.weekday() + 1) % 7
+    with postgres_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO scheduler_rule ("
+                " operator_id, day_of_week, class_type, class_time, "
+                " booking_opens_days_before, booking_opens_at, active"
+                ") VALUES (:op, :dow, 'ScheduledWOD', '21:30', 0, '21:30', true)"
+            ),
+            {"op": op_id, "dow": attend_dow},
+        )
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/history")
+
+    assert response.status_code == 200
+    text_body = response.text
+    upcoming, _sep, _rest = text_body.partition("📜 All attempts")
+    assert "ScheduledWOD" in upcoming
+    assert "scheduled" in upcoming  # pending chip label
 
 
 def test_history_unauthenticated_redirects_to_login(
