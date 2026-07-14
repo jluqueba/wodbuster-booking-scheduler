@@ -44,6 +44,7 @@ from .routes.static_pages import router as static_pages_router
 from .rules.routes import router as rules_router
 from .scheduler.scheduler import (
     build_scheduler,
+    register_anomaly_job,
     register_dispatcher_job,
     register_heartbeat_job,
     register_rule_bootstrap_jobs,
@@ -149,6 +150,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
             app.state.notification_dispatcher = dispatcher
             register_dispatcher_job(scheduler, dispatcher)
+            # Per-run anomaly detector (US2.4): every 60s scan for
+            # missed booking windows and open a heartbeat_anomaly
+            # alert when a run left no outcome in the database.
+            register_anomaly_job(scheduler, get_session)
             # Booking wiring: only when the cookie store + wodbuster
             # client are both live. Missing dependencies mean bookings
             # cannot fire; the scheduler still hosts heartbeat and
