@@ -108,20 +108,29 @@
         Chat id <code>{{ chat_id }}</code>
       </p>
       <p class="wb-telegram-hint">
-        Notifications are being delivered to this chat. Unbind if you
-        stopped using that Telegram account or want to bind a
-        different chat.
+        Notifications are being delivered to this chat. Click
+        <strong>Send test</strong> to verify the pipeline end-to-end.
+        Unbind if you stopped using this Telegram account or want to
+        bind a different chat.
       </p>
-      <form
-        method="post"
-        action="/telegram/unbind"
-        onsubmit="return wbConfirm(this, event, 'Unbind Telegram from this operator?')"
-      >
-        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-        <button type="submit" class="wb-btn wb-btn--danger">
-          🚫 Unbind
-        </button>
-      </form>
+      <div class="wb-form-actions">
+        <form method="post" action="/telegram/test">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <button type="submit" class="wb-btn wb-btn--primary">
+            🧪 Send test message
+          </button>
+        </form>
+        <form
+          method="post"
+          action="/telegram/unbind"
+          onsubmit="return wbConfirm(this, event, 'Unbind Telegram from this operator?')"
+        >
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <button type="submit" class="wb-btn wb-btn--danger">
+            🚫 Unbind
+          </button>
+        </form>
+      </div>
     </section>
   {% else %}
     <section class="wb-telegram-card">

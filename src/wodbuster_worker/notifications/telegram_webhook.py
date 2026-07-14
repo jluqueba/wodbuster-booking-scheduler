@@ -37,6 +37,7 @@ from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
 from ..persistence.engine import get_session
 from ..persistence.models import OperatorProfile
+from . import telegram as telegram_sender
 from .telegram_bind import TelegramBindStore
 
 _log = structlog.get_logger(__name__)
@@ -154,6 +155,73 @@ def telegram_unbind(
         url="/telegram?flash=Telegram+unbound.&flash_kind=info",
         status_code=303,
     )
+
+
+@router.post(
+    "/telegram/test",
+    name="telegram_test",
+    dependencies=[Depends(verify_csrf)],
+)
+def telegram_test(
+    request: Request,
+    operator_id: int = Depends(require_session),
+) -> Response:
+    """Send a smoke-test message straight to the operator's bound chat.
+
+    Bypasses the outbox/dispatcher entirely so a bound operator can
+    confirm the outbound path (bot token + chat id + network) end-to-
+    end in one click. Failures redirect back with a flash error so the
+    operator sees the reason instead of a stack trace.
+    """
+    bot_token = getattr(request.app.state, "telegram_bot_token", None)
+    if not bot_token:
+        return _redirect_flash(
+            "Bot token not configured. Seed ``telegram-bot-token`` in "
+            "Key Vault and restart the container app.",
+            kind="error",
+        )
+    with get_session() as session:
+        operator = _resolve_operator(session, operator_id)
+    chat_id = operator.telegram_chat_id if operator else None
+    if not chat_id:
+        return _redirect_flash(
+            "This operator is not bound to a Telegram chat yet. "
+            "Generate a link above and tap it to bind first.",
+            kind="warning",
+        )
+    try:
+        telegram_sender.send_message(
+            bot_token=bot_token,
+            chat_id=chat_id,
+            text=(
+                "🧪 Test message from WodBuster Booking Scheduler. "
+                "If you see this, notifications are working."
+            ),
+        )
+    except telegram_sender.PermanentTelegramError as exc:
+        _log.warning("telegram.test.permanent_error", error=str(exc))
+        return _redirect_flash(
+            f"Telegram refused the message: {exc}. Check the bot "
+            "token and that the chat still exists.",
+            kind="error",
+        )
+    except telegram_sender.TransientTelegramError as exc:
+        _log.warning("telegram.test.transient_error", error=str(exc))
+        return _redirect_flash(
+            f"Temporary Telegram error: {exc}. Try again in a moment.",
+            kind="warning",
+        )
+    return _redirect_flash(
+        "Test message sent. Check your Telegram chat.",
+        kind="info",
+    )
+
+
+def _redirect_flash(message: str, *, kind: str) -> RedirectResponse:
+    from urllib.parse import urlencode
+
+    query = urlencode({"flash": message, "flash_kind": kind})
+    return RedirectResponse(url=f"/telegram?{query}", status_code=303)
 
 
 def _build_deep_link(bot_username: str | None, token: str) -> str | None:
