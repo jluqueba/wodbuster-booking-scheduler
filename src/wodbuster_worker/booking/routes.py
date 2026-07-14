@@ -34,7 +34,7 @@ from ..booking.cancellation import (
     list_recent_bookings,
 )
 from ..booking.upcoming import UpcomingSlot, list_upcoming_slots
-from ..i18n import t
+from ..i18n import lang_url, t
 from ..persistence.engine import get_session
 from ..persistence.models import BookingOutcome
 from ..scheduler.rule_jobs import operator_timezone
@@ -144,7 +144,7 @@ def booking_cancel(
 def _redirect_with_flash(message: str, *, kind: str) -> RedirectResponse:
     """303 back to /history with a URL-encoded flash message."""
     query = urlencode({"flash": message, "flash_kind": kind})
-    return RedirectResponse(url=f"/history?{query}", status_code=303)
+    return RedirectResponse(url=f"{lang_url('/history')}?{query}", status_code=303)
 
 
 def _outcome_to_row(outcome: BookingOutcome) -> dict[str, Any]:

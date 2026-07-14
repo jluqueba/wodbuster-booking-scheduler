@@ -86,7 +86,7 @@
   <span class="wb-page-title__eyebrow">{{ t("rules.eyebrow") }}</span>
   <h1 class="wb-page-title">✨ {{ heading }}</h1>
   <p class="wb-page-subtitle">
-    <a href="/rules">{{ t("rules.back_to_rules") }}</a>
+    <a href="{{ lang_url('/rules') }}">{{ t("rules.back_to_rules") }}</a>
   </p>
 
   {% if errors.get('days_of_week') %}
@@ -124,7 +124,7 @@
       {% if picker_unavailable %}
         <p class="wb-picker-note">
           {{ t("rules.form.picker_unavailable") }}
-          <a href="/cookie">{{ t("nav.cookie") }}</a>
+          <a href="{{ lang_url('/cookie') }}">{{ t("nav.cookie") }}</a>
         </p>
       {% endif %}
       <div class="wb-row2">

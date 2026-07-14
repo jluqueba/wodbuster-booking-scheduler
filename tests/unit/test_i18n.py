@@ -8,6 +8,8 @@ from wodbuster_worker.i18n import (
     DEFAULT_LANG,
     SUPPORTED_LANGUAGES,
     get_language,
+    lang_prefix,
+    lang_url,
     normalize_language,
     set_language,
     t,
@@ -55,13 +57,13 @@ def test_t_returns_spanish_when_switched() -> None:
 
 def test_t_formats_placeholders() -> None:
     set_language("en")
-    assert "42" in t("dashboard.operator_tag", operator_id=42)
+    assert "42" in t("telegram.chat_id_label", chat_id=42)
 
 
 def test_t_missing_placeholder_returns_raw_template() -> None:
     set_language("en")
     # Missing kwarg does not raise; returns the template unchanged.
-    assert t("dashboard.operator_tag") == EN["dashboard.operator_tag"]
+    assert t("telegram.chat_id_label") == EN["telegram.chat_id_label"]
 
 
 def test_t_falls_back_to_english_when_key_missing_in_es() -> None:
@@ -86,3 +88,49 @@ def test_catalogs_share_the_same_keys(lang: str) -> None:
     # fall back to English at runtime but is still a copy bug.
     diff = set(EN) ^ set(CATALOGS[lang])
     assert diff == set(), f"key drift in {lang}: {sorted(diff)[:10]}"
+
+
+def test_lang_prefix_empty_for_default_language() -> None:
+    set_language("en")
+    assert lang_prefix() == ""
+
+
+def test_lang_prefix_carries_code_for_non_default() -> None:
+    set_language("es")
+    try:
+        assert lang_prefix() == "/es"
+    finally:
+        set_language("en")
+
+
+def test_lang_url_prepends_prefix_when_non_default() -> None:
+    set_language("es")
+    try:
+        assert lang_url("/rules") == "/es/rules"
+        assert lang_url("/") == "/es/"
+    finally:
+        set_language("en")
+
+
+def test_lang_url_leaves_default_language_paths_untouched() -> None:
+    set_language("en")
+    assert lang_url("/rules") == "/rules"
+
+
+def test_lang_url_avoids_double_prefixing() -> None:
+    set_language("es")
+    try:
+        assert lang_url("/es/rules") == "/es/rules"
+        assert lang_url("/es") == "/es"
+    finally:
+        set_language("en")
+
+
+def test_lang_url_returns_non_absolute_paths_unchanged() -> None:
+    set_language("es")
+    try:
+        assert lang_url("") == ""
+        assert lang_url("https://example.com/") == "https://example.com/"
+        assert lang_url("#anchor") == "#anchor"
+    finally:
+        set_language("en")

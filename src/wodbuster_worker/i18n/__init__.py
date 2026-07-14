@@ -1,9 +1,12 @@
 """Two-language i18n helper (English + Spanish).
 
-Kept intentionally small: a ``ContextVar`` for the request-scoped
-language, a :func:`t` lookup that formats with keyword arguments,
-and a middleware that reads the language off the session cookie
-(or falls back to ``Accept-Language`` / :data:`DEFAULT_LANG`).
+Language is selected purely from the URL: paths under ``/es/...``
+render Spanish, everything else renders English. A middleware
+strips the ``/es`` prefix from the ASGI ``scope["path"]`` before
+downstream routing sees it, so route handlers stay language
+agnostic. When an anonymous visitor lands on ``/`` and their
+browser prefers Spanish (``Accept-Language: es*``), the middleware
+issues a one-shot 302 to ``/es`` so the URL matches the language.
 
 Deliberately not Babel: single-user app, two locales, no plural
 forms or ICU MessageFormat. The catalogs live in
@@ -13,8 +16,11 @@ Usage:
 
 - Route handler: ``t("dashboard.title.hero")`` — reads the
   contextvar set by :class:`LanguageMiddleware`.
-- Template: ``{{ t("nav.rules") }}`` — the same helper registered
-  as a Jinja global by :func:`register_jinja_globals`.
+- Template: ``{{ t("nav.rules") }}`` and ``{{ lang_url("/rules")
+  }}`` — the same helpers registered as Jinja globals by
+  :func:`register_jinja_globals`.
+- Python redirects: ``RedirectResponse(url=lang_url("/rules"))``
+  keeps the visitor on the same language branch.
 """
 
 from __future__ import annotations
@@ -31,9 +37,8 @@ def set_language(lang: str) -> str:
     """Bind ``lang`` to the current request's context.
 
     Unknown or empty values collapse to :data:`DEFAULT_LANG` so a
-    malformed session cookie can never break the render pipeline.
-    Returns the normalised language actually set (useful for tests
-    and for writing the value back to the session).
+    malformed URL prefix can never break the render pipeline.
+    Returns the normalised language actually set (useful for tests).
     """
     normalised = normalize_language(lang)
     _current_language.set(normalised)
@@ -61,6 +66,39 @@ def normalize_language(lang: str | None) -> str:
     return DEFAULT_LANG
 
 
+def lang_prefix() -> str:
+    """Return the URL prefix for the current language (``""`` or ``/es``).
+
+    Kept in sync with :data:`SUPPORTED_LANGUAGES` and the
+    stripping logic in :class:`LanguageMiddleware`. English is the
+    "prefix-free" default; every other supported language sits
+    under ``/<lang>``.
+    """
+    lang = _current_language.get()
+    if lang == DEFAULT_LANG:
+        return ""
+    return f"/{lang}"
+
+
+def lang_url(path: str) -> str:
+    """Prepend the current language prefix to an internal ``path``.
+
+    Absolute paths (starting with ``/``) get the prefix; anything
+    else (external URLs, fragments, empty) is returned unchanged so
+    the helper is safe to sprinkle everywhere.
+    """
+    if not path or not path.startswith("/"):
+        return path
+    prefix = lang_prefix()
+    if not prefix:
+        return path
+    # Avoid double-prefixing when the caller already handed us a
+    # language-scoped path (defensive; the sweep should never do it).
+    if path == prefix or path.startswith(f"{prefix}/"):
+        return path
+    return f"{prefix}{path}"
+
+
 def t(key: str, **format_args: Any) -> str:
     """Return the localised string for ``key`` in the current language.
 
@@ -85,12 +123,14 @@ def t(key: str, **format_args: Any) -> str:
 def register_jinja_globals(env: Any) -> None:
     """Attach the i18n helpers to a Jinja2 environment.
 
-    Templates then call ``{{ t("nav.rules") }}`` and
-    ``{{ current_language() }}`` without extra plumbing per
-    render.
+    Templates then call ``{{ t("nav.rules") }}``,
+    ``{{ current_language() }}``, and ``{{ lang_url("/rules") }}``
+    without extra plumbing per render.
     """
     env.globals["t"] = t
     env.globals["current_language"] = get_language
+    env.globals["lang_url"] = lang_url
+    env.globals["lang_prefix"] = lang_prefix
     env.globals["supported_languages"] = list(SUPPORTED_LANGUAGES)
 
 
@@ -98,6 +138,8 @@ __all__ = [
     "DEFAULT_LANG",
     "SUPPORTED_LANGUAGES",
     "get_language",
+    "lang_prefix",
+    "lang_url",
     "normalize_language",
     "register_jinja_globals",
     "set_language",

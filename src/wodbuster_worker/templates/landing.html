@@ -3,7 +3,7 @@
    index route. #}
 {% extends "base.html" %}
 
-{% block title %}WodBuster Booking Worker — sign in{% endblock %}
+{% block title %}WodBuster Booking Scheduler — sign in{% endblock %}
 {% block body_class %}wb-body--landing{% endblock %}
 
 {% block content %}
@@ -11,6 +11,7 @@
     {# Photo + dark overlay + colour radials. Aria-hidden because the
        image is decorative; the hero copy carries all the meaning. #}
     <div class="wb-hero__bg" aria-hidden="true"></div>
+    <p class="wb-hero__brand">WodBuster Booking Scheduler</p>
     <span class="wb-hero__eyebrow">🏋️ Booking on autopilot</span>
     <h1 class="wb-hero__title">
       Never miss a <span class="wb-hero__title-accent">WOD</span>.
@@ -19,14 +20,11 @@
       Set a rule once. Paste a cookie. The worker grabs your class the
       moment booking opens and pings your phone when it needs you.
     </p>
-    <a href="/auth/microsoft/login" class="wb-hero__cta">
-      {{ t("auth.signin.with_microsoft") }}
-    </a>
-    <div class="wb-hero__cta-secondaries">
-      <a href="/auth/github/login" class="wb-hero__cta--secondary">
-        {{ t("auth.signin.with_github") }}
+    <div class="wb-hero__ctas">
+      <a href="{{ lang_url('/auth/microsoft/login') }}" class="wb-hero__cta">
+        {{ t("auth.signin.with_microsoft") }}
       </a>
-      <a href="/auth/google/login" class="wb-hero__cta--secondary">
+      <a href="{{ lang_url('/auth/google/login') }}" class="wb-hero__cta">
         {{ t("auth.signin.with_google") }}
       </a>
     </div>

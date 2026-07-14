@@ -6,68 +6,54 @@
    ``telegram``, ``faq``.
 
    Localised via the i18n ``t(...)`` helper registered as a Jinja
-   global. The language selector on the right POSTs to
-   ``/settings/language`` and bounces back to the current page.
+   global. Language is selected purely from the URL prefix
+   (``/es/...`` vs default), so this template no longer renders a
+   language picker.
 #}
 <nav class="wb-nav">
-  <a href="/" class="wb-nav__brand" aria-label="WodBuster Booking Scheduler">
+  <a href="{{ lang_url('/') }}" class="wb-nav__brand" aria-label="WodBuster Booking Scheduler">
     <span class="wb-nav__brand-full">WodBuster Booking Scheduler</span>
     <span class="wb-nav__brand-short">WodBuster</span>
   </a>
   <ul class="wb-nav__links">
     <li>
-      <a href="/"
+      <a href="{{ lang_url('/') }}"
          {% if active_nav == "dashboard" %}aria-current="page"{% endif %}
       >{{ t("nav.dashboard") }}</a>
     </li>
     <li>
-      <a href="/rules"
+      <a href="{{ lang_url('/rules') }}"
          {% if active_nav == "rules" %}aria-current="page"{% endif %}
       >{{ t("nav.rules") }}</a>
     </li>
     <li>
-      <a href="/history"
+      <a href="{{ lang_url('/history') }}"
          {% if active_nav == "history" %}aria-current="page"{% endif %}
       >{{ t("nav.history") }}</a>
     </li>
     <li>
-      <a href="/vacation"
+      <a href="{{ lang_url('/vacation') }}"
          {% if active_nav == "vacation" %}aria-current="page"{% endif %}
       >{{ t("nav.vacation") }}</a>
     </li>
     <li>
-      <a href="/cookie"
+      <a href="{{ lang_url('/cookie') }}"
          {% if active_nav == "cookie" %}aria-current="page"{% endif %}
       >{{ t("nav.cookie") }}</a>
     </li>
     <li>
-      <a href="/telegram"
+      <a href="{{ lang_url('/telegram') }}"
          {% if active_nav == "telegram" %}aria-current="page"{% endif %}
       >{{ t("nav.telegram") }}</a>
     </li>
     <li>
-      <a href="/faq"
+      <a href="{{ lang_url('/faq') }}"
          {% if active_nav == "faq" %}aria-current="page"{% endif %}
       >{{ t("nav.faq") }}</a>
     </li>
   </ul>
-  <div class="wb-nav__right">
-    <form method="post" action="/settings/language" class="wb-lang-picker">
-      <input type="hidden" name="_csrf" value="{{ csrf_token | default('') }}">
-      {% for lang in supported_languages %}
-        <button
-          type="submit"
-          name="lang"
-          value="{{ lang }}"
-          class="wb-lang-picker__btn{% if current_language() == lang %} wb-lang-picker__btn--active{% endif %}"
-          aria-label="{{ t('common.language.' ~ lang) }}"
-          title="{{ t('common.language.' ~ lang) }}"
-        >{{ lang | upper }}</button>
-      {% endfor %}
-    </form>
-    <form method="post" action="/auth/logout">
-      <input type="hidden" name="_csrf" value="{{ csrf_token | default('') }}">
-      <button type="submit" class="wb-nav__logout">{{ t("nav.logout") }} 👋</button>
-    </form>
-  </div>
+  <form method="post" action="{{ lang_url('/auth/logout') }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token | default('') }}">
+    <button type="submit" class="wb-nav__logout">{{ t("nav.logout") }} 👋</button>
+  </form>
 </nav>

@@ -74,7 +74,6 @@ EN: dict[str, str] = {
         "when, the cookie proves who, the heartbeat catches issues "
         "before they become a missed class."
     ),
-    "dashboard.operator_tag": "Operator #{operator_id}",
     "dashboard.countdown.label": "Next booking window opens in",
     "dashboard.countdown.firing": (
         "Firing now — refresh in a few seconds to see the outcome on History."
@@ -259,9 +258,9 @@ EN: dict[str, str] = {
         "If you believe this is a mistake, contact the operator who set up this deployment."
     ),
     "auth.denied.back": "← Back to sign-in",
-    "auth.signin.with_microsoft": "Sign in with Microsoft",
-    "auth.signin.with_github": "Sign in with GitHub",
-    "auth.signin.with_google": "Sign in with Google",
+    "auth.signin.with_microsoft": "🪟 Sign in with Microsoft",
+    "auth.signin.with_github": "🐙 Sign in with GitHub",
+    "auth.signin.with_google": "🌐 Sign in with Google",
     # -- flash messages ---------------------------------------------
     "flash.booking.cancelled": "Booking cancelled. WodBuster and Telegram updated.",
     "flash.booking.already_cancelled": "Already cancelled — no action taken.",
@@ -348,7 +347,6 @@ ES: dict[str, str] = {
         "Las reglas definen cuándo, la cookie prueba quién eres, y el "
         "heartbeat detecta problemas antes de que pierdas una clase."
     ),
-    "dashboard.operator_tag": "Operador #{operator_id}",
     "dashboard.countdown.label": "Próxima ventana de reserva en",
     "dashboard.countdown.firing": (
         "Ejecutando — refresca en unos segundos para ver el resultado en Historial."
@@ -543,9 +541,9 @@ ES: dict[str, str] = {
         "Si crees que es un error, contacta con la persona que configuró el despliegue."
     ),
     "auth.denied.back": "← Volver a iniciar sesión",
-    "auth.signin.with_microsoft": "Entrar con Microsoft",
-    "auth.signin.with_github": "Entrar con GitHub",
-    "auth.signin.with_google": "Entrar con Google",
+    "auth.signin.with_microsoft": "🪟 Entrar con Microsoft",
+    "auth.signin.with_github": "🐙 Entrar con GitHub",
+    "auth.signin.with_google": "🌐 Entrar con Google",
     # -- flash messages ---------------------------------------------
     "flash.booking.cancelled": "Reserva cancelada. WodBuster y Telegram actualizados.",
     "flash.booking.already_cancelled": "Ya cancelada — sin acción.",

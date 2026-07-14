@@ -71,7 +71,7 @@
     </div>
   {% endif %}
 
-  <form method="post" action="/vacation" class="wb-vacation-form">
+  <form method="post" action="{{ lang_url('/vacation') }}" class="wb-vacation-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <div>
       <label for="vac-start">{{ t("vacation.form.start") }}</label>
@@ -118,7 +118,7 @@
             <td class="wb-cell-actions">
               <form
                 method="post"
-                action="/vacation/{{ w.id }}/close"
+                action="{{ lang_url('/vacation/' ~ w.id ~ '/close') }}"
                 class="wb-inline-form"
                 onsubmit="return wbConfirm(this, event, '{{ t('vacation.confirm.close') }}')"
               >

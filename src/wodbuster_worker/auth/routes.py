@@ -31,6 +31,7 @@ from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
+from ..i18n import lang_prefix
 from ..persistence.engine import get_session as db_session
 from ..persistence.models import FederatedIdentity
 from .csrf import CSRF_COOKIE_NAME, issue_csrf_token, verify_csrf
@@ -79,6 +80,9 @@ async def login(provider: str, request: Request) -> Response:
 
     state = secrets.token_urlsafe(16)
     request.session[f"oauth_state_{provider}"] = state
+    # Remember which language branch the operator started on so we
+    # can drop them back on the matching root after the callback.
+    request.session["oauth_lang_prefix"] = lang_prefix()
 
     client = _oauth(request).create_client(provider)
     if client is None:
@@ -139,13 +143,14 @@ async def callback(provider: str, request: Request) -> Response:
 
     # Success: rotate the session (mitigate session-fixation), stamp
     # timestamps, and set the CSRF token.
+    prefix = request.session.get("oauth_lang_prefix", "") or ""
     request.session.clear()
     request.session["operator_id"] = operator_id
     request.session["display_name"] = display_name
     touch_session(request.session)
     csrf_token = issue_csrf_token(request)
 
-    response = RedirectResponse(url="/", status_code=302)
+    response = RedirectResponse(url=f"{prefix}/", status_code=302)
     # Non-HttpOnly CSRF cookie so HTMX JS can read it and echo the
     # X-CSRF-Token header. The value is bound to the session by the
     # double-submit check; disclosure to first-party JS is safe.
@@ -177,7 +182,7 @@ async def logout(request: Request) -> Response:
     click to re-enter the app.
     """
     request.session.clear()
-    response = RedirectResponse(url="/", status_code=302)
+    response = RedirectResponse(url=f"{lang_prefix()}/", status_code=302)
     response.delete_cookie(key=CSRF_COOKIE_NAME, path="/")
     return response
 

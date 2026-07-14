@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from fastapi import Request
 
+from ..i18n import lang_url
+
 # Default provider used for the "not signed in" redirect. Hardcoded
 # per the conductor plan; a later story can make it configurable.
 DEFAULT_LOGIN_PATH = "/auth/microsoft/login"
@@ -44,10 +46,13 @@ def require_session(request: Request) -> int:
     Raises :class:`AuthRedirectRequired` when no session is present or
     when the stored ``operator_id`` is malformed (defensive: the
     callback route is the only writer and always stores an ``int``).
+    The redirect target is language-scoped so a Spanish-branch
+    visitor lands on ``/es/auth/microsoft/login`` and gets bounced
+    back to ``/es`` after signing in.
     """
     operator_id = request.session.get("operator_id")
     if not isinstance(operator_id, int):
-        raise AuthRedirectRequired()
+        raise AuthRedirectRequired(location=lang_url(DEFAULT_LOGIN_PATH))
     return operator_id
 
 

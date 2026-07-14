@@ -105,7 +105,7 @@
       </p>
       <p class="wb-telegram-hint">{{ t("telegram.bound.hint") }}</p>
       <div class="wb-form-actions">
-        <form method="post" action="/telegram/test">
+        <form method="post" action="{{ lang_url('/telegram/test') }}">
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button type="submit" class="wb-btn wb-btn--primary">
             {{ t("telegram.send_test_button") }}
@@ -113,7 +113,7 @@
         </form>
         <form
           method="post"
-          action="/telegram/unbind"
+          action="{{ lang_url('/telegram/unbind') }}"
           onsubmit="return wbConfirm(this, event, '{{ t('telegram.confirm.unbind') }}')"
         >
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
@@ -140,7 +140,7 @@
         <p class="wb-telegram-hint">{{ t("telegram.token.ttl") }}</p>
       {% else %}
         <p class="wb-telegram-hint">{{ t("telegram.generate.hint") }}</p>
-        <form method="post" action="/telegram/generate">
+        <form method="post" action="{{ lang_url('/telegram/generate') }}">
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button type="submit" class="wb-btn wb-btn--primary">
             {{ t("telegram.generate_button") }}

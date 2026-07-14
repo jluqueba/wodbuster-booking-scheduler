@@ -30,6 +30,7 @@ from fastapi.templating import Jinja2Templates
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
 from ..booking.executor import BookingExecutor
+from ..i18n import lang_url
 from ..persistence.cookie_store import CookieStore
 from ..persistence.engine import get_session
 from ..persistence.models import SchedulerRule
@@ -189,7 +190,7 @@ def rules_new(request: Request, operator_id: int = Depends(require_session)) -> 
         request,
         template="rules/create.html",
         heading="New rule",
-        action_url="/rules",
+        action_url=lang_url("/rules"),
         form_values={"booking_opens_days_before": "3", "booking_opens_at": "22:40"},
         errors={},
         picker=picker,
@@ -208,7 +209,7 @@ async def rules_create(request: Request, operator_id: int = Depends(require_sess
             request,
             template="rules/create.html",
             heading="New rule",
-            action_url="/rules",
+            action_url=lang_url("/rules"),
             form_values=form_data,
             errors=parsed.errors,
             picker=picker,
@@ -233,7 +234,7 @@ async def rules_create(request: Request, operator_id: int = Depends(require_sess
         )
 
     _sync_after_create(request, list(created_rules))
-    return RedirectResponse(url="/rules", status_code=303)
+    return RedirectResponse(url=lang_url("/rules"), status_code=303)
 
 
 @router.get("/api/classes", name="rules_api_classes")
@@ -397,11 +398,11 @@ def rules_edit(
         request,
         template="rules/edit.html",
         heading="Edit rule",
-        action_url=f"/rules/{rule_id}",
+        action_url=lang_url(f"/rules/{rule_id}"),
         form_values=form_values,
         errors={},
         picker=picker,
-        delete_url=f"/rules/{rule_id}/delete",
+        delete_url=lang_url(f"/rules/{rule_id}/delete"),
     )
 
 
@@ -426,11 +427,11 @@ async def rules_update(
                 request,
                 template="rules/edit.html",
                 heading="Edit rule",
-                action_url=f"/rules/{rule_id}",
+                action_url=lang_url(f"/rules/{rule_id}"),
                 form_values=form_data,
                 errors=parsed.errors,
                 picker=picker,
-                delete_url=f"/rules/{rule_id}/delete",
+                delete_url=lang_url(f"/rules/{rule_id}/delete"),
                 status_code=422,
             )
 
@@ -452,7 +453,7 @@ async def rules_update(
         )
 
     _sync_after_update(request, updated)
-    return RedirectResponse(url="/rules", status_code=303)
+    return RedirectResponse(url=lang_url("/rules"), status_code=303)
 
 
 @router.post(
@@ -473,7 +474,7 @@ def rules_delete(
             raise HTTPException(status_code=404)
         delete_rule(session, rule)
     _sync_after_delete(request, rule_id)
-    return RedirectResponse(url="/rules", status_code=303)
+    return RedirectResponse(url=lang_url("/rules"), status_code=303)
 
 
 def _rule_to_form_values(rule: SchedulerRule) -> dict[str, str]:
