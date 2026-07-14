@@ -25,6 +25,10 @@ dependencies = [
     "python-telegram-bot>=21.0,<23.0",
     "cryptography>=43.0,<46.0",
     "pydantic-settings>=2.5,<3.0",
+    # US2.6 observability: Azure Monitor OpenTelemetry distro. Ships
+    # auto-instrumentation for FastAPI, httpx, SQLAlchemy and a
+    # metrics + logs + traces exporter to Application Insights.
+    "azure-monitor-opentelemetry>=1.6,<2.0",
 ]
 
 [project.optional-dependencies]

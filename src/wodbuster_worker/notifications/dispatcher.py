@@ -42,6 +42,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..observability import telemetry
 from ..persistence.models import NotificationOutbox, OperatorProfile
 from . import telegram
 
@@ -155,6 +156,15 @@ class NotificationDispatcher:
             row.attempt_count = attempt_number
             row.dispatched_at = datetime.now(tz=UTC)
             session.commit()
+            # US2.6 dispatch-lag metric: seconds between the outbox
+            # row being enqueued and it finally leaving the queue.
+            # Tag with kind so telegram vs banner buckets are
+            # separable in Application Insights.
+            try:
+                lag = (row.dispatched_at - row.enqueued_at).total_seconds()
+                telemetry.notification_dispatch_lag_seconds().record(lag, {"kind": row.kind})
+            except Exception:  # pragma: no cover - metric emit must not raise
+                pass
             _log.info(
                 "dispatcher.attempt_ok",
                 row_id=row_id,
