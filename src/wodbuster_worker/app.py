@@ -30,6 +30,7 @@ from .auth.routes import router as auth_router
 from .auth.session import IdleTimeoutMiddleware, build_session_middleware
 from .booking.executor import BookingExecutor
 from .booking.routes import router as history_router
+from .booking.vacation_routes import router as vacation_router
 from .config import Settings, get_settings
 from .cookie.routes import router as cookie_router
 from .heartbeat.next_window import compute_next_booking
@@ -278,6 +279,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(cookie_router)
     app.include_router(rules_router)
     app.include_router(history_router)
+    app.include_router(vacation_router)
     app.include_router(static_pages_router)
     app.add_api_route("/health", health, methods=["GET"])
     # Static assets (brand CSS, later JS / images). Mounted after

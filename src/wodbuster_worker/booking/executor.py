@@ -64,6 +64,7 @@ from ..wodbuster_client.parsers import (
     find_matching_slot,
 )
 from .outcomes import persist_outcome
+from .vacation import find_covering_window
 
 _log = structlog.get_logger(__name__)
 
@@ -163,6 +164,24 @@ class BookingExecutor:
             ticks=ticks,
         )
 
+        # US7.2 skip guard: if the target class sits inside an open
+        # vacation window for the operator, do not attempt the
+        # booking. Persist a ``skipped`` terminal so the history
+        # page still reports the run.
+        vacation = self._vacation_covering(rule.operator_id, target_slot)
+        if vacation is not None:
+            return self._persist_terminal(
+                rule=rule,
+                target_class=rule.class_type,
+                target_slot=target_slot,
+                terminal_status="skipped",
+                fallback_index=None,
+                response=f"vacation window #{vacation.id}",
+                telegram_text=self._render_vacation_skip_text(
+                    rule, target_slot
+                ),
+            )
+
         cookie = self._load_cookie(rule.operator_id)
         if cookie is None:
             return self._persist_terminal(
@@ -215,6 +234,22 @@ class BookingExecutor:
     def _load_cookie(self, operator_id: int) -> str | None:
         with self._session_factory() as session:
             return self._cookie_store.load(session, operator_id)
+
+    def _vacation_covering(
+        self, operator_id: int, target_slot: datetime
+    ) -> Any:
+        """Return the open vacation window covering ``target_slot`` or ``None``.
+
+        Read-only lookup; opens a short-lived session so the guard
+        adds one round-trip rather than holding a connection across
+        the whole booking attempt.
+        """
+        with self._session_factory() as session:
+            return find_covering_window(
+                session,
+                operator_id=operator_id,
+                target_slot=target_slot,
+            )
 
     def _attempt(
         self,
@@ -461,6 +496,16 @@ class BookingExecutor:
         return (
             f"Booking for {_format_slot(target_slot)} skipped: no "
             "WodBuster cookie on file. Paste one on the Cookie page."
+        )
+
+    def _render_vacation_skip_text(
+        self,
+        rule: SchedulerRule,
+        target_slot: datetime,
+    ) -> str:
+        return (
+            f"Booking for {_format_slot(target_slot)} skipped: vacation "
+            "mode is on for this date."
         )
 
     def _render_upstream_text(

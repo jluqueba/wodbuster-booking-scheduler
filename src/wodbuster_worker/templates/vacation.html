@@ -1,0 +1,145 @@
+{# Vacation-mode page (US7.3).
+
+   Two blocks:
+
+   1. Enable form — two date inputs (start, end) and a submit
+      button. Submitting fires the bulk-cancel service and redirects
+      back with a flash message.
+
+   2. Open windows table — one row per active vacation window, with a
+      "close early" form. Empty state nudges the operator to
+      schedule their first holiday.
+#}
+{% extends "base.html" %}
+
+{% block title %}Vacation — WodBuster Booking Scheduler{% endblock %}
+
+{% block head %}
+<style>
+  .wb-flash {
+    padding: 0.75rem 1rem;
+    border-radius: var(--wb-radius);
+    border-left: 4px solid var(--wb-info);
+    background: rgba(96, 165, 250, 0.06);
+    color: var(--wb-text);
+    margin-bottom: 1.25rem;
+  }
+  .wb-flash--warning {
+    border-left-color: var(--wb-warning);
+    background: rgba(251, 191, 36, 0.06);
+  }
+  .wb-flash--error {
+    border-left-color: var(--wb-danger);
+    background: rgba(248, 113, 113, 0.06);
+  }
+  .wb-vacation-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    align-items: end;
+    margin-bottom: 2rem;
+    padding: 1.15rem 1.35rem;
+    background: var(--wb-bg-card);
+    border-radius: var(--wb-radius);
+    border: 1px solid var(--wb-border);
+  }
+  .wb-vacation-form label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--wb-text-muted);
+    margin-bottom: 0.35rem;
+  }
+  .wb-vacation-form input[type="date"] {
+    width: 100%;
+  }
+</style>
+{% endblock %}
+
+{% block nav %}
+  {% set active_nav = "vacation" %}
+  {% include "_nav.html" %}
+{% endblock %}
+
+{% block content %}
+  <span class="wb-page-title__eyebrow">Automation</span>
+  <h1 class="wb-page-title">🏖️ Vacation mode</h1>
+  <p class="wb-page-subtitle">
+    Away from the gym? Enable vacation mode for a date range and the
+    worker cancels every granted booking inside it, then pauses
+    automatic booking until the range ends.
+  </p>
+
+  {% if flash %}
+    <div class="wb-flash wb-flash--{{ flash_kind }}" role="status">
+      {{ flash }}
+    </div>
+  {% endif %}
+
+  <form method="post" action="/vacation" class="wb-vacation-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <div>
+      <label for="vac-start">Start</label>
+      <input type="date" id="vac-start" name="start_date" required>
+    </div>
+    <div>
+      <label for="vac-end">End (inclusive)</label>
+      <input type="date" id="vac-end" name="end_date" required>
+    </div>
+    <div>
+      <button type="submit" class="wb-btn wb-btn--primary">
+        ➕ Enable vacation
+      </button>
+    </div>
+  </form>
+
+  {% if not windows %}
+    <div class="wb-empty-state">
+      <p class="wb-empty-state__title">☀️ No vacation windows</p>
+      <p>
+        Pick a start and end date above to schedule your first
+        holiday. Granted bookings inside the range will be
+        cancelled and the scheduler will skip runs until the range
+        ends.
+      </p>
+    </div>
+  {% else %}
+    <table class="wb-rules-table">
+      <thead>
+        <tr>
+          <th>Start</th>
+          <th>End</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for w in windows %}
+          <tr>
+            <td class="wb-tabular">{{ w.start_label }}</td>
+            <td class="wb-tabular">{{ w.end_label }}</td>
+            <td>
+              {% if w.active_now %}
+                <span class="wb-chip wb-chip--accent">active</span>
+              {% else %}
+                <span class="wb-chip wb-chip--muted">upcoming</span>
+              {% endif %}
+            </td>
+            <td class="wb-cell-actions">
+              <form
+                method="post"
+                action="/vacation/{{ w.id }}/close"
+                style="display: inline;"
+                onsubmit="return wbConfirm(this, event, 'End this vacation window now?')"
+              >
+                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                <button type="submit" class="wb-btn wb-btn--danger">
+                  ⏹️ End early
+                </button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+{% endblock %}
