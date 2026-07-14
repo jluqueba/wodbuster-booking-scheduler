@@ -10,7 +10,7 @@
 #}
 {% extends "base.html" %}
 
-{% block title %}History — WodBuster Booking Worker{% endblock %}
+{% block title %}{{ t("nav.history") }} — WodBuster Booking Worker{% endblock %}
 
 {% block head_extra %}
 <style>
@@ -64,13 +64,9 @@
 {% endblock %}
 
 {% block content %}
-  <span class="wb-page-title__eyebrow">Activity</span>
-  <h1 class="wb-page-title">📜 Booking history</h1>
-  <p class="wb-page-subtitle">
-    Every booking attempt the worker has made, newest first. Use the
-    Cancel button on any upcoming granted class to release your slot
-    (this also updates WodBuster and pushes a Telegram notification).
-  </p>
+  <span class="wb-page-title__eyebrow">{{ t("history.eyebrow") }}</span>
+  <h1 class="wb-page-title">{{ t("history.title") }}</h1>
+  <p class="wb-page-subtitle">{{ t("history.subtitle") }}</p>
 
   {% if flash %}
     <div class="wb-flash wb-flash--{{ flash_kind }}" role="status">
@@ -88,12 +84,9 @@
          show a "scheduled" chip instead.
   #}
   <section class="wb-upcoming">
-    <h2 class="wb-section-title">🗓️ Upcoming bookings</h2>
+    <h2 class="wb-section-title">{{ t("history.upcoming.title") }}</h2>
     {% if not upcoming_days %}
-      <p class="wb-muted wb-note">
-        No granted or scheduled bookings on the horizon. Create a
-        <a href="/rules">rule</a> to start automating attendance.
-      </p>
+      <p class="wb-muted wb-note">{{ t("history.upcoming.empty") }}</p>
     {% else %}
       <div class="wb-upcoming__grid">
         {% for day in upcoming_days %}
@@ -105,26 +98,24 @@
                   <span class="wb-upcoming__time">{{ slot.time_label }}</span>
                   <code class="wb-upcoming__class">{{ slot.target_class }}</code>
                   {% if slot.fallback_index == 1 %}
-                    <span class="wb-muted wb-note--xs">(second shot)</span>
+                    <span class="wb-muted wb-note--xs">{{ t("history.second_shot_tag") }}</span>
                   {% endif %}
                   {% if slot.kind == "granted" %}
                     <span class="wb-chip wb-chip--granted wb-upcoming__chip">
-                      granted
+                      {{ t("chip.granted") }}
                     </span>
                     <form
                       method="post"
                       action="/bookings/{{ slot.id }}/cancel"
                       class="wb-inline-form wb-upcoming__cancel"
-                      onsubmit="return wbConfirm(this, event, 'Cancel this booking on WodBuster?')"
+                      onsubmit="return wbConfirm(this, event, '{{ t('history.confirm.cancel') }}')"
                     >
                       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                      <button type="submit" class="wb-btn wb-btn--danger">
-                        🚫 Cancel
-                      </button>
+                      <button type="submit" class="wb-btn wb-btn--danger">{{ t("history.cancel_button") }}</button>
                     </form>
                   {% else %}
                     <span class="wb-chip wb-chip--pending wb-upcoming__chip">
-                      ⏱️ scheduled
+                      ⏱️ {{ t("chip.scheduled") }}
                     </span>
                   {% endif %}
                 </div>
@@ -137,23 +128,20 @@
   </section>
 
   {# ---- All attempts, newest first ------------------------------ #}
-  <h2 class="wb-section-title wb-section-title--spaced">📜 All attempts</h2>
+  <h2 class="wb-section-title wb-section-title--spaced">{{ t("history.attempts.title") }}</h2>
   {% if not rows %}
     <div class="wb-empty-state">
-      <p class="wb-empty-state__title">🕓 No bookings yet</p>
-      <p>
-        Once the scheduler fires against one of your rules, the
-        outcome will show up here.
-      </p>
+      <p class="wb-empty-state__title">{{ t("history.empty.title") }}</p>
+      <p>{{ t("history.empty.body") }}</p>
     </div>
   {% else %}
     <table class="wb-rules-table wb-history-table">
       <thead>
         <tr>
-          <th>When</th>
-          <th>Class</th>
-          <th>Result</th>
-          <th>Attempted</th>
+          <th>{{ t("history.table.when") }}</th>
+          <th>{{ t("history.table.class") }}</th>
+          <th>{{ t("history.table.result") }}</th>
+          <th>{{ t("history.table.attempted") }}</th>
           <th></th>
         </tr>
       </thead>
@@ -168,13 +156,13 @@
               <code>{{ row.target_class }}</code>
               {% if row.fallback_index == 1 %}
                 <span class="wb-muted wb-note--xs">
-                  (second shot)
+                  {{ t("history.second_shot_tag") }}
                 </span>
               {% endif %}
             </td>
             <td>
               <span class="wb-chip wb-chip--{{ row.terminal_status | replace('_', '-') }}">
-                {{ row.terminal_status | replace('_', ' ') }}
+                {{ t("chip." ~ row.terminal_status) }}
               </span>
             </td>
             <td class="wb-tabular">
@@ -186,11 +174,11 @@
                   method="post"
                   action="/bookings/{{ row.id }}/cancel"
                   class="wb-inline-form"
-                  onsubmit="return wbConfirm(this, event, 'Cancel this booking on WodBuster?')"
+                  onsubmit="return wbConfirm(this, event, '{{ t('history.confirm.cancel') }}')"
                 >
                   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                   <button type="submit" class="wb-btn wb-btn--danger">
-                    🚫 Cancel
+                    {{ t("history.cancel_button") }}
                   </button>
                 </form>
               {% endif %}

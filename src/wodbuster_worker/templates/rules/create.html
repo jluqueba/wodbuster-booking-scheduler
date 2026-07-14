@@ -83,10 +83,10 @@
 {% endblock %}
 
 {% block content %}
-  <span class="wb-page-title__eyebrow">Automation</span>
+  <span class="wb-page-title__eyebrow">{{ t("rules.eyebrow") }}</span>
   <h1 class="wb-page-title">✨ {{ heading }}</h1>
   <p class="wb-page-subtitle">
-    <a href="/rules">← Back to rules</a>
+    <a href="/rules">{{ t("rules.back_to_rules") }}</a>
   </p>
 
   {% if errors.get('days_of_week') %}
@@ -97,7 +97,7 @@
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
     <fieldset>
-      <legend>Attendance days</legend>
+      <legend>{{ t("rules.form.attendance_days") }}</legend>
       <div class="wb-daypills">
         {% for label in day_labels %}
           <div class="wb-daypill">
@@ -115,24 +115,21 @@
         {% endfor %}
       </div>
       <p class="wb-muted wb-note">
-        Pick every day of the week you want to attend. One rule row is
-        created per day — edit each row later to tweak just that day.
+        {{ t("rules.form.attendance_days_hint") }}
       </p>
     </fieldset>
 
     <fieldset>
-      <legend>Primary class</legend>
+      <legend>{{ t("rules.form.primary_class") }}</legend>
       {% if picker_unavailable %}
         <p class="wb-picker-note">
-          Live class list unavailable. Paste a fresh cookie
-          (<a href="/cookie">Cookie</a>) before creating a rule — the
-          class-type and time dropdowns are seeded from your WodBuster
-          schedule.
+          {{ t("rules.form.picker_unavailable") }}
+          <a href="/cookie">{{ t("nav.cookie") }}</a>
         </p>
       {% endif %}
       <div class="wb-row2">
         <div>
-          <label for="class_type">Class type</label>
+          <label for="class_type">{{ t("rules.form.class_type") }}</label>
           <select id="class_type" name="class_type" required
                   {% if not picker_class_types %}disabled{% endif %}>
             <option value=""></option>
@@ -147,7 +144,7 @@
           {% endif %}
         </div>
         <div>
-          <label for="class_time">Class time</label>
+          <label for="class_time">{{ t("rules.form.class_time") }}</label>
           {{ widgets.time_picker("class_time", form_values.get("class_time", ""), required=true) }}
           {% if errors.get('class_time') %}
             <p class="wb-field-error">{{ errors['class_time'] }}</p>
@@ -157,10 +154,10 @@
     </fieldset>
 
     <fieldset>
-      <legend>Booking window</legend>
+      <legend>{{ t("rules.form.booking_window") }}</legend>
       <div class="wb-row2">
         <div>
-          <label for="booking_opens_days_before">Days before class</label>
+          <label for="booking_opens_days_before">{{ t("rules.form.days_before") }}</label>
           <input
             id="booking_opens_days_before"
             name="booking_opens_days_before"
@@ -176,7 +173,7 @@
           {% endif %}
         </div>
         <div>
-          <label for="booking_opens_at">Opens at</label>
+          <label for="booking_opens_at">{{ t("rules.form.opens_at") }}</label>
           {{ widgets.time_picker("booking_opens_at", form_values.get("booking_opens_at", "22:40"), required=true) }}
           {% if errors.get('booking_opens_at') %}
             <p class="wb-field-error">{{ errors['booking_opens_at'] }}</p>
@@ -184,16 +181,15 @@
         </div>
       </div>
       <p class="wb-muted wb-note">
-        Example: attend Wednesday, opens 3 days before at 22:40 → the worker
-        fires Sunday at 22:40.
+        {{ t("rules.form.window_example") }}
       </p>
     </fieldset>
 
     <fieldset class="wb-second-shot">
-      <legend>Second shot (optional)</legend>
+      <legend>{{ t("rules.form.second_shot") }}</legend>
       <div class="wb-row2">
         <div>
-          <label for="second_shot_class_type">Alternative class type</label>
+          <label for="second_shot_class_type">{{ t("rules.form.second_shot_type") }}</label>
           <select id="second_shot_class_type" name="second_shot_class_type"
                   {% if not picker_class_types %}disabled{% endif %}>
             <option value=""></option>
@@ -208,7 +204,7 @@
           {% endif %}
         </div>
         <div>
-          <label for="second_shot_class_time">Alternative time</label>
+          <label for="second_shot_class_time">{{ t("rules.form.second_shot_time") }}</label>
           {{ widgets.time_picker("second_shot_class_time", form_values.get("second_shot_class_time", ""), required=false) }}
           {% if errors.get('second_shot_class_time') %}
             <p class="wb-field-error">{{ errors['second_shot_class_time'] }}</p>
@@ -216,14 +212,13 @@
         </div>
       </div>
       <p class="wb-muted wb-note">
-        Tried only when the primary class fills up before the worker
-        secures a spot. Leave both blank if you have no alternative.
+        {{ t("rules.form.second_shot_hint") }}
       </p>
     </fieldset>
 
     <div class="wb-form-actions">
       <button type="submit" class="wb-btn--primary"
-              {% if picker_unavailable %}disabled{% endif %}>Create rule</button>
+              {% if picker_unavailable %}disabled{% endif %}>{{ t("rules.form.create_button") }}</button>
     </div>
   </form>
 

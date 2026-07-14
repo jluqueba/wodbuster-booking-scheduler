@@ -12,7 +12,7 @@
 #}
 {% extends "base.html" %}
 
-{% block title %}Telegram — WodBuster Booking Scheduler{% endblock %}
+{% block title %}{{ t("nav.telegram") }} — WodBuster Booking Scheduler{% endblock %}
 
 {% block nav %}
   {% set active_nav = "telegram" %}
@@ -87,13 +87,9 @@
 {% endblock %}
 
 {% block content %}
-  <span class="wb-page-title__eyebrow">Notifications</span>
-  <h1 class="wb-page-title">🤖 Telegram bot</h1>
-  <p class="wb-page-subtitle">
-    Bind a Telegram chat to your operator profile and every booking
-    outcome, cookie-expiring warning, and anomaly alert lands on your
-    phone alongside the Healthchecks watchdog.
-  </p>
+  <span class="wb-page-title__eyebrow">{{ t("telegram.eyebrow") }}</span>
+  <h1 class="wb-page-title">{{ t("telegram.title") }}</h1>
+  <p class="wb-page-subtitle">{{ t("telegram.subtitle") }}</p>
 
   {% if flash %}
     <div class="wb-flash wb-flash--{{ flash_kind }}" role="status">
@@ -104,30 +100,25 @@
   {% if chat_id %}
     <section class="wb-telegram-card">
       <p class="wb-telegram-status">
-        <span class="wb-chip wb-chip--granted">bound</span>
-        Chat id <code>{{ chat_id }}</code>
+        <span class="wb-chip wb-chip--granted">{{ t("chip.bound") }}</span>
+        {{ t("telegram.chat_id_label", chat_id=chat_id) }}
       </p>
-      <p class="wb-telegram-hint">
-        Notifications are being delivered to this chat. Click
-        <strong>Send test</strong> to verify the pipeline end-to-end.
-        Unbind if you stopped using this Telegram account or want to
-        bind a different chat.
-      </p>
+      <p class="wb-telegram-hint">{{ t("telegram.bound.hint") }}</p>
       <div class="wb-form-actions">
         <form method="post" action="/telegram/test">
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button type="submit" class="wb-btn wb-btn--primary">
-            🧪 Send test message
+            {{ t("telegram.send_test_button") }}
           </button>
         </form>
         <form
           method="post"
           action="/telegram/unbind"
-          onsubmit="return wbConfirm(this, event, 'Unbind Telegram from this operator?')"
+          onsubmit="return wbConfirm(this, event, '{{ t('telegram.confirm.unbind') }}')"
         >
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button type="submit" class="wb-btn wb-btn--danger">
-            🚫 Unbind
+            {{ t("telegram.unbind_button") }}
           </button>
         </form>
       </div>
@@ -135,44 +126,29 @@
   {% else %}
     <section class="wb-telegram-card">
       <p class="wb-telegram-status">
-        <span class="wb-chip wb-chip--muted">not bound</span>
+        <span class="wb-chip wb-chip--muted">{{ t("chip.not_bound") }}</span>
       </p>
       {% if deep_link %}
-        <p class="wb-telegram-hint">
-          One-shot link generated. Tap it on the same device where you
-          use Telegram, then send the pre-filled ``/start`` message to
-          the bot. Refresh this page after and the chip flips to
-          <strong>bound</strong>.
-        </p>
+        <p class="wb-telegram-hint">{{ t("telegram.link_ready.hint") }}</p>
         <p>
           <a class="wb-telegram-link" href="{{ deep_link }}" target="_blank" rel="noopener">
-            📱 Open bot in Telegram
+            {{ t("telegram.link_button") }}
           </a>
         </p>
-        <p class="wb-telegram-hint">
-          Or copy this raw token and DM it to the bot as
-          <code>/start &lt;token&gt;</code>:
-        </p>
+        <p class="wb-telegram-hint">{{ t("telegram.token.hint") }}</p>
         <div class="wb-token-block">{{ token }}</div>
-        <p class="wb-telegram-hint">
-          Token expires in 10 minutes and can only be used once.
-        </p>
+        <p class="wb-telegram-hint">{{ t("telegram.token.ttl") }}</p>
       {% else %}
-        <p class="wb-telegram-hint">
-          Click below to generate a one-shot binding link (valid for
-          10 minutes).
-        </p>
+        <p class="wb-telegram-hint">{{ t("telegram.generate.hint") }}</p>
         <form method="post" action="/telegram/generate">
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button type="submit" class="wb-btn wb-btn--primary">
-            🔗 Generate link
+            {{ t("telegram.generate_button") }}
           </button>
         </form>
         {% if not bot_username %}
           <p class="wb-flash wb-flash--warning wb-flash--spaced" role="status">
-            The server does not know the bot username yet. Make sure
-            <code>telegram-bot-token</code> is set in Key Vault and
-            the container has been restarted since it was seeded.
+            {{ t("telegram.no_bot_username") }}
           </p>
         {% endif %}
       {% endif %}

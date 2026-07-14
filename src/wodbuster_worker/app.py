@@ -22,6 +22,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware import Middleware as _StarletteMiddleware
 
 from .auth.csrf import get_csrf_token
 from .auth.deps import AuthRedirectRequired
@@ -35,6 +36,9 @@ from .config import Settings, get_settings
 from .cookie.routes import router as cookie_router
 from .heartbeat.next_window import compute_next_booking
 from .heartbeat.probe import HeartbeatProbe
+from .i18n import register_jinja_globals
+from .i18n.middleware import LanguageMiddleware
+from .i18n.routes import router as i18n_router
 from .notifications.banners import load_banners_for_operator
 from .notifications.dispatcher import NotificationDispatcher
 from .notifications.telegram_bind import TelegramBindStore
@@ -194,6 +198,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.oauth = build_oauth(settings, secrets)
     if not hasattr(app.state, "templates") or app.state.templates is None:
         app.state.templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+        register_jinja_globals(app.state.templates.env)
     # Cookie stack: idempotent — respect pre-seeded state so tests can
     # inject fakes.
     if not hasattr(app.state, "cipher") or app.state.cipher is None:
@@ -299,13 +304,21 @@ def create_app(*, settings: Settings | None = None, secrets: Secrets | None = No
         title="WodBuster Booking Worker",
         version="0.1.0",
         lifespan=lifespan,
-        middleware=[session_middleware],
+        # Starlette runs constructor middleware outer→inner in the
+        # listed order, so the session middleware wraps the language
+        # middleware; ``request.session`` is populated by the time
+        # ``LanguageMiddleware.dispatch`` runs.
+        middleware=[
+            session_middleware,
+            _StarletteMiddleware(LanguageMiddleware),
+        ],
     )
     # Seed state so lifespan sees pre-injected values from tests.
     app.state.settings = effective_settings
     app.state.secrets = effective_secrets
     app.state.oauth = build_oauth(effective_settings, effective_secrets)
     app.state.templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+    register_jinja_globals(app.state.templates.env)
     cipher, wb_client, validator, store = _build_cookie_stack(effective_settings, effective_secrets)
     app.state.cipher = cipher
     app.state.wodbuster_client = wb_client
@@ -361,6 +374,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(history_router)
     app.include_router(vacation_router)
     app.include_router(telegram_router)
+    app.include_router(i18n_router)
     app.include_router(static_pages_router)
     app.add_api_route("/health", health, methods=["GET"])
     # Static assets (brand CSS, later JS / images). Mounted after

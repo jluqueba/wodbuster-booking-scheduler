@@ -1,7 +1,12 @@
-{# Post-sign-in dashboard. Replaces the old ``index.html``. #}
+{# Post-sign-in dashboard. Every user-facing string routes through
+   the ``t()`` Jinja global so switching language on the nav bar
+   flips this page too. The countdown JS strings live in a small
+   ``data-*``-anchored payload on the ``<section>`` so both the
+   "Fires at ..." and "Firing now ..." copy stay localised without
+   duplicating the timer arithmetic per language. #}
 {% extends "base.html" %}
 
-{% block title %}Dashboard — WodBuster Booking Scheduler{% endblock %}
+{% block title %}{{ t("nav.dashboard") }} — WodBuster Booking Scheduler{% endblock %}
 
 {% block nav %}
   {% set active_nav = "dashboard" %}
@@ -9,31 +14,25 @@
 {% endblock %}
 
 {% block content %}
-  <span class="wb-page-title__eyebrow">Welcome back</span>
+  <span class="wb-page-title__eyebrow">{{ t("dashboard.eyebrow") }}</span>
   <h1 class="wb-page-title">
-    {# Greeting mixes the "Hero" label with the operator's real
-       display_name (seated on the session by the OAuth callback).
-       Falls back to "Hero" alone when the display name is empty so
-       the page never reads "Hero  " with a stray trailing space. #}
-    Hero{% if display_name %}, <span class="wb-title-name">{{ display_name }}</span>{% endif %} 💪
+    {# Greeting: localised "Hero" label + operator's display name
+       (seated on the session by the OAuth callback). Falls back to
+       the label alone when the display name is empty so the page
+       never reads "Hero  " with a stray trailing space. #}
+    {{ t("dashboard.title.hero") }}{% if display_name %}, <span class="wb-title-name">{{ display_name }}</span>{% endif %} {{ t("dashboard.title.emoji") }}
   </h1>
-  <p class="wb-page-subtitle">
-    Everything below drives your booking automation. Rules define <em>when</em>,
-    the cookie proves <em>who</em>, the heartbeat catches issues before they
-    become a missed class.
-  </p>
+  <p class="wb-page-subtitle">{{ t("dashboard.subtitle") }}</p>
   <p class="wb-muted wb-operator-tag" data-operator-id="{{ operator_id }}">
-    Operator #{{ operator_id }}
+    {{ t("dashboard.operator_tag", operator_id=operator_id) }}
   </p>
 
   {% include "_banners.html" %}
 
   {# Reload on bfcache restore. Without this, tapping the browser
      back button (e.g. after deleting a rule and hitting "back")
-     restores a stale snapshot of the dashboard: the countdown keeps
-     ticking against the deleted rule's window. ``pageshow`` fires
-     on both fresh loads and restores; only reload when the page was
-     served from the back/forward cache. #}
+     restores a stale snapshot: the countdown keeps ticking against
+     the deleted rule. #}
   <script>
     (function () {
       window.addEventListener('pageshow', function (event) {
@@ -44,17 +43,16 @@
     })();
   </script>
 
-  {# Countdown to the next booking-window open. Only rendered when
-     the operator has at least one active rule; otherwise a call-to-
-     action nudges them to /rules to set one up. #}
   {% if next_window_iso %}
     <section
       class="wb-countdown"
       data-next-window="{{ next_window_iso }}"
       data-target-slot="{{ target_slot_iso or '' }}"
+      data-fires-at="{{ t('dashboard.countdown.label') }}"
+      data-firing-now="{{ t('dashboard.countdown.firing') }}"
       aria-live="polite"
     >
-      <div class="wb-countdown__label">Next booking window opens in</div>
+      <div class="wb-countdown__label">{{ t("dashboard.countdown.label") }}</div>
       <div class="wb-countdown__timer" data-role="timer">…</div>
       <div class="wb-countdown__hint" data-role="hint">
         {{ next_window_iso }}
@@ -66,7 +64,6 @@
           return String(n).padStart(w || 2, '0');
         }
         function fmtStamp(dt) {
-          // "Mon, 20 Jul, 22:40" — 24h, browser locale for month name.
           return dt.toLocaleString(undefined, {
             weekday: 'short',
             day: '2-digit',
@@ -77,7 +74,6 @@
           });
         }
         function fmtDate(dt) {
-          // "Wed 22 Jul" — no time, no comma clutter.
           return dt.toLocaleDateString(undefined, {
             weekday: 'short',
             day: '2-digit',
@@ -95,6 +91,7 @@
           var target = new Date(root.getAttribute('data-next-window'));
           var slotRaw = root.getAttribute('data-target-slot');
           var slot = slotRaw ? new Date(slotRaw) : null;
+          var firingCopy = root.getAttribute('data-firing-now') || '';
           var timer = root.querySelector('[data-role="timer"]');
           var hint = root.querySelector('[data-role="hint"]');
           function paint() {
@@ -102,8 +99,7 @@
             if (ms <= 0) {
               timer.textContent = '00:00:00';
               root.classList.add('wb-countdown--firing');
-              hint.textContent =
-                'Firing now — refresh in a few seconds to see the outcome on History.';
+              hint.textContent = firingCopy;
               return;
             }
             var s = Math.floor(ms / 1000);
@@ -114,9 +110,9 @@
             var head = days > 0 ? days + 'd ' : '';
             timer.textContent =
               head + fmt(hours) + ':' + fmt(mins) + ':' + fmt(secs);
-            var msg = 'Fires at ' + fmtStamp(target);
+            var msg = fmtStamp(target);
             if (slot) {
-              msg += ' — books ' + fmtDate(slot) + ' at ' + fmtTime(slot);
+              msg += ' · ' + fmtDate(slot) + ' ' + fmtTime(slot);
             }
             hint.textContent = msg;
           }
@@ -129,49 +125,34 @@
     </script>
   {% else %}
     <section class="wb-countdown wb-countdown--empty">
-      <div class="wb-countdown__label">No upcoming booking</div>
+      <div class="wb-countdown__label">{{ t("dashboard.countdown.empty.label") }}</div>
       <div class="wb-countdown__timer">—</div>
       <div class="wb-countdown__hint">
-        <a href="/rules">Add a rule</a> to schedule your first
-        automatic booking.
+        {{ t("dashboard.countdown.empty.hint") }}
       </div>
     </section>
   {% endif %}
 
   <div class="wb-feature-grid">
     <a href="/rules" class="wb-card wb-card--interactive">
-      <h3 class="wb-card__title">📅 Rules</h3>
-      <p class="wb-card__body">
-        Manage your recurring weekly bookings and preference chains.
-      </p>
+      <h3 class="wb-card__title">{{ t("dashboard.cards.rules.title") }}</h3>
+      <p class="wb-card__body">{{ t("dashboard.cards.rules.body") }}</p>
     </a>
     <a href="/cookie" class="wb-card wb-card--interactive">
-      <h3 class="wb-card__title">🍪 Cookie</h3>
-      <p class="wb-card__body">
-        Paste or refresh the <code>.WBAuth</code> value the worker
-        uses to authenticate against WodBuster.
-      </p>
+      <h3 class="wb-card__title">{{ t("dashboard.cards.cookie.title") }}</h3>
+      <p class="wb-card__body">{{ t("dashboard.cards.cookie.body") }}</p>
     </a>
     <a href="/history" class="wb-card wb-card--interactive">
-      <h3 class="wb-card__title">📜 History</h3>
-      <p class="wb-card__body">
-        Recent booking attempts, with a one-tap cancel for any
-        upcoming granted class.
-      </p>
+      <h3 class="wb-card__title">{{ t("dashboard.cards.history.title") }}</h3>
+      <p class="wb-card__body">{{ t("dashboard.cards.history.body") }}</p>
     </a>
     <a href="/vacation" class="wb-card wb-card--interactive">
-      <h3 class="wb-card__title">🏖️ Vacation</h3>
-      <p class="wb-card__body">
-        Enable a date range to bulk-cancel granted bookings and
-        pause automatic booking until you're back.
-      </p>
+      <h3 class="wb-card__title">{{ t("dashboard.cards.vacation.title") }}</h3>
+      <p class="wb-card__body">{{ t("dashboard.cards.vacation.body") }}</p>
     </a>
     <a href="/telegram" class="wb-card wb-card--interactive">
-      <h3 class="wb-card__title">🤖 Telegram</h3>
-      <p class="wb-card__body">
-        Bind your Telegram chat so booking outcomes, cookie-expiring
-        warnings, and anomaly alerts land on your phone.
-      </p>
+      <h3 class="wb-card__title">{{ t("dashboard.cards.telegram.title") }}</h3>
+      <p class="wb-card__body">{{ t("dashboard.cards.telegram.body") }}</p>
     </a>
   </div>
 {% endblock %}

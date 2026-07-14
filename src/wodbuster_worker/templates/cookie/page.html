@@ -1,7 +1,7 @@
 {# Cookie paste-and-validate page. #}
 {% extends "base.html" %}
 
-{% block title %}Cookie — WodBuster Booking Worker{% endblock %}
+{% block title %}{{ t("nav.cookie") }} — WodBuster Booking Worker{% endblock %}
 
 {% block nav %}
   {% set active_nav = "cookie" %}
@@ -9,13 +9,9 @@
 {% endblock %}
 
 {% block content %}
-  <span class="wb-page-title__eyebrow">Session</span>
-  <h1 class="wb-page-title">🍪 Cookie</h1>
-  <p class="wb-page-subtitle">
-    Paste the <code>.WBAuth</code> value from a signed-in WodBuster
-    browser session. The worker validates it, stores it encrypted,
-    and uses it to place bookings on your schedule.
-  </p>
+  <span class="wb-page-title__eyebrow">{{ t("cookie.eyebrow") }}</span>
+  <h1 class="wb-page-title">{{ t("cookie.title") }}</h1>
+  <p class="wb-page-subtitle">{{ t("cookie.subtitle") }}</p>
 
   <section id="cookie-status">
     {% include "cookie/_status.html" %}
@@ -29,20 +25,17 @@
     hx-disabled-elt="find button"
   >
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label for="cookie_value">.WBAuth value</label>
+    <label for="cookie_value">{{ t("cookie.paste.title") }}</label>
     <textarea
       id="cookie_value"
       name="cookie_value"
       rows="4"
       spellcheck="false"
       autocomplete="off"
-      placeholder="Paste the .WBAuth cookie value here..."
+      placeholder="..."
       required
     ></textarea>
-    <p class="wb-muted wb-note wb-note--framed">
-      Extract it in devtools: Application → Cookies →
-      <code>.wodbuster.com</code> → <code>.WBAuth</code>.
-    </p>
-    <button type="submit" class="wb-btn--primary">Validate and save</button>
+    <p class="wb-muted wb-note wb-note--framed">{{ t("cookie.hint") }}</p>
+    <button type="submit" class="wb-btn--primary">{{ t("cookie.paste_button") }}</button>
   </form>
 {% endblock %}

@@ -11,23 +11,23 @@
 <div class="status-card">
   {% if not has_cookie %}
     <p class="status-empty">
-      No cookie on file yet. Paste one below to enable booking.
+      {{ t("cookie.status.empty") }}
     </p>
   {% else %}
     <dl>
-      <dt>Pasted</dt>
+      <dt>{{ t("cookie.status.pasted") }}</dt>
       <dd class="wb-tabular">{% if pasted_at %}{{ pasted_at.isoformat(sep=" ", timespec="seconds") }}{% else %}—{% endif %}</dd>
 
-      <dt>Last validated</dt>
+      <dt>{{ t("cookie.status.last_validated") }}</dt>
       <dd class="wb-tabular">{% if last_validated_at %}{{ last_validated_at.isoformat(sep=" ", timespec="seconds") }}{% else %}—{% endif %}</dd>
 
-      <dt>Projected expiry</dt>
-      <dd class="wb-tabular">{% if projected_ttl_at %}{{ projected_ttl_at.isoformat(sep=" ", timespec="seconds") }}{% else %}<span class="wb-muted">awaiting first heartbeat</span>{% endif %}</dd>
+      <dt>{{ t("cookie.status.projected_expiry") }}</dt>
+      <dd class="wb-tabular">{% if projected_ttl_at %}{{ projected_ttl_at.isoformat(sep=" ", timespec="seconds") }}{% else %}<span class="wb-muted">{{ t("cookie.status.awaiting_first_heartbeat") }}</span>{% endif %}</dd>
 
-      <dt>Last probe</dt>
+      <dt>{{ t("cookie.status.last_probe") }}</dt>
       <dd>
         <span class="wb-chip {% if last_probe_status == 'valid' %}wb-chip--accent{% else %}wb-chip--muted{% endif %}">
-          {{ last_probe_status or "unknown" }}
+          {{ last_probe_status or t("cookie.status.unknown") }}
         </span>
       </dd>
     </dl>

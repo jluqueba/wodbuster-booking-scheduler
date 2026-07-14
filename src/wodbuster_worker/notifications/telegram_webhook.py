@@ -24,7 +24,7 @@ Auth model:
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import httpx
 import structlog
@@ -35,6 +35,7 @@ from sqlalchemy import select
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
+from ..i18n import t
 from ..persistence.engine import get_session
 from ..persistence.models import OperatorProfile
 from . import telegram as telegram_sender
@@ -152,7 +153,7 @@ def telegram_unbind(
             operator.telegram_chat_id = None
             session.commit()
     return RedirectResponse(
-        url="/telegram?flash=Telegram+unbound.&flash_kind=info",
+        url="/telegram?" + urlencode({"flash": t("flash.telegram.unbound"), "flash_kind": "info"}),
         status_code=303,
     )
 
@@ -176,8 +177,7 @@ def telegram_test(
     bot_token = getattr(request.app.state, "telegram_bot_token", None)
     if not bot_token:
         return _redirect_flash(
-            "Bot token not configured. Seed ``telegram-bot-token`` in "
-            "Key Vault and restart the container app.",
+            t("flash.telegram.no_token"),
             kind="error",
         )
     with get_session() as session:
@@ -185,8 +185,7 @@ def telegram_test(
     chat_id = operator.telegram_chat_id if operator else None
     if not chat_id:
         return _redirect_flash(
-            "This operator is not bound to a Telegram chat yet. "
-            "Generate a link above and tap it to bind first.",
+            t("flash.telegram.not_bound"),
             kind="warning",
         )
     try:
@@ -201,25 +200,22 @@ def telegram_test(
     except telegram_sender.PermanentTelegramError as exc:
         _log.warning("telegram.test.permanent_error", error=str(exc))
         return _redirect_flash(
-            f"Telegram refused the message: {exc}. Check the bot "
-            "token and that the chat still exists.",
+            t("flash.telegram.permanent_error", reason=str(exc)),
             kind="error",
         )
     except telegram_sender.TransientTelegramError as exc:
         _log.warning("telegram.test.transient_error", error=str(exc))
         return _redirect_flash(
-            f"Temporary Telegram error: {exc}. Try again in a moment.",
+            t("flash.telegram.transient_error", reason=str(exc)),
             kind="warning",
         )
     return _redirect_flash(
-        "Test message sent. Check your Telegram chat.",
+        t("flash.telegram.test_sent"),
         kind="info",
     )
 
 
 def _redirect_flash(message: str, *, kind: str) -> RedirectResponse:
-    from urllib.parse import urlencode
-
     query = urlencode({"flash": message, "flash_kind": kind})
     return RedirectResponse(url=f"/telegram?{query}", status_code=303)
 

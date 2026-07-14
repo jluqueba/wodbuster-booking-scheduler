@@ -1,21 +1,16 @@
 {# Access denied page — non-allow-listed OAuth identity. #}
 {% extends "base.html" %}
 
-{% block title %}Access denied — WodBuster Booking Worker{% endblock %}
+{% block title %}{{ t("auth.denied.title") }} — WodBuster Booking Worker{% endblock %}
 {% block body_class %}wb-body--denied{% endblock %}
 
 {% block content %}
   <div class="wb-denied">
-    <h1>🚫 Access denied</h1>
-    <p>
-      This account is not authorized to access the WodBuster Booking Worker.
-    </p>
-    <p>
-      If you believe this is a mistake, contact the operator who set up
-      this deployment.
-    </p>
+    <h1>{{ t("auth.denied.title") }}</h1>
+    <p>{{ t("auth.denied.body") }}</p>
+    <p>{{ t("auth.denied.contact") }}</p>
     <p class="wb-hero-note">
-      <a href="/" class="wb-btn">← Back to sign-in</a>
+      <a href="/" class="wb-btn">{{ t("auth.denied.back") }}</a>
     </p>
   </div>
 {% endblock %}

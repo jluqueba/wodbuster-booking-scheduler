@@ -31,6 +31,7 @@ from fastapi.templating import Jinja2Templates
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
+from ..i18n import t
 from ..persistence.engine import get_session
 from ..scheduler.rule_jobs import operator_timezone
 from . import vacation as vacation_service
@@ -88,7 +89,7 @@ def vacation_enable(
     store = getattr(request.app.state, "cookie_store", None)
     if client is None or store is None:
         return _redirect_with_flash(
-            "Booking service unavailable — check WodBuster configuration.",
+            t("flash.booking.service_unavailable"),
             kind="error",
         )
 
@@ -98,7 +99,7 @@ def vacation_enable(
         end_dt = _parse_date_input(end_date, tz)
     except ValueError:
         return _redirect_with_flash(
-            "Invalid date. Use YYYY-MM-DD for both start and end.",
+            t("flash.vacation.invalid_date"),
             kind="error",
         )
 
@@ -117,8 +118,7 @@ def vacation_enable(
         session.commit()
 
     return _redirect_with_flash(
-        f"Vacation mode enabled from {start_date} through {end_date}. "
-        "Granted bookings inside the range have been cancelled.",
+        t("flash.vacation.enabled", start=start_date, end=end_date),
         kind="info",
     )
 
@@ -146,7 +146,7 @@ def vacation_close(
             raise HTTPException(status_code=404) from None
         session.commit()
     return _redirect_with_flash(
-        "Vacation window closed. Automated bookings resume for future dates.",
+        t("flash.vacation.closed"),
         kind="info",
     )
 

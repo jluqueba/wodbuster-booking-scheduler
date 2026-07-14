@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlencode
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -33,6 +34,7 @@ from ..booking.cancellation import (
     list_recent_bookings,
 )
 from ..booking.upcoming import UpcomingSlot, list_upcoming_slots
+from ..i18n import t
 from ..persistence.engine import get_session
 from ..persistence.models import BookingOutcome
 from ..scheduler.rule_jobs import operator_timezone
@@ -108,7 +110,7 @@ def booking_cancel(
         # Booking stack not wired (config missing). Fail loud so the
         # operator sees the actual reason rather than a silent noop.
         return _redirect_with_flash(
-            "Booking service unavailable — check WodBuster configuration.",
+            t("flash.booking.service_unavailable"),
             kind="error",
         )
 
@@ -124,7 +126,7 @@ def booking_cancel(
         except BookingNotFoundError:
             raise HTTPException(status_code=404) from None
         except BookingAlreadyCancelledError:
-            return _redirect_with_flash("Already cancelled — no action taken.", kind="info")
+            return _redirect_with_flash(t("flash.booking.already_cancelled"), kind="info")
         except CancellationUpstreamError as exc:
             _log.warning(
                 "booking.cancel.upstream_error",
@@ -132,15 +134,15 @@ def booking_cancel(
                 booking_id=booking_id,
                 error=str(exc),
             )
-            return _redirect_with_flash(f"Cancel failed: {exc}", kind="error")
+            return _redirect_with_flash(
+                t("flash.booking.cancel_failed", reason=str(exc)), kind="error"
+            )
 
-    return _redirect_with_flash("Booking cancelled. WodBuster and Telegram updated.", kind="info")
+    return _redirect_with_flash(t("flash.booking.cancelled"), kind="info")
 
 
 def _redirect_with_flash(message: str, *, kind: str) -> RedirectResponse:
     """303 back to /history with a URL-encoded flash message."""
-    from urllib.parse import urlencode
-
     query = urlencode({"flash": message, "flash_kind": kind})
     return RedirectResponse(url=f"/history?{query}", status_code=303)
 
