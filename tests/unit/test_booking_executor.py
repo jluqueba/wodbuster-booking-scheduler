@@ -34,6 +34,23 @@ from wodbuster_worker.wodbuster_client.client import (
     WodBusterTransportError,
 )
 
+
+@pytest.fixture(autouse=True)
+def _no_vacation_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default the US7.2 skip guard to "no covering window".
+
+    The guard opens a session against ``self._session_factory`` — in
+    unit tests that factory yields a ``MagicMock`` whose attribute
+    accesses return truthy sentinels. Without an explicit patch the
+    guard would treat every rule as vacation-shielded and every test
+    would terminate as ``skipped``. Tests that need to exercise the
+    guard's positive branch override this fixture locally.
+    """
+    monkeypatch.setattr(
+        "wodbuster_worker.booking.executor.find_covering_window",
+        lambda session, *, operator_id, target_slot: None,
+    )
+
 # ---------------------------------------------------------------------------
 # Test doubles
 # ---------------------------------------------------------------------------
@@ -400,6 +417,54 @@ def test_missing_cookie_short_circuits_to_cookie_invalid(
     assert client.load_class_calls == []
     assert client.inscribir_calls == []
     assert writer.calls[0]["response_payload"] == "no cookie on file"
+
+
+def test_vacation_skip_guard_short_circuits_before_wodbuster(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """US7.2: an open vacation window covering ``target_slot`` yields a
+    ``skipped`` terminal and no upstream call."""
+    ex, client, writer = _executor(monkeypatch=monkeypatch)
+
+    fake_window = MagicMock()
+    fake_window.id = 77
+    monkeypatch.setattr(
+        "wodbuster_worker.booking.executor.find_covering_window",
+        lambda session, *, operator_id, target_slot: fake_window,
+    )
+
+    result = ex.book(
+        rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    )
+
+    assert result.terminal_status == "skipped"
+    assert client.load_class_calls == []
+    assert client.inscribir_calls == []
+    assert writer.calls[0]["terminal_status"] == "skipped"
+    assert writer.calls[0]["response_payload"] == "vacation window #77"
+
+
+def test_vacation_skip_guard_absent_lets_booking_proceed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No covering window → booking flow continues normally."""
+    ex, client, writer = _executor(
+        load_class_responses=[_load_class_payload()],
+        inscribir_responses=[_inscribir_ok()],
+        monkeypatch=monkeypatch,
+    )
+    monkeypatch.setattr(
+        "wodbuster_worker.booking.executor.find_covering_window",
+        lambda session, *, operator_id, target_slot: None,
+    )
+
+    result = ex.book(
+        rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    )
+
+    assert result.terminal_status == "granted"
+    assert len(client.inscribir_calls) == 1
+    assert writer.calls[0]["terminal_status"] == "granted"
 
 
 def test_inscribir_cookie_invalid_res_marks_terminal_cookie_invalid(

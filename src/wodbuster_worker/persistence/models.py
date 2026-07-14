@@ -68,6 +68,7 @@ _BOOKING_TERMINAL_STATUSES = (
     "class_not_visible",
     "upstream_unavailable",
     "cancelled",
+    "skipped",
 )
 _HEARTBEAT_RESULTS = ("valid", "rejected", "unknown")
 # The alert kinds intentionally cover only the vocabularies referenced in
