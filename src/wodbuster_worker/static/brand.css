@@ -128,8 +128,8 @@ hr {
   padding: 0.9rem 1.5rem;
   background: rgba(10, 14, 20, 0.72);
   border-bottom: 1px solid var(--wb-border);
-  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
 }
 
 .wb-nav__brand {
@@ -889,8 +889,8 @@ dialog.wb-confirm {
 
 dialog.wb-confirm::backdrop {
   background: rgba(4, 6, 10, 0.7);
-  backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
 }
 
 .wb-confirm__form {
@@ -1038,8 +1038,10 @@ button.wb-confirm__cancel:focus-visible,
   .wb-nav__links {
     gap: 0.1rem;
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    /* Prevent the horizontal scrollbar from squeezing content. */
+    /* Hide the horizontal scrollbar so it does not squeeze content.
+       ``scrollbar-width`` covers Firefox and modern Chromium; the
+       ``::-webkit-scrollbar`` rule below covers older WebKit /
+       Safari builds that predate CSS Scrollbars Styling. */
     scrollbar-width: none;
   }
   .wb-nav__links::-webkit-scrollbar {
@@ -1054,4 +1056,51 @@ button.wb-confirm__cancel:focus-visible,
     padding: 0.35rem 0.7rem;
     font-size: 0.85rem;
   }
+}
+
+/* --------------------------------------------------------------------------
+   Utility classes (replaces one-off ``style="..."`` attributes)
+   -------------------------------------------------------------------------- */
+
+/* Small muted note under a form field or paragraph.
+   Two sizes so a single class covers the two densities the pages use. */
+.wb-note {
+  font-size: 0.82rem;
+  margin: 0.5rem 0 0;
+}
+.wb-note--framed {
+  /* Under a section title, needs bottom breathing room. */
+  margin: 0.5rem 0 1rem;
+}
+.wb-note--xs {
+  font-size: 0.78rem;
+}
+
+/* Tight operator-id caption below the dashboard title. Pulled up so
+   it hugs the heading. */
+.wb-operator-tag {
+  font-size: 0.75rem;
+  margin: -1.5rem 0 2rem;
+}
+
+/* Row of form actions (Save + Cancel) at the bottom of a form. */
+.wb-form-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 1.5rem;
+}
+
+/* ``<form>`` used purely as a CSRF wrapper around a single button
+   inside a table cell — kept inline so the button lines up with
+   neighbouring anchors instead of breaking to a new row. */
+.wb-inline-form {
+  display: inline;
+  margin: 0;
+}
+
+/* Standalone paragraph anchored below a hero title on plain pages
+   (e.g. auth/denied). */
+.wb-hero-note {
+  margin-top: 2rem;
 }

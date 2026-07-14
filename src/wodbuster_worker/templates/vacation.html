@@ -128,7 +128,7 @@
               <form
                 method="post"
                 action="/vacation/{{ w.id }}/close"
-                style="display: inline;"
+                class="wb-inline-form"
                 onsubmit="return wbConfirm(this, event, 'End this vacation window now?')"
               >
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">

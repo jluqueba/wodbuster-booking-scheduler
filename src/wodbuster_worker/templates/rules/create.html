@@ -114,7 +114,7 @@
           </div>
         {% endfor %}
       </div>
-      <p class="wb-muted" style="font-size: 0.82rem; margin: 0.5rem 0 0;">
+      <p class="wb-muted wb-note">
         Pick every day of the week you want to attend. One rule row is
         created per day — edit each row later to tweak just that day.
       </p>
@@ -183,7 +183,7 @@
           {% endif %}
         </div>
       </div>
-      <p class="wb-muted" style="font-size: 0.82rem; margin: 0.5rem 0 0;">
+      <p class="wb-muted wb-note">
         Example: attend Wednesday, opens 3 days before at 22:40 → the worker
         fires Sunday at 22:40.
       </p>
@@ -215,13 +215,13 @@
           {% endif %}
         </div>
       </div>
-      <p class="wb-muted" style="font-size: 0.82rem; margin: 0.5rem 0 0;">
+      <p class="wb-muted wb-note">
         Tried only when the primary class fills up before the worker
         secures a spot. Leave both blank if you have no alternative.
       </p>
     </fieldset>
 
-    <div style="display: flex; gap: 0.75rem; align-items: center; margin-top: 1.5rem;">
+    <div class="wb-form-actions">
       <button type="submit" class="wb-btn--primary"
               {% if picker_unavailable %}disabled{% endif %}>Create rule</button>
     </div>

@@ -1,20 +1,22 @@
-{# Base layout for every rendered page.
-
-   Extending templates fill three blocks:
-     - title      -> the <title> element
-     - head_extra -> optional stylesheet / meta additions
-     - body_class -> optional class on <body> (e.g. ``wb-body--landing``
-                     when the nav should be omitted)
-     - content    -> everything inside <main>
-
-   The nav is rendered when ``session.operator_id`` is present; anonymous
-   pages (landing, denial) skip it via ``body_class`` and no ``show_nav``.
-#}
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!--
+      Base layout for every rendered page.
+
+      Extending templates fill these blocks:
+        - title      -> the <title> element
+        - head_extra -> optional stylesheet / meta additions
+        - body_class -> optional class on <body> (e.g. ``wb-body--landing``
+                        when the nav should be omitted)
+        - content    -> everything inside <main>
+
+      The nav is rendered when ``session.operator_id`` is present;
+      anonymous pages (landing, denial) skip it via ``body_class`` and
+      no ``show_nav``.
+    -->
     <meta name="theme-color" content="#0a0e14">
     <title>{% block title %}WodBuster Booking Scheduler{% endblock %}</title>
     <meta name="csrf-token" content="{{ csrf_token | default('') }}">

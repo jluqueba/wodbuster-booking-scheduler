@@ -72,7 +72,7 @@
               <form
                 method="post"
                 action="/rules/{{ rule.id }}/delete"
-                style="display: inline;"
+                class="wb-inline-form"
                 onsubmit="return wbConfirm(this, event, 'Delete this rule?')"
               >
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
