@@ -217,8 +217,10 @@ def test_history_lists_own_bookings_with_cancel_button_on_granted_future(
     assert "Cross Training" in response.text
     # Cancel button only on the granted+future row.
     assert f'action="/bookings/{granted_id}/cancel"' in response.text
-    # Past-granted and full rows do NOT get a cancel form.
-    assert response.text.count("/cancel") == 1
+    # Past-granted and full rows do NOT get a cancel form. The granted
+    # future row does — once in the upcoming grid, once in the full
+    # attempts table below.
+    assert response.text.count(f"/bookings/{granted_id}/cancel") == 2
 
 
 def test_history_isolates_by_operator(
@@ -240,6 +242,83 @@ def test_history_isolates_by_operator(
     # Alice has no bookings → empty state.
     assert "No bookings yet" in response.text
     _ = op_a  # unused but binds the fixture return
+
+
+def test_history_upcoming_section_groups_future_granted_bookings(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """H.1 full: the ``🗓️ Upcoming bookings`` section lists granted
+    bookings whose class start is in the future, grouped by day.
+    Past-granted and non-granted rows do not appear in that section
+    (they still show up in the ``📜 All attempts`` table below)."""
+    monkeypatch.setenv("WORKER_TIMEZONE", "UTC")
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+
+    _seed_booking(
+        postgres_engine,
+        operator_id=op_id,
+        target_class="UpcomingWOD",
+        target_slot=datetime.now(tz=UTC) + timedelta(days=2),
+        terminal_status="granted",
+    )
+    _seed_booking(
+        postgres_engine,
+        operator_id=op_id,
+        target_class="PastGranted",
+        target_slot=datetime.now(tz=UTC) - timedelta(days=1),
+        terminal_status="granted",
+    )
+    _seed_booking(
+        postgres_engine,
+        operator_id=op_id,
+        target_class="FullClass",
+        target_slot=datetime.now(tz=UTC) + timedelta(days=2),
+        terminal_status="full",
+    )
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/history")
+
+    assert response.status_code == 200
+    text = response.text
+    upcoming, _sep, past_and_below = text.partition("📜 All attempts")
+
+    # Only the future-granted class shows in the upcoming grid.
+    assert "UpcomingWOD" in upcoming
+    assert "PastGranted" not in upcoming
+    assert "FullClass" not in upcoming
+    # The full attempts table still lists every row.
+    assert "UpcomingWOD" in past_and_below
+    assert "PastGranted" in past_and_below
+    assert "FullClass" in past_and_below
+
+
+def test_history_upcoming_section_empty_state_when_nothing_future(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No future-granted bookings → helper hint replaces the grid."""
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    _seed_booking(
+        postgres_engine,
+        operator_id=op_id,
+        target_class="PastGranted",
+        target_slot=datetime.now(tz=UTC) - timedelta(days=1),
+        terminal_status="granted",
+    )
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/history")
+
+    assert response.status_code == 200
+    assert "No granted bookings on the horizon" in response.text
 
 
 def test_history_unauthenticated_redirects_to_login(

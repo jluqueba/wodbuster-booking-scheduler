@@ -34,7 +34,7 @@ Error surface:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 import structlog
@@ -280,6 +280,39 @@ def list_recent_bookings(
     )
 
 
+def list_upcoming_bookings(
+    session: Session,
+    operator_id: int,
+    *,
+    now: datetime | None = None,
+    horizon_days: int = 14,
+) -> list[BookingOutcome]:
+    """Return granted bookings whose class start is in the future.
+
+    Powers the "Upcoming" section on the history page: what the
+    operator is going to attend next, chronologically. Filtered to
+    ``granted`` terminals because cancelled/failed rows have nothing
+    to attend. Bounded by ``horizon_days`` so a stray far-future
+    booking cannot flood the section.
+    """
+    _now = now or datetime.now(tz=UTC)
+    horizon = _now + timedelta(days=horizon_days)
+    return list(
+        session.execute(
+            select(BookingOutcome)
+            .where(
+                BookingOutcome.operator_id == operator_id,
+                BookingOutcome.terminal_status == "granted",
+                BookingOutcome.target_slot >= _now,
+                BookingOutcome.target_slot <= horizon,
+            )
+            .order_by(BookingOutcome.target_slot.asc())
+        )
+        .scalars()
+        .all()
+    )
+
+
 __all__ = [
     "BookingAlreadyCancelledError",
     "BookingNotFoundError",
@@ -287,4 +320,5 @@ __all__ = [
     "CancellationUpstreamError",
     "cancel_booking",
     "list_recent_bookings",
+    "list_upcoming_bookings",
 ]
