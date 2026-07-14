@@ -41,6 +41,7 @@ _SECRET_SPECS: tuple[tuple[str, str], ...] = (
     ("wodbuster-cookie-encryption-key", "cookie_encryption_key"),
     ("session-encryption-secret", "session_encryption_secret"),
     ("telegram-bot-token", "telegram_bot_token"),
+    ("telegram-webhook-secret", "telegram_webhook_secret"),
     ("oauth-microsoft-client-secret", "oauth_microsoft_client_secret"),
     ("oauth-github-client-secret", "oauth_github_client_secret"),
     ("oauth-google-client-secret", "oauth_google_client_secret"),
@@ -63,6 +64,7 @@ class Secrets(BaseModel):
     cookie_encryption_key: str | None = None
     session_encryption_secret: str | None = None
     telegram_bot_token: str | None = None
+    telegram_webhook_secret: str | None = None
     oauth_microsoft_client_secret: str | None = None
     oauth_github_client_secret: str | None = None
     oauth_google_client_secret: str | None = None

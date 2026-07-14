@@ -1,0 +1,172 @@
+{# Telegram binding page (US9.8).
+
+   Two states:
+     - Unbound: shows the "Generate link" button. After POST, shows
+       the deep link + a "Waiting for your Telegram tap..." hint.
+     - Bound: shows the current chat id + an "Unbind" button.
+
+   The deep link opens the Telegram app on ``t.me/<bot>?start=<token>``
+   which auto-sends ``/start <token>`` to the bot on the operator's
+   first tap. The webhook then writes ``telegram_chat_id`` on the
+   operator profile and the next page load reflects the bound state.
+#}
+{% extends "base.html" %}
+
+{% block title %}Telegram — WodBuster Booking Scheduler{% endblock %}
+
+{% block nav %}
+  {% set active_nav = "telegram" %}
+  {% include "_nav.html" %}
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .wb-flash {
+    padding: 0.75rem 1rem;
+    border-radius: var(--wb-radius);
+    border-left: 4px solid var(--wb-info);
+    background: rgba(96, 165, 250, 0.06);
+    color: var(--wb-text);
+    margin-bottom: 1.25rem;
+  }
+  .wb-flash--warning {
+    border-left-color: var(--wb-warning);
+    background: rgba(251, 191, 36, 0.06);
+  }
+  .wb-flash--error {
+    border-left-color: var(--wb-danger);
+    background: rgba(248, 113, 113, 0.06);
+  }
+  .wb-flash--spaced {
+    margin-top: 1rem;
+  }
+  .wb-telegram-card {
+    padding: 1.15rem 1.35rem;
+    background: var(--wb-bg-card);
+    border-radius: var(--wb-radius);
+    border: 1px solid var(--wb-border);
+    margin-bottom: 1.25rem;
+  }
+  .wb-telegram-status {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 1.02rem;
+    margin-bottom: 0.5rem;
+  }
+  .wb-telegram-hint {
+    color: var(--wb-text-muted);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    margin: 0 0 1rem;
+  }
+  .wb-telegram-link {
+    display: inline-block;
+    padding: 0.55rem 1rem;
+    background: var(--wb-accent);
+    color: var(--wb-accent-ink);
+    font-weight: 600;
+    border-radius: var(--wb-radius-sm);
+    text-decoration: none;
+    margin: 0.5rem 0;
+  }
+  .wb-telegram-link:hover {
+    background: var(--wb-accent-hover);
+  }
+  .wb-token-block {
+    font-family: monospace;
+    font-size: 0.82rem;
+    padding: 0.6rem 0.8rem;
+    background: var(--wb-bg-inset);
+    border-radius: var(--wb-radius-sm);
+    border: 1px solid var(--wb-border);
+    word-break: break-all;
+    margin: 0.5rem 0 1rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+  <span class="wb-page-title__eyebrow">Notifications</span>
+  <h1 class="wb-page-title">🤖 Telegram bot</h1>
+  <p class="wb-page-subtitle">
+    Bind a Telegram chat to your operator profile and every booking
+    outcome, cookie-expiring warning, and anomaly alert lands on your
+    phone alongside the Healthchecks watchdog.
+  </p>
+
+  {% if flash %}
+    <div class="wb-flash wb-flash--{{ flash_kind }}" role="status">
+      {{ flash }}
+    </div>
+  {% endif %}
+
+  {% if chat_id %}
+    <section class="wb-telegram-card">
+      <p class="wb-telegram-status">
+        <span class="wb-chip wb-chip--granted">bound</span>
+        Chat id <code>{{ chat_id }}</code>
+      </p>
+      <p class="wb-telegram-hint">
+        Notifications are being delivered to this chat. Unbind if you
+        stopped using that Telegram account or want to bind a
+        different chat.
+      </p>
+      <form
+        method="post"
+        action="/telegram/unbind"
+        onsubmit="return wbConfirm(this, event, 'Unbind Telegram from this operator?')"
+      >
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button type="submit" class="wb-btn wb-btn--danger">
+          🚫 Unbind
+        </button>
+      </form>
+    </section>
+  {% else %}
+    <section class="wb-telegram-card">
+      <p class="wb-telegram-status">
+        <span class="wb-chip wb-chip--muted">not bound</span>
+      </p>
+      {% if deep_link %}
+        <p class="wb-telegram-hint">
+          One-shot link generated. Tap it on the same device where you
+          use Telegram, then send the pre-filled ``/start`` message to
+          the bot. Refresh this page after and the chip flips to
+          <strong>bound</strong>.
+        </p>
+        <p>
+          <a class="wb-telegram-link" href="{{ deep_link }}" target="_blank" rel="noopener">
+            📱 Open bot in Telegram
+          </a>
+        </p>
+        <p class="wb-telegram-hint">
+          Or copy this raw token and DM it to the bot as
+          <code>/start &lt;token&gt;</code>:
+        </p>
+        <div class="wb-token-block">{{ token }}</div>
+        <p class="wb-telegram-hint">
+          Token expires in 10 minutes and can only be used once.
+        </p>
+      {% else %}
+        <p class="wb-telegram-hint">
+          Click below to generate a one-shot binding link (valid for
+          10 minutes).
+        </p>
+        <form method="post" action="/telegram/generate">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <button type="submit" class="wb-btn wb-btn--primary">
+            🔗 Generate link
+          </button>
+        </form>
+        {% if not bot_username %}
+          <p class="wb-flash wb-flash--warning wb-flash--spaced" role="status">
+            The server does not know the bot username yet. Make sure
+            <code>telegram-bot-token</code> is set in Key Vault and
+            the container has been restarted since it was seeded.
+          </p>
+        {% endif %}
+      {% endif %}
+    </section>
+  {% endif %}
+{% endblock %}
