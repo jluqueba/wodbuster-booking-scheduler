@@ -32,7 +32,7 @@ from .booking.executor import BookingExecutor
 from .booking.routes import router as history_router
 from .config import Settings, get_settings
 from .cookie.routes import router as cookie_router
-from .heartbeat.next_window import compute_next_window
+from .heartbeat.next_window import compute_next_booking
 from .heartbeat.probe import HeartbeatProbe
 from .notifications.banners import load_banners_for_operator
 from .notifications.dispatcher import NotificationDispatcher
@@ -307,9 +307,16 @@ def _register_routes(app: FastAPI) -> None:
             now = datetime.now(tz=UTC)
             with get_session() as session:
                 banners = load_banners_for_operator(session, operator_id)
-                next_window = compute_next_window(session, operator_id, now)
+                next_booking = compute_next_booking(session, operator_id, now)
             next_window_iso = (
-                next_window.isoformat() if next_window is not None else None
+                next_booking.window_open.isoformat()
+                if next_booking is not None
+                else None
+            )
+            target_slot_iso = (
+                next_booking.target_slot.isoformat()
+                if next_booking is not None
+                else None
             )
             response = templates.TemplateResponse(
                 request=request,
@@ -319,6 +326,7 @@ def _register_routes(app: FastAPI) -> None:
                     "display_name": display_name,
                     "banners": banners,
                     "next_window_iso": next_window_iso,
+                    "target_slot_iso": target_slot_iso,
                     "csrf_token": get_csrf_token(request) or "",
                 },
             )

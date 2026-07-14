@@ -19,6 +19,11 @@
       This action cannot be undone.
     </p>
     <div class="wb-confirm__actions">
+      {# Button roles are intentionally inverted from the usual
+         destructive-in-red pattern. Operator mental model here is
+         "red means STOP this operation", so Cancel gets the loud
+         red fill and Confirm (proceed) gets the neutral primary
+         accent. #}
       <button
         type="button"
         class="wb-btn wb-confirm__cancel"
@@ -28,7 +33,7 @@
       </button>
       <button
         type="button"
-        class="wb-btn wb-btn--danger wb-confirm__ok"
+        class="wb-btn wb-btn--primary wb-confirm__ok"
         value="ok"
       >
         Confirm

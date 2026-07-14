@@ -921,30 +921,31 @@ dialog.wb-confirm::backdrop {
   margin-top: 0.9rem;
 }
 
-/* Cancel button inside the confirm modal. Locked to a neutral
-   palette so it can never pick up the yellow accent (via Pico's
-   ``--pico-primary`` default on ``<button>`` or the ``:hover``
-   ``--wb-border-focus`` rule) that would clash with the red
-   Confirm sitting next to it. */
+/* Cancel button inside the confirm modal.
+   Rendered as a solid-red "STOP this operation" button — the operator
+   reads red as "abort", not as "the destructive choice". Locked with
+   a strong selector so the shared ``.wb-btn:hover`` accent (yellow
+   border-focus) cannot leak in and desaturate the fill. */
 button.wb-confirm__cancel,
 .wb-confirm__cancel {
-  background: var(--wb-bg-elevated);
-  color: var(--wb-text);
-  border-color: var(--wb-border-strong);
+  background: var(--wb-danger);
+  color: #0a0e14;
+  border-color: var(--wb-danger);
+  font-weight: 600;
 }
 button.wb-confirm__cancel:hover,
 .wb-confirm__cancel:hover {
-  color: var(--wb-text);
-  border-color: var(--wb-text-muted);
-  background: var(--wb-bg-card);
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #0a0e14;
 }
 button.wb-confirm__cancel:focus,
 .wb-confirm__cancel:focus,
 button.wb-confirm__cancel:focus-visible,
 .wb-confirm__cancel:focus-visible {
-  border-color: var(--wb-text-muted);
+  border-color: var(--wb-danger);
   outline: none;
-  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.25);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.35);
 }
 
 /* -- Countdown block on the dashboard ------------------------------------ */

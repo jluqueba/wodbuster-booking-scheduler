@@ -50,7 +50,7 @@ SessionFactory = Callable[[], AbstractContextManager[Any]]
 # ---------------------------------------------------------------------------
 
 
-def _operator_timezone() -> ZoneInfo:
+def operator_timezone() -> ZoneInfo:
     """Return the timezone in which every rule's ``HH:MM`` is interpreted.
 
     Reads ``WORKER_TIMEZONE`` from the environment (default
@@ -68,7 +68,7 @@ def next_window_open_for_rule(rule: SchedulerRule, now: datetime) -> datetime:
     Trigger day is ``(day_of_week - booking_opens_days_before) mod 7``;
     the window opens on that weekday at ``booking_opens_at``
     interpreted in the operator's timezone (see
-    :func:`_operator_timezone`). If today matches and the time is
+    :func:`operator_timezone`). If today matches and the time is
     still in the future, the same-day instant is returned. Otherwise
     the function rolls forward one week. Returned datetime is UTC.
     """
@@ -89,7 +89,7 @@ def target_slot_for_window(rule: SchedulerRule, window_open: datetime) -> dateti
     if window_open.tzinfo is None:
         raise ValueError("window_open must be timezone-aware")
     class_time = _parse_hhmm(rule.class_time)
-    tz = _operator_timezone()
+    tz = operator_timezone()
     # Move to the operator's local zone so day arithmetic uses local
     # midnight (avoids off-by-one when the UTC window and local day
     # straddle midnight).
@@ -113,7 +113,7 @@ def _next_occurrence(*, now: datetime, day_of_week: int, at: time) -> datetime:
     in the operator's local zone so DST transitions and non-UTC
     operators do not mis-fire.
     """
-    tz = _operator_timezone()
+    tz = operator_timezone()
     local_now = now.astimezone(tz)
     local_today = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
     days_ahead = (day_of_week - local_now.weekday()) % 7
@@ -292,6 +292,7 @@ __all__ = [
     "SessionFactory",
     "book_rule",
     "next_window_open_for_rule",
+    "operator_timezone",
     "register_rule_job",
     "target_slot_for_window",
     "unregister_rule_job",
