@@ -25,9 +25,7 @@ from sqlalchemy.orm import Session
 from ..persistence.models import SchedulerRule
 
 
-def list_rules_for_operator(
-    session: Session, operator_id: int
-) -> Sequence[SchedulerRule]:
+def list_rules_for_operator(session: Session, operator_id: int) -> Sequence[SchedulerRule]:
     """Return every rule the operator owns, ordered by day of week."""
     return (
         session.execute(
@@ -40,9 +38,7 @@ def list_rules_for_operator(
     )
 
 
-def get_rule_for_operator(
-    session: Session, operator_id: int, rule_id: int
-) -> SchedulerRule | None:
+def get_rule_for_operator(session: Session, operator_id: int, rule_id: int) -> SchedulerRule | None:
     """Return the rule if it exists AND belongs to the operator."""
     return session.scalar(
         select(SchedulerRule).where(

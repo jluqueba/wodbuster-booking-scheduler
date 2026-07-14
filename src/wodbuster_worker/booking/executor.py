@@ -177,9 +177,7 @@ class BookingExecutor:
                 terminal_status="skipped",
                 fallback_index=None,
                 response=f"vacation window #{vacation.id}",
-                telegram_text=self._render_vacation_skip_text(
-                    rule, target_slot
-                ),
+                telegram_text=self._render_vacation_skip_text(rule, target_slot),
             )
 
         cookie = self._load_cookie(rule.operator_id)
@@ -235,9 +233,7 @@ class BookingExecutor:
         with self._session_factory() as session:
             return self._cookie_store.load(session, operator_id)
 
-    def _vacation_covering(
-        self, operator_id: int, target_slot: datetime
-    ) -> Any:
+    def _vacation_covering(self, operator_id: int, target_slot: datetime) -> Any:
         """Return the open vacation window covering ``target_slot`` or ``None``.
 
         Read-only lookup; opens a short-lived session so the guard
@@ -283,9 +279,7 @@ class BookingExecutor:
             )
 
         try:
-            response = self._client.inscribir(
-                cookie, class_id=slot.id, ticks=ticks
-            )
+            response = self._client.inscribir(cookie, class_id=slot.id, ticks=ticks)
         except WodBusterAuthError as exc:
             return _AttemptResult.done_terminal(
                 rule=rule,
@@ -304,9 +298,7 @@ class BookingExecutor:
                 terminal_status="upstream_unavailable",
                 fallback_index=None,
                 response=f"upstream: {exc}",
-                telegram_text=self._render_upstream_text(
-                    rule, class_type, target_slot
-                ),
+                telegram_text=self._render_upstream_text(rule, class_type, target_slot),
             )
 
         outcome = response.outcome
@@ -342,9 +334,7 @@ class BookingExecutor:
                 target_slot=target_slot,
                 fallback_index=None,
                 response=raw_payload,
-                telegram_text=self._render_full_text(
-                    rule, class_type, class_time, target_slot
-                ),
+                telegram_text=self._render_full_text(rule, class_type, class_time, target_slot),
             )
         # "unknown" — escalate to upstream_unavailable but keep the
         # raw Res so we can extend the classifier post-hoc.
@@ -355,9 +345,7 @@ class BookingExecutor:
             terminal_status="upstream_unavailable",
             fallback_index=None,
             response=raw_payload,
-            telegram_text=self._render_upstream_text(
-                rule, class_type, target_slot
-            ),
+            telegram_text=self._render_upstream_text(rule, class_type, target_slot),
         )
 
     def _find_slot_with_retry(
@@ -385,9 +373,7 @@ class BookingExecutor:
                 pass
             else:
                 slots = extract_class_slots(loaded.payload)
-                match = find_matching_slot(
-                    slots, class_type=class_type, class_time=class_time
-                )
+                match = find_matching_slot(slots, class_type=class_type, class_time=class_time)
                 if match is not None:
                     return match
 
@@ -448,10 +434,7 @@ class BookingExecutor:
         fallback_index: int,
     ) -> str:
         tag = "primary" if fallback_index == 0 else "second shot"
-        return (
-            f"Booked {class_type} at {class_time} for {_format_slot(target_slot)} "
-            f"({tag})."
-        )
+        return f"Booked {class_type} at {class_time} for {_format_slot(target_slot)} ({tag})."
 
     def _render_full_text(
         self,
@@ -504,8 +487,7 @@ class BookingExecutor:
         target_slot: datetime,
     ) -> str:
         return (
-            f"Booking for {_format_slot(target_slot)} skipped: vacation "
-            "mode is on for this date."
+            f"Booking for {_format_slot(target_slot)} skipped: vacation mode is on for this date."
         )
 
     def _render_upstream_text(

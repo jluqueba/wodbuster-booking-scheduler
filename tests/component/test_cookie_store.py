@@ -66,10 +66,7 @@ def _make_operator(engine: Engine, name: str = "Alice") -> int:
     with engine.begin() as conn:
         return int(
             conn.execute(
-                text(
-                    "INSERT INTO operator_profile (display_name) "
-                    "VALUES (:n) RETURNING id"
-                ),
+                text("INSERT INTO operator_profile (display_name) VALUES (:n) RETURNING id"),
                 {"n": name},
             ).scalar_one()
         )
@@ -139,9 +136,7 @@ def test_repeat_save_refreshes_timestamps_and_clears_projected_ttl(
         store.save(session, op_id, ".WBAuth-1", validated_at=first_validated)
         session.commit()
     with session_factory() as session:
-        row = (
-            session.query(CookieCredential).filter_by(operator_id=op_id).one()
-        )
+        row = session.query(CookieCredential).filter_by(operator_id=op_id).one()
         row.projected_ttl_at = datetime(2027, 12, 31, tzinfo=UTC)
         session.commit()
 
@@ -150,9 +145,7 @@ def test_repeat_save_refreshes_timestamps_and_clears_projected_ttl(
         session.commit()
 
     with session_factory() as session:
-        row = (
-            session.query(CookieCredential).filter_by(operator_id=op_id).one()
-        )
+        row = session.query(CookieCredential).filter_by(operator_id=op_id).one()
         assert row.last_validated_at == second_validated
         # ``pasted_at`` is refreshed on every save (server_default fires
         # only on INSERT); after two saves it must reflect the second.
@@ -176,9 +169,7 @@ def test_plaintext_is_never_persisted(
         session.commit()
 
     with session_factory() as session:
-        row = (
-            session.query(CookieCredential).filter_by(operator_id=op_id).one()
-        )
+        row = session.query(CookieCredential).filter_by(operator_id=op_id).one()
         assert plaintext.encode() not in bytes(row.cookie_ciphertext)
         assert plaintext.encode() not in bytes(row.cookie_nonce)
         # Nonces are 96 bits per NIST; assert we did not accidentally
@@ -217,14 +208,10 @@ def test_load_with_different_key_raises_decrypt_error(
     validated_at = datetime.now(tz=UTC)
 
     with session_factory() as session:
-        CookieStore(write_cipher).save(
-            session, op_id, ".WBAuth-x", validated_at=validated_at
-        )
+        CookieStore(write_cipher).save(session, op_id, ".WBAuth-x", validated_at=validated_at)
         session.commit()
 
-    with session_factory() as session, pytest.raises(
-        CookieDecryptError, match=str(op_id)
-    ):
+    with session_factory() as session, pytest.raises(CookieDecryptError, match=str(op_id)):
         CookieStore(read_cipher).load(session, op_id)
 
 

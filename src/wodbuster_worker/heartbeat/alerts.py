@@ -201,9 +201,7 @@ def apply_alert_action(
     return int(alert.id)
 
 
-def close_open_cookie_expiring(
-    session: Session, operator_id: int, *, now: datetime
-) -> int | None:
+def close_open_cookie_expiring(session: Session, operator_id: int, *, now: datetime) -> int | None:
     """Close the operator's open ``cookie_expiring`` alert, if any.
 
     Called from :meth:`CookieStore.save` for the clear-on-refresh

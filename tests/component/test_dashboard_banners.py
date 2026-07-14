@@ -123,9 +123,7 @@ def test_closed_alerts_are_not_shown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
-    alert_id = _open_alert(
-        postgres_engine, operator_id=op_id, kind="cookie_invalid"
-    )
+    alert_id = _open_alert(postgres_engine, operator_id=op_id, kind="cookie_invalid")
     with postgres_engine.begin() as conn:
         conn.execute(
             text("UPDATE alert SET closed_at = NOW() WHERE id = :id"),

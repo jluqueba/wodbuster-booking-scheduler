@@ -32,6 +32,7 @@ class SecretResolver(Protocol):
     def get_secret(self, name: str) -> str | None:  # pragma: no cover
         ...
 
+
 # The seven secrets specified by tasks.md F3.8. Order matches that
 # document. Each tuple entry is (Key Vault secret name, Settings field
 # name, Secrets field name); the Settings and Secrets fields share
@@ -101,9 +102,7 @@ def load_secrets(
 
 
 def _load_from_settings(settings: Settings) -> Secrets:
-    return Secrets(
-        **{field: getattr(settings, field, None) for _, field in _SECRET_SPECS}
-    )
+    return Secrets(**{field: getattr(settings, field, None) for _, field in _SECRET_SPECS})
 
 
 def _load_from_resolver(resolver: SecretResolver) -> Secrets:

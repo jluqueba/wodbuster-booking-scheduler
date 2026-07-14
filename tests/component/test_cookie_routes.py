@@ -252,18 +252,12 @@ def test_post_valid_re_paste_upserts_the_row(
 ) -> None:
     op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
     app = app_factory()
-    validator, _ = _wire_cookie_stack(
-        app, verdict=Valid(probed_at=datetime.now(tz=UTC))
-    )
+    validator, _ = _wire_cookie_stack(app, verdict=Valid(probed_at=datetime.now(tz=UTC)))
 
     with _sign_in(app, subject, "Alice", monkeypatch) as client:
         headers = _csrf_headers(client)
-        first = client.post(
-            "/cookie", data={"cookie_value": ".WBAuth-1"}, headers=headers
-        )
-        second = client.post(
-            "/cookie", data={"cookie_value": ".WBAuth-2"}, headers=headers
-        )
+        first = client.post("/cookie", data={"cookie_value": ".WBAuth-1"}, headers=headers)
+        second = client.post("/cookie", data={"cookie_value": ".WBAuth-2"}, headers=headers)
 
     assert first.status_code == 200
     assert second.status_code == 200
@@ -274,11 +268,7 @@ def test_post_valid_re_paste_upserts_the_row(
 
     session_local = sessionmaker(bind=postgres_engine)
     with session_local() as session:
-        rows = (
-            session.query(CookieCredential)
-            .filter_by(operator_id=op_id)
-            .all()
-        )
+        rows = session.query(CookieCredential).filter_by(operator_id=op_id).all()
     assert len(rows) == 1  # upsert, not insert-twice
     # The second paste's ciphertext must decrypt to ".WBAuth-2"; use the
     # store directly via the app state (same key as the routes).
@@ -298,7 +288,8 @@ def test_post_without_csrf_is_forbidden(
 
     with _sign_in(app, subject, "Alice", monkeypatch) as client:
         response = client.post(
-            "/cookie", data={"cookie_value": "any"}  # no X-CSRF-Token header
+            "/cookie",
+            data={"cookie_value": "any"},  # no X-CSRF-Token header
         )
 
     assert response.status_code == 403
@@ -366,9 +357,7 @@ def test_lifespan_hooks_dont_reset_test_wiring(
     """
     seed_operator(provider="microsoft", display_name="Alice")
     app = app_factory()
-    validator, store = _wire_cookie_stack(
-        app, verdict=Valid(probed_at=datetime.now(tz=UTC))
-    )
+    validator, store = _wire_cookie_stack(app, verdict=Valid(probed_at=datetime.now(tz=UTC)))
 
     # ``TestClient`` context manager runs the lifespan. We assert the
     # pre-seeded objects survive.

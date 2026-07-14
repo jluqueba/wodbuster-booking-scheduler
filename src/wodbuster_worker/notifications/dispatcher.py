@@ -162,9 +162,7 @@ class NotificationDispatcher:
                 attempts=attempt_number,
             )
 
-    def _dispatch_telegram(
-        self, session: Session, row: NotificationOutbox
-    ) -> None:
+    def _dispatch_telegram(self, session: Session, row: NotificationOutbox) -> None:
         """Resolve the operator's chat id and send."""
         if not self._bot_token:
             # No bot token configured — nothing this tick can do.
@@ -180,9 +178,7 @@ class NotificationDispatcher:
             text=text,
         )
 
-    def _resolve_chat_id(
-        self, session: Session, row: NotificationOutbox
-    ) -> str:
+    def _resolve_chat_id(self, session: Session, row: NotificationOutbox) -> str:
         """Return the chat id to send to.
 
         The producer already stores the target on the outbox row.

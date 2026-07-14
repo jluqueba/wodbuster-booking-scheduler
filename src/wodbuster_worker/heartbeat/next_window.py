@@ -29,9 +29,7 @@ from ..scheduler.rule_jobs import (
 )
 
 
-def compute_next_window(
-    session: Session, operator_id: int, now: datetime
-) -> datetime | None:
+def compute_next_window(session: Session, operator_id: int, now: datetime) -> datetime | None:
     """Return the earliest upcoming booking-window datetime.
 
     The value is timezone-aware UTC. Callers compare it against
@@ -84,9 +82,7 @@ class NextBooking:
     rule_id: int
 
 
-def compute_next_booking(
-    session: Session, operator_id: int, now: datetime
-) -> NextBooking | None:
+def compute_next_booking(session: Session, operator_id: int, now: datetime) -> NextBooking | None:
     """Return richer info about the next scheduled booking.
 
     Same selection semantics as :func:`compute_next_window` (earliest

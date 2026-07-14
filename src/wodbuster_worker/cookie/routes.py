@@ -52,9 +52,7 @@ def _templates(request: Request) -> Jinja2Templates:
     """Fetch the shared :class:`Jinja2Templates` from app state."""
     templates = getattr(request.app.state, "templates", None)
     if templates is None:  # pragma: no cover - misconfiguration
-        raise RuntimeError(
-            "app.state.templates is not configured; wire it in lifespan()."
-        )
+        raise RuntimeError("app.state.templates is not configured; wire it in lifespan().")
     assert isinstance(templates, Jinja2Templates)
     return templates
 
@@ -113,9 +111,7 @@ def _load_current_status(store: CookieStore, operator_id: int) -> dict[str, obje
     """
     with get_session() as session:
         row: CookieCredential | None = (
-            session.query(CookieCredential)
-            .filter_by(operator_id=operator_id)
-            .one_or_none()
+            session.query(CookieCredential).filter_by(operator_id=operator_id).one_or_none()
         )
         if row is None:
             return {"has_cookie": False}
@@ -154,9 +150,7 @@ def _render_partial(
 
 
 @router.get("/cookie", name="cookie_page")
-def cookie_page(
-    request: Request, operator_id: int = Depends(require_session)
-) -> Response:
+def cookie_page(request: Request, operator_id: int = Depends(require_session)) -> Response:
     """Render the paste-and-validate page for the current operator."""
     templates = _templates(request)
     context = _load_current_status(_store(request), operator_id)

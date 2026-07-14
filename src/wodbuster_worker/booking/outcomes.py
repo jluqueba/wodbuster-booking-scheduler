@@ -101,9 +101,7 @@ def persist_outcome(
     )
 
     if terminal_status == "cookie_invalid":
-        _open_or_refresh_cookie_invalid_alert(
-            session, operator_id=operator_id, now=_now
-        )
+        _open_or_refresh_cookie_invalid_alert(session, operator_id=operator_id, now=_now)
 
     return outcome
 

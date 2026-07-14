@@ -207,9 +207,7 @@ def test_threshold_holds_with_stale_ack_re_emits() -> None:
 def test_ack_without_previous_heartbeat_re_emits() -> None:
     # Edge case: previous_heartbeat_at is None. The suppression rule
     # cannot fire without a comparison anchor; default to re-emitting.
-    session = _FakeSession(
-        open_alert=_FakeAlert(acknowledged_at=_NOW - timedelta(minutes=1))
-    )
+    session = _FakeSession(open_alert=_FakeAlert(acknowledged_at=_NOW - timedelta(minutes=1)))
 
     with _patch_next_window(_NEXT_WINDOW_SOON):
         result = evaluate_cookie_expiring(
