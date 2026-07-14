@@ -19,7 +19,10 @@ env/
 *.db-shm
 
 # Editor and OS noise
-.vscode/
+.vscode/*
+# Keep the workspace settings file tracked so the formatter pin lands
+# for everyone (see .vscode/settings.json).
+!.vscode/settings.json
 .idea/
 .DS_Store
 Thumbs.db

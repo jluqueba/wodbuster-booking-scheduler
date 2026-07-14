@@ -1,0 +1,17 @@
+{
+  // Python: use ruff for lint + format so the editor agrees with CI.
+  // The user-level setting points at `ms-python.black-formatter`
+  // (88 columns), which conflicts with this repo's `ruff.toml`
+  // (100 columns). Overriding at the workspace level keeps every
+  // save aligned with what CI enforces.
+  "[python]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+  "ruff.lint.enable": true,
+  "ruff.format.enable": true
+}
