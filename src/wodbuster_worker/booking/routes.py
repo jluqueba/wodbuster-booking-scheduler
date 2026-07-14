@@ -31,9 +31,11 @@ from ..booking.cancellation import (
     CancellationUpstreamError,
     cancel_booking,
     list_recent_bookings,
+    list_upcoming_bookings,
 )
 from ..persistence.engine import get_session
 from ..persistence.models import BookingOutcome
+from ..scheduler.rule_jobs import operator_timezone
 
 _log = structlog.get_logger(__name__)
 
@@ -68,13 +70,17 @@ def history_list(
 ) -> Response:
     """List the operator's most recent booking outcomes."""
     templates = _templates(request)
+    now = datetime.now(tz=UTC)
     with get_session() as session:
+        upcoming = list_upcoming_bookings(session, operator_id, now=now)
         outcomes = list_recent_bookings(session, operator_id)
+        upcoming_days = _group_upcoming_by_day(upcoming)
         rows = [_outcome_to_row(o) for o in outcomes]
     return templates.TemplateResponse(
         request=request,
         name="history.html",
         context={
+            "upcoming_days": upcoming_days,
             "rows": rows,
             "csrf_token": get_csrf_token(request) or "",
             "flash": flash,
@@ -154,6 +160,43 @@ def _outcome_to_row(outcome: BookingOutcome) -> dict[str, Any]:
         "cancellable": outcome.terminal_status == "granted"
         and outcome.target_slot.astimezone(UTC) > datetime.now(tz=UTC),
     }
+
+
+def _group_upcoming_by_day(
+    outcomes: list[BookingOutcome],
+) -> list[dict[str, Any]]:
+    """Group upcoming granted bookings by local calendar day.
+
+    Times are shown in the operator's zone (``WORKER_TIMEZONE``) so
+    the operator reads "Wed 22 Jul at 21:30" the way they wrote the
+    rule, not in UTC. Each group carries the same ``id``,
+    ``target_class`` and cancel-button data the flat history table
+    uses, so the shared cancel form template works unchanged.
+    """
+    tz = operator_timezone()
+    groups: list[dict[str, Any]] = []
+    current_key: str | None = None
+    for outcome in outcomes:
+        local = outcome.target_slot.astimezone(tz)
+        key = local.date().isoformat()
+        if key != current_key:
+            groups.append(
+                {
+                    "date_label": local.strftime("%a %d %b"),
+                    "iso_date": key,
+                    "rows": [],
+                }
+            )
+            current_key = key
+        groups[-1]["rows"].append(
+            {
+                "id": int(outcome.id),
+                "target_class": outcome.target_class,
+                "time_label": local.strftime("%H:%M"),
+                "fallback_index": outcome.granted_fallback_index,
+            }
+        )
+    return groups
 
 
 __all__ = ["router"]

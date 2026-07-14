@@ -78,6 +78,49 @@
     </div>
   {% endif %}
 
+  {# ---- Upcoming (H.1 full) ------------------------------------- #}
+  <section class="wb-upcoming">
+    <h2 class="wb-section-title">🗓️ Upcoming bookings</h2>
+    {% if not upcoming_days %}
+      <p class="wb-muted wb-note">
+        No granted bookings on the horizon. Your rules will fire when
+        their next booking window opens.
+      </p>
+    {% else %}
+      <div class="wb-upcoming__grid">
+        {% for day in upcoming_days %}
+          <article class="wb-upcoming__day">
+            <header class="wb-upcoming__date">{{ day.date_label }}</header>
+            <div class="wb-upcoming__list">
+              {% for booking in day.rows %}
+                <div class="wb-upcoming__item">
+                  <span class="wb-upcoming__time">{{ booking.time_label }}</span>
+                  <code class="wb-upcoming__class">{{ booking.target_class }}</code>
+                  {% if booking.fallback_index == 1 %}
+                    <span class="wb-muted wb-note--xs">(second shot)</span>
+                  {% endif %}
+                  <form
+                    method="post"
+                    action="/bookings/{{ booking.id }}/cancel"
+                    class="wb-inline-form wb-upcoming__cancel"
+                    onsubmit="return wbConfirm(this, event, 'Cancel this booking on WodBuster?')"
+                  >
+                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                    <button type="submit" class="wb-btn wb-btn--danger">
+                      🚫 Cancel
+                    </button>
+                  </form>
+                </div>
+              {% endfor %}
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </section>
+
+  {# ---- All attempts, newest first ------------------------------ #}
+  <h2 class="wb-section-title wb-section-title--spaced">📜 All attempts</h2>
   {% if not rows %}
     <div class="wb-empty-state">
       <p class="wb-empty-state__title">🕓 No bookings yet</p>

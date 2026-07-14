@@ -1104,3 +1104,80 @@ button.wb-confirm__cancel:focus-visible,
 .wb-hero-note {
   margin-top: 2rem;
 }
+
+/* --------------------------------------------------------------------------
+   Upcoming bookings (history H.1 full)
+   -------------------------------------------------------------------------- */
+
+.wb-section-title {
+  font-size: 1.1rem;
+  margin: 0 0 0.85rem;
+  color: var(--wb-text);
+}
+.wb-section-title--spaced {
+  margin-top: 2.5rem;
+}
+
+.wb-upcoming {
+  margin-bottom: 2rem;
+}
+
+.wb-upcoming__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.wb-upcoming__day {
+  padding: 0.9rem 1rem;
+  background: var(--wb-bg-card);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius);
+}
+
+.wb-upcoming__date {
+  font-weight: 600;
+  color: var(--wb-accent);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.6rem;
+}
+
+.wb-upcoming__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.wb-upcoming__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--wb-border);
+}
+.wb-upcoming__item:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.wb-upcoming__time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--wb-text);
+  min-width: 3.2rem;
+}
+
+.wb-upcoming__class {
+  color: var(--wb-text);
+}
+
+.wb-upcoming__cancel {
+  margin-left: auto;
+}
+.wb-upcoming__cancel .wb-btn {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.82rem;
+}
