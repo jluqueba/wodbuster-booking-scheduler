@@ -30,7 +30,7 @@ Design choices worth calling out:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -40,6 +40,7 @@ from ..booking.executor import BookingExecutor
 from ..heartbeat.probe import HeartbeatProbe
 from ..notifications.dispatcher import NotificationDispatcher
 from ..persistence.models import SchedulerRule
+from .anomaly_tick import run_anomaly_tick
 from .heartbeat_tick import SessionFactory, run_heartbeat_tick
 from .rule_jobs import register_rule_job
 
@@ -47,6 +48,7 @@ _log = structlog.get_logger(__name__)
 
 HEARTBEAT_JOB_ID = "cookie_heartbeat"
 DISPATCHER_JOB_ID = "notification_dispatcher"
+ANOMALY_JOB_ID = "anomaly_detector"
 
 
 def build_scheduler() -> BackgroundScheduler:
@@ -133,6 +135,50 @@ def register_dispatcher_job(
     )
 
 
+def register_anomaly_job(
+    scheduler: BackgroundScheduler,
+    session_factory: SessionFactory,
+    *,
+    interval_seconds: int = 60,
+) -> None:
+    """Register the per-run anomaly detector on ``scheduler``.
+
+    Ticks every ``interval_seconds`` (default 60). Same idempotency
+    contract as the other registrations: removes any pre-existing
+    job with the same id before adding.
+    """
+
+    def _tick() -> None:
+        try:
+            run_anomaly_tick(session_factory)
+        except Exception:
+            # APScheduler swallows exceptions inside jobs; log them
+            # explicitly so the operator sees the failure in the app
+            # logs rather than only in APScheduler's stderr fallback.
+            _log.exception("scheduler.anomaly_tick_failed")
+
+    if scheduler.get_job(ANOMALY_JOB_ID) is not None:
+        scheduler.remove_job(ANOMALY_JOB_ID)
+
+    scheduler.add_job(
+        func=_tick,
+        trigger=IntervalTrigger(seconds=interval_seconds),
+        id=ANOMALY_JOB_ID,
+        max_instances=1,
+        coalesce=True,
+        # Delay the first run by one interval so the scheduler has a
+        # chance to publish outcomes before we start looking for
+        # missing ones. Immediate fire would race the first booking
+        # tick on cold start.
+        next_run_time=datetime.now(tz=UTC) + timedelta(seconds=interval_seconds),
+    )
+    _log.info(
+        "scheduler.anomaly_job_registered",
+        job_id=ANOMALY_JOB_ID,
+        interval_seconds=interval_seconds,
+    )
+
+
 def register_rule_bootstrap_jobs(
     scheduler: BackgroundScheduler,
     *,
@@ -182,9 +228,11 @@ def register_rule_bootstrap_jobs(
 
 
 __all__ = [
+    "ANOMALY_JOB_ID",
     "DISPATCHER_JOB_ID",
     "HEARTBEAT_JOB_ID",
     "build_scheduler",
+    "register_anomaly_job",
     "register_dispatcher_job",
     "register_heartbeat_job",
     "register_rule_bootstrap_jobs",
