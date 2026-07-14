@@ -31,7 +31,7 @@ from fastapi.templating import Jinja2Templates
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
-from ..i18n import t
+from ..i18n import lang_url, t
 from ..persistence.engine import get_session
 from ..scheduler.rule_jobs import operator_timezone
 from . import vacation as vacation_service
@@ -158,7 +158,7 @@ def vacation_close(
 
 def _redirect_with_flash(message: str, *, kind: str) -> RedirectResponse:
     query = urlencode({"flash": message, "flash_kind": kind})
-    return RedirectResponse(url=f"/vacation?{query}", status_code=303)
+    return RedirectResponse(url=f"{lang_url('/vacation')}?{query}", status_code=303)
 
 
 def _parse_date_input(raw: str, tz: ZoneInfo) -> datetime:

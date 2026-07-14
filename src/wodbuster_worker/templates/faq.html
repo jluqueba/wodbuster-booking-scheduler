@@ -104,8 +104,8 @@
       <summary>How do I make my first booking?</summary>
       <p class="wb-faq__answer">
         Three steps: (1) paste a fresh <code>.WBAuth</code> cookie on
-        the <a href="/cookie">Cookie</a> page, (2) create a rule on
-        the <a href="/rules">Rules</a> page describing which class
+        the <a href="{{ lang_url('/cookie') }}">Cookie</a> page, (2) create a rule on
+        the <a href="{{ lang_url('/rules') }}">Rules</a> page describing which class
         you attend, at what time, and when WodBuster opens the
         reservation window for it, (3) wait — the scheduler fires
         automatically at the window-open instant.
@@ -194,7 +194,7 @@
     <details>
       <summary>How do I cancel a booking?</summary>
       <p class="wb-faq__answer">
-        Go to the <a href="/history">History</a> page, find the
+        Go to the <a href="{{ lang_url('/history') }}">History</a> page, find the
         booking (it must be granted and its class start must still
         be in the future), and tap Cancel. The app calls WodBuster,
         flips the row to <em>cancelled</em>, and sends a Telegram

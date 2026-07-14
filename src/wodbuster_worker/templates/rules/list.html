@@ -17,7 +17,7 @@
   <p class="wb-page-subtitle">{{ t("rules.subtitle") }}</p>
 
   <div class="wb-toolbar">
-    <a href="/rules/new" class="wb-btn wb-btn--primary">{{ t("rules.new_button") }}</a>
+    <a href="{{ lang_url('/rules/new') }}" class="wb-btn wb-btn--primary">{{ t("rules.new_button") }}</a>
   </div>
 
   {% if not rules %}
@@ -65,10 +65,10 @@
               {% endif %}
             </td>
             <td class="wb-cell-actions">
-              <a href="/rules/{{ rule.id }}" class="wb-btn">{{ t("rules.actions.edit") }}</a>
+              <a href="{{ lang_url('/rules/' ~ rule.id) }}" class="wb-btn">{{ t("rules.actions.edit") }}</a>
               <form
                 method="post"
-                action="/rules/{{ rule.id }}/delete"
+                action="{{ lang_url('/rules/' ~ rule.id ~ '/delete') }}"
                 class="wb-inline-form"
                 onsubmit="return wbConfirm(this, event, '{{ t('rules.confirm.delete') }}')"
               >

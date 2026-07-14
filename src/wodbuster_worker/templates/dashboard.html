@@ -15,7 +15,7 @@
 
 {% block content %}
   <span class="wb-page-title__eyebrow">{{ t("dashboard.eyebrow") }}</span>
-  <h1 class="wb-page-title">
+  <h1 class="wb-page-title" data-operator-id="{{ operator_id }}">
     {# Greeting: localised "Hero" label + operator's display name
        (seated on the session by the OAuth callback). Falls back to
        the label alone when the display name is empty so the page
@@ -23,9 +23,6 @@
     {{ t("dashboard.title.hero") }}{% if display_name %}, <span class="wb-title-name">{{ display_name }}</span>{% endif %} {{ t("dashboard.title.emoji") }}
   </h1>
   <p class="wb-page-subtitle">{{ t("dashboard.subtitle") }}</p>
-  <p class="wb-muted wb-operator-tag" data-operator-id="{{ operator_id }}">
-    {{ t("dashboard.operator_tag", operator_id=operator_id) }}
-  </p>
 
   {% include "_banners.html" %}
 
@@ -134,23 +131,23 @@
   {% endif %}
 
   <div class="wb-feature-grid">
-    <a href="/rules" class="wb-card wb-card--interactive">
+    <a href="{{ lang_url('/rules') }}" class="wb-card wb-card--interactive">
       <h3 class="wb-card__title">{{ t("dashboard.cards.rules.title") }}</h3>
       <p class="wb-card__body">{{ t("dashboard.cards.rules.body") }}</p>
     </a>
-    <a href="/cookie" class="wb-card wb-card--interactive">
+    <a href="{{ lang_url('/cookie') }}" class="wb-card wb-card--interactive">
       <h3 class="wb-card__title">{{ t("dashboard.cards.cookie.title") }}</h3>
       <p class="wb-card__body">{{ t("dashboard.cards.cookie.body") }}</p>
     </a>
-    <a href="/history" class="wb-card wb-card--interactive">
+    <a href="{{ lang_url('/history') }}" class="wb-card wb-card--interactive">
       <h3 class="wb-card__title">{{ t("dashboard.cards.history.title") }}</h3>
       <p class="wb-card__body">{{ t("dashboard.cards.history.body") }}</p>
     </a>
-    <a href="/vacation" class="wb-card wb-card--interactive">
+    <a href="{{ lang_url('/vacation') }}" class="wb-card wb-card--interactive">
       <h3 class="wb-card__title">{{ t("dashboard.cards.vacation.title") }}</h3>
       <p class="wb-card__body">{{ t("dashboard.cards.vacation.body") }}</p>
     </a>
-    <a href="/telegram" class="wb-card wb-card--interactive">
+    <a href="{{ lang_url('/telegram') }}" class="wb-card wb-card--interactive">
       <h3 class="wb-card__title">{{ t("dashboard.cards.telegram.title") }}</h3>
       <p class="wb-card__body">{{ t("dashboard.cards.telegram.body") }}</p>
     </a>

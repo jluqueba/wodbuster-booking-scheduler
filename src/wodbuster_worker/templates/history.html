@@ -106,7 +106,7 @@
                     </span>
                     <form
                       method="post"
-                      action="/bookings/{{ slot.id }}/cancel"
+                      action="{{ lang_url('/bookings/' ~ slot.id ~ '/cancel') }}"
                       class="wb-inline-form wb-upcoming__cancel"
                       onsubmit="return wbConfirm(this, event, '{{ t('history.confirm.cancel') }}')"
                     >
@@ -172,7 +172,7 @@
               {% if row.cancellable %}
                 <form
                   method="post"
-                  action="/bookings/{{ row.id }}/cancel"
+                  action="{{ lang_url('/bookings/' ~ row.id ~ '/cancel') }}"
                   class="wb-inline-form"
                   onsubmit="return wbConfirm(this, event, '{{ t('history.confirm.cancel') }}')"
                 >

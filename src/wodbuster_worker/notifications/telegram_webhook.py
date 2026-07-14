@@ -35,7 +35,7 @@ from sqlalchemy import select
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
-from ..i18n import t
+from ..i18n import lang_url, t
 from ..persistence.engine import get_session
 from ..persistence.models import OperatorProfile
 from . import telegram as telegram_sender
@@ -153,7 +153,8 @@ def telegram_unbind(
             operator.telegram_chat_id = None
             session.commit()
     return RedirectResponse(
-        url="/telegram?" + urlencode({"flash": t("flash.telegram.unbound"), "flash_kind": "info"}),
+        url=f"{lang_url('/telegram')}?"
+        + urlencode({"flash": t("flash.telegram.unbound"), "flash_kind": "info"}),
         status_code=303,
     )
 
@@ -217,7 +218,7 @@ def telegram_test(
 
 def _redirect_flash(message: str, *, kind: str) -> RedirectResponse:
     query = urlencode({"flash": message, "flash_kind": kind})
-    return RedirectResponse(url=f"/telegram?{query}", status_code=303)
+    return RedirectResponse(url=f"{lang_url('/telegram')}?{query}", status_code=303)
 
 
 def _build_deep_link(bot_username: str | None, token: str) -> str | None:

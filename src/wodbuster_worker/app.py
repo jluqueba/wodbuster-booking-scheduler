@@ -38,7 +38,6 @@ from .heartbeat.next_window import compute_next_booking
 from .heartbeat.probe import HeartbeatProbe
 from .i18n import register_jinja_globals
 from .i18n.middleware import LanguageMiddleware
-from .i18n.routes import router as i18n_router
 from .notifications.banners import load_banners_for_operator
 from .notifications.dispatcher import NotificationDispatcher
 from .notifications.telegram_bind import TelegramBindStore
@@ -307,7 +306,8 @@ def create_app(*, settings: Settings | None = None, secrets: Secrets | None = No
         # Starlette runs constructor middleware outer→inner in the
         # listed order, so the session middleware wraps the language
         # middleware; ``request.session`` is populated by the time
-        # ``LanguageMiddleware.dispatch`` runs.
+        # ``LanguageMiddleware`` runs even though the language layer
+        # no longer reads from it.
         middleware=[
             session_middleware,
             _StarletteMiddleware(LanguageMiddleware),
@@ -374,7 +374,6 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(history_router)
     app.include_router(vacation_router)
     app.include_router(telegram_router)
-    app.include_router(i18n_router)
     app.include_router(static_pages_router)
     app.add_api_route("/health", health, methods=["GET"])
     # Static assets (brand CSS, later JS / images). Mounted after

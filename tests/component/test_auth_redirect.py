@@ -62,13 +62,13 @@ def test_anonymous_root_renders_landing_page(
 
     assert response.status_code == 200
     body = response.text
-    # All three provider sign-in options are surfaced on the landing.
+    # Microsoft and Google are surfaced on the landing; GitHub is not.
     assert "Sign in with Microsoft" in body
-    assert "Sign in with GitHub" in body
     assert "Sign in with Google" in body
+    assert "Sign in with GitHub" not in body
     assert 'href="/auth/microsoft/login"' in body
-    assert 'href="/auth/github/login"' in body
     assert 'href="/auth/google/login"' in body
+    assert 'href="/auth/github/login"' not in body
     # No operator data leaks through the anonymous view.
     assert "Alice Wonderland-42" not in body
 
