@@ -61,6 +61,7 @@ from ..wodbuster_client.client import (
 from ..wodbuster_client.parsers import (
     ClassSlot,
     extract_class_slots,
+    extract_seconds_until_publication,
     find_matching_slot,
 )
 from .outcomes import persist_outcome
@@ -123,6 +124,9 @@ class BookingExecutor:
         cookie_store: CookieStore,
         retry_interval_s: float = 5.0,
         retry_timeout_s: float = 120.0,
+        alignment_poll_interval_s: float = 1.0,
+        alignment_threshold_s: float = 1.0,
+        alignment_deadline_s: float = 60.0,
         sleep: Callable[[float], None] = time.sleep,
         time_source: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -131,6 +135,16 @@ class BookingExecutor:
         self._cookie_store = cookie_store
         self._retry_interval_s = retry_interval_s
         self._retry_timeout_s = retry_timeout_s
+        # US1.5 countdown alignment. Poll LoadClass on ``poll_interval``
+        # until ``SegundosHastaPublicacion`` drops to ``<= threshold``,
+        # capped by ``deadline`` seconds since alignment started. The
+        # scheduler wrapper fires the job ~30s before the window (see
+        # ``rule_jobs.register_rule_job``) so the poll loop has time
+        # to warm the connection pool and sync against WodBuster's
+        # clock instead of relying on the operator's wall time.
+        self._alignment_poll_interval_s = alignment_poll_interval_s
+        self._alignment_threshold_s = alignment_threshold_s
+        self._alignment_deadline_s = alignment_deadline_s
         self._sleep = sleep
         self._time_source = time_source
 
@@ -192,6 +206,13 @@ class BookingExecutor:
                 telegram_text=self._render_no_cookie_text(rule, target_slot),
             )
 
+        # US1.5: align on WodBuster's own ``SegundosHastaPublicacion``
+        # countdown so the booking fires the instant the window opens
+        # server-side, not when our wall clock says ``booking_opens_at``.
+        # Also pre-warms the httpx keep-alive pool for the ``inscribir``
+        # call that follows.
+        self._align_to_publication(cookie=cookie, ticks=ticks, rule_id=int(rule.id))
+
         # -- primary attempt ------------------------------------------
         primary_result = self._attempt(
             rule=rule,
@@ -246,6 +267,72 @@ class BookingExecutor:
                 operator_id=operator_id,
                 target_slot=target_slot,
             )
+
+    def _align_to_publication(self, *, cookie: str, ticks: int, rule_id: int) -> None:
+        """Poll ``LoadClass`` until the server reports the window is open.
+
+        Reads ``SegundosHastaPublicacion`` off each response and sleeps
+        until the value drops to ``<= alignment_threshold_s`` (default
+        1 second). Also serves as the pre-warm tick: the first
+        request pays the TCP + TLS handshake cost so the ``inscribir``
+        call rides on a warm keep-alive socket.
+
+        Safety net: the loop bails out after ``alignment_deadline_s``
+        seconds regardless of the countdown value so a stuck
+        publication clock never blocks the executor. Missing or
+        malformed countdown fields fall through immediately — the
+        legacy code path (fire at ``booking_opens_at`` wall-clock
+        time) still holds.
+
+        Upstream errors are logged and swallowed. If the connection
+        is broken, the primary ``inscribir`` attempt below will
+        surface the failure through the existing terminal-status
+        machinery.
+        """
+        start = self._time_source()
+        deadline = start + self._alignment_deadline_s
+        polls = 0
+        while True:
+            try:
+                response = self._client.load_class(cookie, ticks)
+            except (WodBusterAuthError, WodBusterTransportError, WodBusterProtocolError):
+                # Let the primary attempt below surface the real
+                # terminal status; alignment does not persist outcomes.
+                _log.warning("booking.align.upstream_error", rule_id=rule_id, polls=polls)
+                return
+            polls += 1
+            countdown = extract_seconds_until_publication(response.payload)
+            if countdown is None:
+                _log.info(
+                    "booking.align.countdown_absent",
+                    rule_id=rule_id,
+                    polls=polls,
+                )
+                return
+            if countdown <= self._alignment_threshold_s:
+                _log.info(
+                    "booking.align.aligned",
+                    rule_id=rule_id,
+                    polls=polls,
+                    countdown=countdown,
+                )
+                return
+            now = self._time_source()
+            if now >= deadline:
+                _log.warning(
+                    "booking.align.deadline_hit",
+                    rule_id=rule_id,
+                    polls=polls,
+                    countdown=countdown,
+                )
+                return
+            # Sleep the smaller of the poll interval and the remaining
+            # time until the deadline — we never want to overshoot.
+            sleep_for = min(
+                self._alignment_poll_interval_s,
+                max(0.0, deadline - now),
+            )
+            self._sleep(sleep_for)
 
     def _attempt(
         self,

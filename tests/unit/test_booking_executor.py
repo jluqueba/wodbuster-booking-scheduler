@@ -16,6 +16,7 @@ Real Postgres coverage of the writer lives in
 
 from __future__ import annotations
 
+import types as _types
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -34,6 +35,13 @@ from wodbuster_worker.wodbuster_client.client import (
     WodBusterTransportError,
 )
 
+# Capture the real ``_align_to_publication`` at import time — the
+# autouse ``_skip_alignment`` fixture replaces it during every test,
+# but the alignment tests need the real body. Rebinding via
+# ``types.MethodType`` in each of those tests gives the instance
+# back the unpatched implementation without disturbing the class.
+_REAL_ALIGN_TO_PUBLICATION = BookingExecutor._align_to_publication
+
 
 @pytest.fixture(autouse=True)
 def _no_vacation_window(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -49,6 +57,24 @@ def _no_vacation_window(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "wodbuster_worker.booking.executor.find_covering_window",
         lambda session, *, operator_id, target_slot: None,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _skip_alignment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default the US1.5 countdown alignment to a no-op.
+
+    Alignment issues an extra ``LoadClass`` call at the top of
+    :meth:`BookingExecutor.book`. Existing tests script a precise
+    number of responses for the primary + second-shot attempts;
+    without this patch every scripted response would be off by one.
+    Tests that exercise alignment explicitly clear the patch by
+    replacing ``BookingExecutor._align_to_publication`` on the
+    instance they build.
+    """
+    monkeypatch.setattr(
+        "wodbuster_worker.booking.executor.BookingExecutor._align_to_publication",
+        lambda self, *, cookie, ticks, rule_id: None,
     )
 
 
@@ -642,3 +668,128 @@ def test_ticks_derived_from_utc_midnight_of_target_slot(
 
     assert client.load_class_calls[0]["ticks"] == expected_ticks
     assert client.inscribir_calls[0]["ticks"] == expected_ticks
+
+
+# ---------------------------------------------------------------------------
+# US1.5 countdown alignment
+# ---------------------------------------------------------------------------
+
+
+def _aligned_payload(seconds_until: float) -> LoadClassResponse:
+    """LoadClass response scripted with a specific countdown value."""
+    base = _load_class_payload()
+    return LoadClassResponse(
+        status_code=base.status_code,
+        latency_ms=base.latency_ms,
+        payload={**base.payload, "SegundosHastaPublicacion": seconds_until},
+    )
+
+
+def test_alignment_polls_until_countdown_below_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Executor polls LoadClass while ``SegundosHastaPublicacion`` is
+    above the threshold, then hands off to the primary attempt."""
+    sleeps: list[float] = []
+    ex, client, writer = _executor(
+        load_class_responses=[
+            _aligned_payload(15.0),
+            _aligned_payload(8.0),
+            _aligned_payload(0.5),
+            _load_class_payload(),  # primary attempt's own LoadClass
+        ],
+        inscribir_responses=[_inscribir_ok()],
+        monkeypatch=monkeypatch,
+    )
+    ex._align_to_publication = _types.MethodType(_REAL_ALIGN_TO_PUBLICATION, ex)  # type: ignore[method-assign]
+    ex._sleep = sleeps.append  # type: ignore[method-assign]
+
+    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+
+    assert result.terminal_status == "granted"
+    # Three alignment polls (15s -> 8s -> 0.5s aligned) + one primary
+    # LoadClass = four total.
+    assert len(client.load_class_calls) == 4
+    # Two sleeps between the three alignment polls; no sleep after
+    # the aligned poll.
+    assert len(sleeps) == 2
+    assert writer.calls[0]["terminal_status"] == "granted"
+
+
+def test_alignment_absent_countdown_falls_through_immediately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing ``SegundosHastaPublicacion`` skips alignment, so the
+    booking flow keeps working against servers that do not surface
+    the countdown."""
+    sleeps: list[float] = []
+    # Default ``_load_class_payload`` uses ``-100.0`` for the field,
+    # which is below the threshold — alignment exits on the first
+    # poll. Verifies the "aligned on first check" branch.
+    ex, client, _writer = _executor(
+        load_class_responses=[_load_class_payload(), _load_class_payload()],
+        inscribir_responses=[_inscribir_ok()],
+        monkeypatch=monkeypatch,
+    )
+    ex._align_to_publication = _types.MethodType(_REAL_ALIGN_TO_PUBLICATION, ex)  # type: ignore[method-assign]
+    ex._sleep = sleeps.append  # type: ignore[method-assign]
+
+    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+
+    assert result.terminal_status == "granted"
+    assert len(client.load_class_calls) == 2  # 1 alignment + 1 primary
+    assert sleeps == []
+
+
+def test_alignment_deadline_bail_still_runs_booking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A publication clock stuck above the threshold does not block
+    the executor: alignment gives up after ``alignment_deadline_s``
+    and hands off to the primary attempt anyway."""
+    time_series: list[float] = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0]
+    sleeps: list[float] = []
+    ex, client, writer = _executor(
+        load_class_responses=[
+            _aligned_payload(30.0),
+            _aligned_payload(30.0),
+            _aligned_payload(30.0),
+            _load_class_payload(),  # primary attempt's LoadClass
+        ],
+        inscribir_responses=[_inscribir_ok()],
+        monkeypatch=monkeypatch,
+        time_series=time_series,
+    )
+    ex._align_to_publication = _types.MethodType(_REAL_ALIGN_TO_PUBLICATION, ex)  # type: ignore[method-assign]
+    ex._alignment_deadline_s = 4.0  # type: ignore[attr-defined]
+    ex._sleep = sleeps.append  # type: ignore[method-assign]
+
+    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+
+    assert result.terminal_status == "granted"
+    # Booking still fires; deadline is a safety net, not a failure.
+    assert writer.calls[0]["terminal_status"] == "granted"
+    # At least one alignment poll happened before the deadline hit.
+    assert len(client.load_class_calls) >= 2
+
+
+def test_alignment_upstream_error_swallowed_and_booking_proceeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A transient upstream error during alignment lets the primary
+    attempt run — that path already surfaces terminal statuses."""
+    ex, client, writer = _executor(
+        load_class_responses=[
+            WodBusterTransportError("connection reset"),
+            _load_class_payload(),  # primary attempt succeeds
+        ],
+        inscribir_responses=[_inscribir_ok()],
+        monkeypatch=monkeypatch,
+    )
+    ex._align_to_publication = _types.MethodType(_REAL_ALIGN_TO_PUBLICATION, ex)  # type: ignore[method-assign]
+
+    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+
+    assert result.terminal_status == "granted"
+    assert len(client.load_class_calls) == 2
+    assert writer.calls[0]["terminal_status"] == "granted"
