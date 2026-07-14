@@ -26,3 +26,6 @@ ignore = [
 
 [lint.per-file-ignores]
 "tests/**" = ["B011"]
+# Catalog holds UI copy with emoji; RUF001 flags ambiguous unicode
+# characters that are deliberate in user-facing strings.
+"src/wodbuster_worker/i18n/catalog.py" = ["RUF001"]

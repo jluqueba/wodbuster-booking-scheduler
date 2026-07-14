@@ -36,17 +36,17 @@
 {% endblock %}
 
 {% block content %}
-  <span class="wb-page-title__eyebrow">Automation</span>
+  <span class="wb-page-title__eyebrow">{{ t("rules.eyebrow") }}</span>
   <h1 class="wb-page-title">✏️ {{ heading }}</h1>
   <p class="wb-page-subtitle">
-    <a href="/rules">← Back to rules</a>
+    <a href="/rules">{{ t("rules.back_to_rules") }}</a>
   </p>
 
   <form class="wb-card" method="post" action="{{ action_url }}">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
     <fieldset>
-      <label for="day_of_week">Attendance day</label>
+      <label for="day_of_week">{{ t("rules.form.attendance_day") }}</label>
       <select id="day_of_week" name="day_of_week" required>
         <option value=""></option>
         {% for label in day_labels %}
@@ -61,24 +61,23 @@
     </fieldset>
 
     <fieldset>
-      <legend>Primary class</legend>
+      <legend>{{ t("rules.form.primary_class") }}</legend>
       {% if picker_unavailable %}
         <p class="wb-picker-note">
-          Live class list unavailable. Paste a fresh cookie
-          (<a href="/cookie">Cookie</a>) before saving — the class-type
-          and time dropdowns are seeded from your WodBuster schedule.
+          {{ t("rules.form.picker_unavailable") }}
+          <a href="/cookie">{{ t("nav.cookie") }}</a>
         </p>
       {% endif %}
       <div class="wb-row2">
         <div>
-          <label for="class_type">Class type</label>
+          <label for="class_type">{{ t("rules.form.class_type") }}</label>
           {% set current_class_type = form_values.get('class_type') %}
           <select id="class_type" name="class_type" required
                   {% if not picker_class_types and not current_class_type %}disabled{% endif %}>
             <option value=""></option>
             {% if current_class_type and current_class_type not in picker_class_types %}
               <option value="{{ current_class_type }}" selected>
-                {{ current_class_type }} (not in current schedule)
+                {{ t("rules.form.not_in_schedule", name=current_class_type) }}
               </option>
             {% endif %}
             {% for name in picker_class_types %}
@@ -92,7 +91,7 @@
           {% endif %}
         </div>
         <div>
-          <label for="class_time">Class time</label>
+          <label for="class_time">{{ t("rules.form.class_time") }}</label>
           {{ widgets.time_picker("class_time", form_values.get("class_time", ""), required=true) }}
           {% if errors.get('class_time') %}
             <p class="wb-field-error">{{ errors['class_time'] }}</p>
@@ -102,10 +101,10 @@
     </fieldset>
 
     <fieldset>
-      <legend>Booking window</legend>
+      <legend>{{ t("rules.form.booking_window") }}</legend>
       <div class="wb-row2">
         <div>
-          <label for="booking_opens_days_before">Days before class</label>
+          <label for="booking_opens_days_before">{{ t("rules.form.days_before") }}</label>
           <input
             id="booking_opens_days_before"
             name="booking_opens_days_before"
@@ -121,7 +120,7 @@
           {% endif %}
         </div>
         <div>
-          <label for="booking_opens_at">Opens at</label>
+          <label for="booking_opens_at">{{ t("rules.form.opens_at") }}</label>
           {{ widgets.time_picker("booking_opens_at", form_values.get("booking_opens_at", "22:40"), required=true) }}
           {% if errors.get('booking_opens_at') %}
             <p class="wb-field-error">{{ errors['booking_opens_at'] }}</p>
@@ -131,17 +130,17 @@
     </fieldset>
 
     <fieldset class="wb-second-shot">
-      <legend>Second shot (optional)</legend>
+      <legend>{{ t("rules.form.second_shot") }}</legend>
       <div class="wb-row2">
         <div>
-          <label for="second_shot_class_type">Alternative class type</label>
+          <label for="second_shot_class_type">{{ t("rules.form.second_shot_type") }}</label>
           {% set current_ss_type = form_values.get('second_shot_class_type') %}
           <select id="second_shot_class_type" name="second_shot_class_type"
                   {% if not picker_class_types and not current_ss_type %}disabled{% endif %}>
             <option value=""></option>
             {% if current_ss_type and current_ss_type not in picker_class_types %}
               <option value="{{ current_ss_type }}" selected>
-                {{ current_ss_type }} (not in current schedule)
+                {{ t("rules.form.not_in_schedule", name=current_ss_type) }}
               </option>
             {% endif %}
             {% for name in picker_class_types %}
@@ -155,7 +154,7 @@
           {% endif %}
         </div>
         <div>
-          <label for="second_shot_class_time">Alternative time</label>
+          <label for="second_shot_class_time">{{ t("rules.form.second_shot_time") }}</label>
           {{ widgets.time_picker("second_shot_class_time", form_values.get("second_shot_class_time", ""), required=false) }}
           {% if errors.get('second_shot_class_time') %}
             <p class="wb-field-error">{{ errors['second_shot_class_time'] }}</p>
@@ -166,12 +165,12 @@
 
     <div class="wb-form-actions">
       <button type="submit" class="wb-btn--primary"
-              {% if picker_unavailable %}disabled{% endif %}>Save changes</button>
+              {% if picker_unavailable %}disabled{% endif %}>{{ t("rules.form.save_button") }}</button>
       {% if delete_url %}
         <form method="post" action="{{ delete_url }}" class="wb-inline-form"
-              onsubmit="return wbConfirm(this, event, 'Delete this rule?')">
+              onsubmit="return wbConfirm(this, event, '{{ t('rules.confirm.delete') }}')">
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-          <button type="submit" class="wb-btn wb-btn--danger">🗑️ Delete rule</button>
+          <button type="submit" class="wb-btn wb-btn--danger">{{ t("rules.form.delete_button") }}</button>
         </form>
       {% endif %}
     </div>

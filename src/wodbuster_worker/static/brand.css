@@ -185,6 +185,51 @@ hr {
 .wb-nav__spacer { flex-grow: 1; }
 
 .wb-nav form { display: inline; margin: 0; }
+
+/* Right-hand cluster: language picker + logout, aligned as a
+   flex row so both sit at the same baseline regardless of which
+   grows first. */
+.wb-nav__right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+/* Two-button language toggle. Buttons render as inline tabs; the
+   active one gets the accent border so the operator's current
+   choice is obvious. */
+.wb-lang-picker {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+.wb-lang-picker__btn {
+  background: transparent;
+  color: var(--wb-text-muted);
+  border: 1px solid var(--wb-border);
+  padding: 0.25rem 0.55rem;
+  border-radius: var(--wb-radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.wb-lang-picker__btn:hover {
+  color: var(--wb-text);
+  border-color: var(--wb-border-strong);
+}
+.wb-lang-picker__btn--active {
+  color: var(--wb-accent-ink);
+  background: var(--wb-accent);
+  border-color: var(--wb-accent);
+}
+.wb-lang-picker__btn--active:hover {
+  background: var(--wb-accent-hover);
+  border-color: var(--wb-accent-hover);
+  color: var(--wb-accent-ink);
+}
+
 .wb-nav button.wb-nav__logout {
   background: transparent;
   color: var(--wb-text-muted);

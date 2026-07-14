@@ -4,7 +4,7 @@
    naturally. #}
 {% extends "base.html" %}
 
-{% block title %}Rules — WodBuster Booking Worker{% endblock %}
+{% block title %}{{ t("nav.rules") }} — WodBuster Booking Worker{% endblock %}
 
 {% block nav %}
   {% set active_nav = "rules" %}
@@ -12,31 +12,28 @@
 {% endblock %}
 
 {% block content %}
-  <span class="wb-page-title__eyebrow">Automation</span>
-  <h1 class="wb-page-title">📅 Rules</h1>
-  <p class="wb-page-subtitle">
-    Weekly bookings on autopilot. Pick your days, pick your class, tell
-    the worker when the reservation window opens.
-  </p>
+  <span class="wb-page-title__eyebrow">{{ t("rules.eyebrow") }}</span>
+  <h1 class="wb-page-title">{{ t("rules.title") }}</h1>
+  <p class="wb-page-subtitle">{{ t("rules.subtitle") }}</p>
 
   <div class="wb-toolbar">
-    <a href="/rules/new" class="wb-btn wb-btn--primary">➕ New rule</a>
+    <a href="/rules/new" class="wb-btn wb-btn--primary">{{ t("rules.new_button") }}</a>
   </div>
 
   {% if not rules %}
     <div class="wb-empty-state">
-      <p class="wb-empty-state__title">✨ No rules yet</p>
-      <p>Create one to start automating bookings.</p>
+      <p class="wb-empty-state__title">{{ t("rules.empty.title") }}</p>
+      <p>{{ t("rules.empty.body") }}</p>
     </div>
   {% else %}
     <table class="wb-rules-table">
       <thead>
         <tr>
-          <th>Attend</th>
-          <th>Primary class</th>
-          <th>Second shot</th>
-          <th>Window opens</th>
-          <th>Status</th>
+          <th>{{ t("rules.table.attend") }}</th>
+          <th>{{ t("rules.table.primary") }}</th>
+          <th>{{ t("rules.table.second_shot") }}</th>
+          <th>{{ t("rules.table.window") }}</th>
+          <th>{{ t("rules.table.status") }}</th>
           <th></th>
         </tr>
       </thead>
@@ -62,21 +59,21 @@
             </td>
             <td>
               {% if rule.active %}
-                <span class="wb-chip wb-chip--success">active</span>
+                <span class="wb-chip wb-chip--success">{{ t("chip.active") }}</span>
               {% else %}
-                <span class="wb-chip wb-chip--muted">paused</span>
+                <span class="wb-chip wb-chip--muted">{{ t("chip.paused") }}</span>
               {% endif %}
             </td>
             <td class="wb-cell-actions">
-              <a href="/rules/{{ rule.id }}" class="wb-btn">✏️ Edit</a>
+              <a href="/rules/{{ rule.id }}" class="wb-btn">{{ t("rules.actions.edit") }}</a>
               <form
                 method="post"
                 action="/rules/{{ rule.id }}/delete"
                 class="wb-inline-form"
-                onsubmit="return wbConfirm(this, event, 'Delete this rule?')"
+                onsubmit="return wbConfirm(this, event, '{{ t('rules.confirm.delete') }}')"
               >
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                <button type="submit" class="wb-btn wb-btn--danger">🗑️ Delete</button>
+                <button type="submit" class="wb-btn wb-btn--danger">{{ t("rules.actions.delete") }}</button>
               </form>
             </td>
           </tr>

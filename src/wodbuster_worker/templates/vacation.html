@@ -12,7 +12,7 @@
 #}
 {% extends "base.html" %}
 
-{% block title %}Vacation — WodBuster Booking Scheduler{% endblock %}
+{% block title %}{{ t("nav.vacation") }} — WodBuster Booking Scheduler{% endblock %}
 
 {% block head %}
 <style>
@@ -61,13 +61,9 @@
 {% endblock %}
 
 {% block content %}
-  <span class="wb-page-title__eyebrow">Automation</span>
-  <h1 class="wb-page-title">🏖️ Vacation mode</h1>
-  <p class="wb-page-subtitle">
-    Away from the gym? Enable vacation mode for a date range and the
-    worker cancels every granted booking inside it, then pauses
-    automatic booking until the range ends.
-  </p>
+  <span class="wb-page-title__eyebrow">{{ t("vacation.eyebrow") }}</span>
+  <h1 class="wb-page-title">{{ t("vacation.title") }}</h1>
+  <p class="wb-page-subtitle">{{ t("vacation.subtitle") }}</p>
 
   {% if flash %}
     <div class="wb-flash wb-flash--{{ flash_kind }}" role="status">
@@ -78,37 +74,32 @@
   <form method="post" action="/vacation" class="wb-vacation-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <div>
-      <label for="vac-start">Start</label>
+      <label for="vac-start">{{ t("vacation.form.start") }}</label>
       <input type="date" id="vac-start" name="start_date" required>
     </div>
     <div>
-      <label for="vac-end">End (inclusive)</label>
+      <label for="vac-end">{{ t("vacation.form.end") }}</label>
       <input type="date" id="vac-end" name="end_date" required>
     </div>
     <div>
       <button type="submit" class="wb-btn wb-btn--primary">
-        ➕ Enable vacation
+        {{ t("vacation.enable_button") }}
       </button>
     </div>
   </form>
 
   {% if not windows %}
     <div class="wb-empty-state">
-      <p class="wb-empty-state__title">☀️ No vacation windows</p>
-      <p>
-        Pick a start and end date above to schedule your first
-        holiday. Granted bookings inside the range will be
-        cancelled and the scheduler will skip runs until the range
-        ends.
-      </p>
+      <p class="wb-empty-state__title">{{ t("vacation.empty.title") }}</p>
+      <p>{{ t("vacation.empty.body") }}</p>
     </div>
   {% else %}
     <table class="wb-rules-table">
       <thead>
         <tr>
-          <th>Start</th>
-          <th>End</th>
-          <th>Status</th>
+          <th>{{ t("vacation.table.start") }}</th>
+          <th>{{ t("vacation.table.end") }}</th>
+          <th>{{ t("vacation.table.status") }}</th>
           <th></th>
         </tr>
       </thead>
@@ -119,9 +110,9 @@
             <td class="wb-tabular">{{ w.end_label }}</td>
             <td>
               {% if w.active_now %}
-                <span class="wb-chip wb-chip--accent">active</span>
+                <span class="wb-chip wb-chip--accent">{{ t("chip.active") }}</span>
               {% else %}
-                <span class="wb-chip wb-chip--muted">upcoming</span>
+                <span class="wb-chip wb-chip--muted">{{ t("chip.upcoming") }}</span>
               {% endif %}
             </td>
             <td class="wb-cell-actions">
@@ -129,11 +120,11 @@
                 method="post"
                 action="/vacation/{{ w.id }}/close"
                 class="wb-inline-form"
-                onsubmit="return wbConfirm(this, event, 'End this vacation window now?')"
+                onsubmit="return wbConfirm(this, event, '{{ t('vacation.confirm.close') }}')"
               >
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                 <button type="submit" class="wb-btn wb-btn--danger">
-                  ⏹️ End early
+                  {{ t("vacation.actions.end_early") }}
                 </button>
               </form>
             </td>

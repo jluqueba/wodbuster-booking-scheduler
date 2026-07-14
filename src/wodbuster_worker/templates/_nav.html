@@ -2,7 +2,12 @@
 
    The ``active_nav`` context variable determines which link gets the
    ``aria-current="page"`` marker. Values match the route family:
-   ``dashboard``, ``cookie``, ``rules``, ``history``, ``faq``.
+   ``dashboard``, ``cookie``, ``rules``, ``history``, ``vacation``,
+   ``telegram``, ``faq``.
+
+   Localised via the i18n ``t(...)`` helper registered as a Jinja
+   global. The language selector on the right POSTs to
+   ``/settings/language`` and bounces back to the current page.
 #}
 <nav class="wb-nav">
   <a href="/" class="wb-nav__brand" aria-label="WodBuster Booking Scheduler">
@@ -13,41 +18,56 @@
     <li>
       <a href="/"
          {% if active_nav == "dashboard" %}aria-current="page"{% endif %}
-      >🏠 Dashboard</a>
+      >{{ t("nav.dashboard") }}</a>
     </li>
     <li>
       <a href="/rules"
          {% if active_nav == "rules" %}aria-current="page"{% endif %}
-      >📅 Rules</a>
+      >{{ t("nav.rules") }}</a>
     </li>
     <li>
       <a href="/history"
          {% if active_nav == "history" %}aria-current="page"{% endif %}
-      >📜 History</a>
+      >{{ t("nav.history") }}</a>
     </li>
     <li>
       <a href="/vacation"
          {% if active_nav == "vacation" %}aria-current="page"{% endif %}
-      >🏖️ Vacation</a>
+      >{{ t("nav.vacation") }}</a>
     </li>
     <li>
       <a href="/cookie"
          {% if active_nav == "cookie" %}aria-current="page"{% endif %}
-      >🍪 Cookie</a>
+      >{{ t("nav.cookie") }}</a>
     </li>
     <li>
       <a href="/telegram"
          {% if active_nav == "telegram" %}aria-current="page"{% endif %}
-      >🤖 Telegram</a>
+      >{{ t("nav.telegram") }}</a>
     </li>
     <li>
       <a href="/faq"
          {% if active_nav == "faq" %}aria-current="page"{% endif %}
-      >❓ FAQ</a>
+      >{{ t("nav.faq") }}</a>
     </li>
   </ul>
-  <form method="post" action="/auth/logout">
-    <input type="hidden" name="_csrf" value="{{ csrf_token | default('') }}">
-    <button type="submit" class="wb-nav__logout">Log out 👋</button>
-  </form>
+  <div class="wb-nav__right">
+    <form method="post" action="/settings/language" class="wb-lang-picker">
+      <input type="hidden" name="_csrf" value="{{ csrf_token | default('') }}">
+      {% for lang in supported_languages %}
+        <button
+          type="submit"
+          name="lang"
+          value="{{ lang }}"
+          class="wb-lang-picker__btn{% if current_language() == lang %} wb-lang-picker__btn--active{% endif %}"
+          aria-label="{{ t('common.language.' ~ lang) }}"
+          title="{{ t('common.language.' ~ lang) }}"
+        >{{ lang | upper }}</button>
+      {% endfor %}
+    </form>
+    <form method="post" action="/auth/logout">
+      <input type="hidden" name="_csrf" value="{{ csrf_token | default('') }}">
+      <button type="submit" class="wb-nav__logout">{{ t("nav.logout") }} 👋</button>
+    </form>
+  </div>
 </nav>
