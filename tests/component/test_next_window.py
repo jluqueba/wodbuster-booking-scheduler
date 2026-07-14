@@ -18,7 +18,10 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from wodbuster_worker.heartbeat.next_window import compute_next_window
+from wodbuster_worker.heartbeat.next_window import (
+    compute_next_booking,
+    compute_next_window,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -288,3 +291,42 @@ def test_days_before_wraps_across_week_boundary(
         result = compute_next_window(session, op_id, now)
 
     assert result == datetime(2026, 7, 10, 22, 40, tzinfo=UTC)
+
+
+def test_compute_next_booking_returns_window_target_and_rule_id(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """The dashboard-side helper reports both the fire time and the
+    class slot the rule is aiming at."""
+    op_id = _make_operator(postgres_engine)
+    now = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
+
+    # Attend Wednesday (2), opens 2 days before (Monday) at 21:30,
+    # class starts at 21:30. Class Wed 2026-07-15 21:30 UTC (fixture
+    # pins WORKER_TIMEZONE=UTC); window opens Mon 2026-07-13 21:30.
+    rule_id = _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=2,
+        booking_opens_days_before=2,
+        booking_opens_at="21:30",
+        class_time="21:30",
+    )
+
+    with session_factory() as session:
+        result = compute_next_booking(session, op_id, now)
+
+    assert result is not None
+    assert result.window_open == datetime(2026, 7, 13, 21, 30, tzinfo=UTC)
+    assert result.target_slot == datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    assert result.rule_id == rule_id
+
+
+def test_compute_next_booking_none_when_no_active_rules(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    op_id = _make_operator(postgres_engine)
+    now = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        assert compute_next_booking(session, op_id, now) is None

@@ -16,13 +16,17 @@ alert".
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..persistence.models import SchedulerRule
-from ..scheduler.rule_jobs import next_window_open_for_rule
+from ..scheduler.rule_jobs import (
+    next_window_open_for_rule,
+    target_slot_for_window,
+)
 
 
 def compute_next_window(
@@ -64,4 +68,60 @@ def compute_next_window(
     return min(candidates)
 
 
-__all__ = ["compute_next_window"]
+@dataclass(frozen=True)
+class NextBooking:
+    """Bundle of "the next thing the scheduler will do".
+
+    ``window_open`` is when the booking window opens (also what
+    :func:`compute_next_window` returns). ``target_slot`` is the
+    class-start datetime the winning rule is going to book. Both
+    are timezone-aware UTC. ``rule_id`` lets the caller cross-
+    reference the row that produced this projection.
+    """
+
+    window_open: datetime
+    target_slot: datetime
+    rule_id: int
+
+
+def compute_next_booking(
+    session: Session, operator_id: int, now: datetime
+) -> NextBooking | None:
+    """Return richer info about the next scheduled booking.
+
+    Same selection semantics as :func:`compute_next_window` (earliest
+    upcoming window across active rules) but also returns the class
+    slot the rule is aiming at. Dashboard-only surface: the alert
+    evaluator sticks to the leaner :func:`compute_next_window`.
+    """
+    if now.tzinfo is None:
+        raise ValueError("now must be timezone-aware")
+
+    rules = (
+        session.execute(
+            select(SchedulerRule).where(
+                SchedulerRule.operator_id == operator_id,
+                SchedulerRule.active.is_(True),
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    best: NextBooking | None = None
+    for rule in rules:
+        try:
+            window_open = next_window_open_for_rule(rule, now=now)
+            target_slot = target_slot_for_window(rule, window_open)
+        except ValueError:
+            continue
+        if best is None or window_open < best.window_open:
+            best = NextBooking(
+                window_open=window_open,
+                target_slot=target_slot,
+                rule_id=int(rule.id),
+            )
+    return best
+
+
+__all__ = ["NextBooking", "compute_next_booking", "compute_next_window"]

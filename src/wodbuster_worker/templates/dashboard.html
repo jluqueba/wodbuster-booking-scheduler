@@ -51,6 +51,7 @@
     <section
       class="wb-countdown"
       data-next-window="{{ next_window_iso }}"
+      data-target-slot="{{ target_slot_iso or '' }}"
       aria-live="polite"
     >
       <div class="wb-countdown__label">Next booking window opens in</div>
@@ -64,8 +65,36 @@
         function fmt(n, w) {
           return String(n).padStart(w || 2, '0');
         }
+        function fmtStamp(dt) {
+          // "Mon, 20 Jul, 22:40" — 24h, browser locale for month name.
+          return dt.toLocaleString(undefined, {
+            weekday: 'short',
+            day: '2-digit',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          });
+        }
+        function fmtDate(dt) {
+          // "Wed 22 Jul" — no time, no comma clutter.
+          return dt.toLocaleDateString(undefined, {
+            weekday: 'short',
+            day: '2-digit',
+            month: 'short',
+          });
+        }
+        function fmtTime(dt) {
+          return dt.toLocaleTimeString(undefined, {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          });
+        }
         function tick(root) {
           var target = new Date(root.getAttribute('data-next-window'));
+          var slotRaw = root.getAttribute('data-target-slot');
+          var slot = slotRaw ? new Date(slotRaw) : null;
           var timer = root.querySelector('[data-role="timer"]');
           var hint = root.querySelector('[data-role="hint"]');
           function paint() {
@@ -85,15 +114,11 @@
             var head = days > 0 ? days + 'd ' : '';
             timer.textContent =
               head + fmt(hours) + ':' + fmt(mins) + ':' + fmt(secs);
-            hint.textContent =
-              'Fires at ' + target.toLocaleString(undefined, {
-                weekday: 'short',
-                day: '2-digit',
-                month: 'short',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false,
-              });
+            var msg = 'Fires at ' + fmtStamp(target);
+            if (slot) {
+              msg += ' — books ' + fmtDate(slot) + ' at ' + fmtTime(slot);
+            }
+            hint.textContent = msg;
           }
           paint();
           setInterval(paint, 1000);
