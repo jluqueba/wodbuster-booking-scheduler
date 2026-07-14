@@ -193,12 +193,16 @@ def test_register_rule_job_creates_date_trigger_at_window_open() -> None:
     rule = _rule(day_of_week=2, booking_opens_days_before=2, booking_opens_at="21:30")
     now = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
 
+    # ``prewarm_lead_s=0`` keeps the trigger anchored on the exact
+    # ``booking_opens_at`` moment; the pre-warm shift is exercised in
+    # ``test_register_rule_job_applies_prewarm_lead``.
     job_id = register_rule_job(
         scheduler,
         rule,
         executor=executor,
         session_factory=_null_session_factory,
         now=now,
+        prewarm_lead_s=0,
     )
 
     assert job_id == f"{BOOKING_JOB_ID_PREFIX}42"
@@ -208,6 +212,27 @@ def test_register_rule_job_creates_date_trigger_at_window_open() -> None:
     assert job.trigger.run_date == datetime(2026, 7, 13, 21, 30, tzinfo=UTC)
     assert job.max_instances == 1
     assert job.coalesce is True
+
+
+def test_register_rule_job_applies_prewarm_lead() -> None:
+    """US1.4: the job fires ``prewarm_lead_s`` seconds before the window."""
+    scheduler = _fresh_scheduler()
+    executor = MagicMock()
+    rule = _rule(day_of_week=2, booking_opens_days_before=2, booking_opens_at="21:30")
+    now = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+
+    register_rule_job(
+        scheduler,
+        rule,
+        executor=executor,
+        session_factory=_null_session_factory,
+        now=now,
+        prewarm_lead_s=30,
+    )
+
+    job = scheduler.get_job(f"{BOOKING_JOB_ID_PREFIX}42")
+    assert job is not None
+    assert job.trigger.run_date == datetime(2026, 7, 13, 21, 29, 30, tzinfo=UTC)
 
 
 def test_register_rule_job_replaces_existing() -> None:
@@ -222,6 +247,7 @@ def test_register_rule_job_replaces_existing() -> None:
         executor=executor,
         session_factory=_null_session_factory,
         now=now,
+        prewarm_lead_s=0,
     )
     # Re-register with a shifted "now" — job should carry the fresh
     # trigger, not stack a duplicate.
@@ -232,6 +258,7 @@ def test_register_rule_job_replaces_existing() -> None:
         executor=executor,
         session_factory=_null_session_factory,
         now=later,
+        prewarm_lead_s=0,
     )
 
     jobs = [j for j in scheduler.get_jobs() if j.id.startswith(BOOKING_JOB_ID_PREFIX)]

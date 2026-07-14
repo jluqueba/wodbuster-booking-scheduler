@@ -41,6 +41,13 @@ _log = structlog.get_logger(__name__)
 
 BOOKING_JOB_ID_PREFIX = "booking_rule_"
 
+# US1.4 pre-warm lead. Schedule each booking job this many seconds
+# before the operator-facing ``booking_opens_at`` moment. The
+# executor uses the head start to poll ``SegundosHastaPublicacion``
+# (US1.5) and warm the httpx keep-alive pool so the ``inscribir``
+# call rides on a live TCP + TLS session.
+DEFAULT_PREWARM_LEAD_S = 30.0
+
 
 SessionFactory = Callable[[], AbstractContextManager[Any]]
 
@@ -216,14 +223,21 @@ def register_rule_job(
     executor: BookingExecutor,
     session_factory: SessionFactory,
     now: datetime | None = None,
+    prewarm_lead_s: float = DEFAULT_PREWARM_LEAD_S,
 ) -> str:
     """Register (or replace) a DateTrigger job for ``rule``.
 
     Returns the APScheduler job id. Idempotent: an existing job with
     the same id is removed before the new one is added.
+
+    ``prewarm_lead_s`` shifts the trigger earlier than the operator's
+    declared window so the executor can warm up and align on
+    ``SegundosHastaPublicacion`` (US1.4 + US1.5). Tests that want to
+    assert the exact ``booking_opens_at`` moment pass ``0``.
     """
     now = now or datetime.now(tz=UTC)
-    run_at = next_window_open_for_rule(rule, now=now)
+    window_open = next_window_open_for_rule(rule, now=now)
+    run_at = window_open - timedelta(seconds=prewarm_lead_s)
     job_id = _job_id(rule.id)
 
     if scheduler.get_job(job_id) is not None:
@@ -247,6 +261,8 @@ def register_rule_job(
         rule_id=rule.id,
         job_id=job_id,
         run_at=run_at.isoformat(),
+        window_open=window_open.isoformat(),
+        prewarm_lead_s=prewarm_lead_s,
     )
     return job_id
 
