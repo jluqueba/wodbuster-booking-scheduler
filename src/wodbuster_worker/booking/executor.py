@@ -49,6 +49,7 @@ from typing import Any, Protocol
 
 import structlog
 
+from ..observability import telemetry
 from ..persistence.cookie_store import CookieStore
 from ..persistence.models import BookingOutcome, SchedulerRule
 from ..wodbuster_client.client import (
@@ -166,6 +167,34 @@ class BookingExecutor:
         unexpected exceptions after logging so the scheduler can
         surface them.
         """
+        # Wall-clock timing for the US2.6 booking-latency histogram.
+        # Recorded on every exit path via the finally block so
+        # skipped / cookie-invalid / granted / full etc. all show up
+        # in the metric with their terminal_status attribute.
+        start = time.monotonic()
+        result: BookingResult | None = None
+        try:
+            result = self._book_inner(rule=rule, target_slot=target_slot)
+            return result
+        finally:
+            elapsed_ms = (time.monotonic() - start) * 1000.0
+            try:
+                telemetry.booking_attempt_latency_ms().record(
+                    elapsed_ms,
+                    {
+                        "terminal_status": (result.terminal_status if result else "unknown"),
+                    },
+                )
+            except Exception:  # pragma: no cover - metric emit must not raise
+                _log.exception("booking.metric.record_failed")
+
+    def _book_inner(
+        self,
+        *,
+        rule: SchedulerRule,
+        target_slot: datetime,
+    ) -> BookingResult:
+        """Body of :meth:`book`; wrapped by ``book`` for latency timing."""
         if target_slot.tzinfo is None:
             raise ValueError("target_slot must be timezone-aware")
 

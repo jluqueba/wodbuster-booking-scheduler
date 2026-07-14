@@ -19,6 +19,8 @@ Responsibility split:
 
 from __future__ import annotations
 
+import contextlib
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
@@ -26,6 +28,7 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..observability import telemetry
 from ..persistence.cookie_store import CookieDecryptError, CookieStore
 from ..persistence.models import CookieCredential, HeartbeatReading
 from ..security.cookie import CookieValidator, Rejected, Unknown, Valid
@@ -112,8 +115,13 @@ class HeartbeatProbe:
         # ``TIMESTAMPTZ`` columns.
         probed_at = now or datetime.now(tz=UTC)
 
+        start = time.monotonic()
         verdict = self._validator.validate(cookie_value)
         result = _verdict_to_result(verdict)
+        elapsed_ms = (time.monotonic() - start) * 1000.0
+        # Metric emission must never take the probe down.
+        with contextlib.suppress(Exception):
+            telemetry.cookie_probe_duration_ms().record(elapsed_ms, {"result": result})
 
         # Read the current projection under the caller's session so the
         # estimator sees an up-to-date value in the same transaction.

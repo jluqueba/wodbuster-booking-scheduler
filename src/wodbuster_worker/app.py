@@ -40,6 +40,7 @@ from .notifications.dispatcher import NotificationDispatcher
 from .notifications.telegram_bind import TelegramBindStore
 from .notifications.telegram_webhook import router as telegram_router
 from .observability import configure_logging
+from .observability import telemetry as _telemetry
 from .persistence.cookie_store import CookieStore
 from .persistence.engine import get_session
 from .routes.static_pages import router as static_pages_router
@@ -144,6 +145,32 @@ def _fetch_bot_username(bot_token: str) -> str | None:
     return username
 
 
+def _register_outbox_gauge() -> None:
+    """Wire the ``outbox_queue_depth`` observable gauge.
+
+    Opens a fresh session per poll, runs a bounded ``SELECT count(*)``
+    against ``notification_outbox`` where ``dispatched_at IS NULL``,
+    and hands the number to the OTel meter. Called only when Azure
+    Monitor is enabled — the gauge would otherwise be a no-op that
+    still holds a callback reference.
+    """
+    from sqlalchemy import func, select
+
+    from .persistence.engine import get_session
+    from .persistence.models import NotificationOutbox
+
+    def _sample_depth() -> int:
+        with get_session() as session:
+            result = session.execute(
+                select(func.count(NotificationOutbox.id)).where(
+                    NotificationOutbox.dispatched_at.is_(None)
+                )
+            ).scalar_one()
+            return int(result)
+
+    _telemetry.register_outbox_queue_depth_gauge(_sample_depth)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Resolve settings, secrets, OAuth registry and templates once.
@@ -155,6 +182,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = getattr(app.state, "settings", None) or get_settings()
     secrets: Secrets = getattr(app.state, "secrets", None) or load_secrets(settings)
     configure_logging(settings.log_level)
+    # US2.6: enable Azure Monitor OpenTelemetry auto-instrumentation
+    # when the container ships with an ``APPLICATIONINSIGHTS_
+    # CONNECTION_STRING`` env var. Local dev without the var boots
+    # unchanged — the metric emit sites are no-ops in that case.
+    if _telemetry.configure_azure_monitor_if_enabled():
+        _register_outbox_gauge()
     app.state.settings = settings
     app.state.secrets = secrets
     if not hasattr(app.state, "oauth") or app.state.oauth is None:
