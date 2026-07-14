@@ -18,9 +18,11 @@ from wodbuster_worker.heartbeat.probe import HeartbeatProbe
 from wodbuster_worker.notifications.dispatcher import NotificationDispatcher
 from wodbuster_worker.scheduler.scheduler import (
     DISPATCHER_JOB_ID,
+    HEALTHCHECKS_JOB_ID,
     HEARTBEAT_JOB_ID,
     build_scheduler,
     register_dispatcher_job,
+    register_healthchecks_job,
     register_heartbeat_job,
 )
 
@@ -111,3 +113,31 @@ def test_register_dispatcher_job_is_idempotent() -> None:
     job = scheduler.get_job(DISPATCHER_JOB_ID)
     assert job is not None
     assert job.trigger.interval == timedelta(seconds=15)
+
+
+def test_register_healthchecks_job_adds_expected_job() -> None:
+    scheduler = build_scheduler()
+
+    register_healthchecks_job(scheduler, "https://hc-ping.com/xyz")
+
+    job = scheduler.get_job(HEALTHCHECKS_JOB_ID)
+    assert job is not None
+    assert isinstance(job.trigger, IntervalTrigger)
+    # Default cadence: 10 minutes.
+    assert job.trigger.interval == timedelta(minutes=10)
+    assert job.coalesce is True
+    assert job.max_instances == 1
+    # First ping fires immediately on start so the operator sees the
+    # ping land inside the container start window.
+    assert job.next_run_time is not None
+
+
+def test_register_healthchecks_job_is_idempotent_with_custom_interval() -> None:
+    scheduler = build_scheduler()
+
+    register_healthchecks_job(scheduler, "https://hc-ping.com/xyz", interval_minutes=10)
+    register_healthchecks_job(scheduler, "https://hc-ping.com/xyz", interval_minutes=5)
+
+    job = scheduler.get_job(HEALTHCHECKS_JOB_ID)
+    assert job is not None
+    assert job.trigger.interval == timedelta(minutes=5)

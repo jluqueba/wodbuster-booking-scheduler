@@ -39,6 +39,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from ..booking.executor import BookingExecutor
 from ..heartbeat.probe import HeartbeatProbe
 from ..notifications.dispatcher import NotificationDispatcher
+from ..observability.healthchecks import ping as healthchecks_ping
 from ..persistence.models import SchedulerRule
 from .anomaly_tick import run_anomaly_tick
 from .heartbeat_tick import SessionFactory, run_heartbeat_tick
@@ -49,6 +50,7 @@ _log = structlog.get_logger(__name__)
 HEARTBEAT_JOB_ID = "cookie_heartbeat"
 DISPATCHER_JOB_ID = "notification_dispatcher"
 ANOMALY_JOB_ID = "anomaly_detector"
+HEALTHCHECKS_JOB_ID = "healthchecks_ping"
 
 
 def build_scheduler() -> BackgroundScheduler:
@@ -179,6 +181,53 @@ def register_anomaly_job(
     )
 
 
+def register_healthchecks_job(
+    scheduler: BackgroundScheduler,
+    ping_url: str,
+    *,
+    interval_minutes: int = 10,
+) -> None:
+    """Register the external dead-man ping on ``scheduler`` (US2.5).
+
+    Every ``interval_minutes`` (default 10) the scheduler POSTs to
+    ``ping_url`` — a Healthchecks.io check URL from the
+    ``healthchecks-ping-url`` Key Vault secret. The check's grace
+    period (20 minutes in the operator setup docs) absorbs one
+    missed tick; two consecutive misses trip the external alert.
+
+    Failures inside :func:`ping` are logged and swallowed, so the
+    scheduler wrapper here does not need its own try/except beyond
+    the belt-and-braces catch used by the other jobs.
+
+    Fires immediately on registration so the operator sees the
+    first ping land inside the container start window instead of
+    waiting a full interval.
+    """
+
+    def _tick() -> None:
+        try:
+            healthchecks_ping(ping_url)
+        except Exception:
+            _log.exception("scheduler.healthchecks_tick_failed")
+
+    if scheduler.get_job(HEALTHCHECKS_JOB_ID) is not None:
+        scheduler.remove_job(HEALTHCHECKS_JOB_ID)
+
+    scheduler.add_job(
+        func=_tick,
+        trigger=IntervalTrigger(minutes=interval_minutes),
+        id=HEALTHCHECKS_JOB_ID,
+        max_instances=1,
+        coalesce=True,
+        next_run_time=datetime.now(tz=UTC),
+    )
+    _log.info(
+        "scheduler.healthchecks_job_registered",
+        job_id=HEALTHCHECKS_JOB_ID,
+        interval_minutes=interval_minutes,
+    )
+
+
 def register_rule_bootstrap_jobs(
     scheduler: BackgroundScheduler,
     *,
@@ -230,10 +279,12 @@ def register_rule_bootstrap_jobs(
 __all__ = [
     "ANOMALY_JOB_ID",
     "DISPATCHER_JOB_ID",
+    "HEALTHCHECKS_JOB_ID",
     "HEARTBEAT_JOB_ID",
     "build_scheduler",
     "register_anomaly_job",
     "register_dispatcher_job",
+    "register_healthchecks_job",
     "register_heartbeat_job",
     "register_rule_bootstrap_jobs",
 ]

@@ -46,6 +46,7 @@ from .scheduler.scheduler import (
     build_scheduler,
     register_anomaly_job,
     register_dispatcher_job,
+    register_healthchecks_job,
     register_heartbeat_job,
     register_rule_bootstrap_jobs,
 )
@@ -154,6 +155,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # missed booking windows and open a heartbeat_anomaly
             # alert when a run left no outcome in the database.
             register_anomaly_job(scheduler, get_session)
+            # External dead-man (US2.5): every 10 minutes POST to the
+            # Healthchecks.io URL from Key Vault so a silent worker
+            # (crash, network partition, container stuck restarting)
+            # trips an out-of-band alert. Skip silently when the URL
+            # is absent — local dev doesn't need the third party.
+            if secrets.healthchecks_ping_url:
+                register_healthchecks_job(scheduler, secrets.healthchecks_ping_url)
             # Booking wiring: only when the cookie store + wodbuster
             # client are both live. Missing dependencies mean bookings
             # cannot fire; the scheduler still hosts heartbeat and
