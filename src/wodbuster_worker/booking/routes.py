@@ -31,8 +31,8 @@ from ..booking.cancellation import (
     CancellationUpstreamError,
     cancel_booking,
     list_recent_bookings,
-    list_upcoming_bookings,
 )
+from ..booking.upcoming import UpcomingSlot, list_upcoming_slots
 from ..persistence.engine import get_session
 from ..persistence.models import BookingOutcome
 from ..scheduler.rule_jobs import operator_timezone
@@ -72,7 +72,7 @@ def history_list(
     templates = _templates(request)
     now = datetime.now(tz=UTC)
     with get_session() as session:
-        upcoming = list_upcoming_bookings(session, operator_id, now=now)
+        upcoming = list_upcoming_slots(session, operator_id, now=now)
         outcomes = list_recent_bookings(session, operator_id)
         upcoming_days = _group_upcoming_by_day(upcoming)
         rows = [_outcome_to_row(o) for o in outcomes]
@@ -163,21 +163,22 @@ def _outcome_to_row(outcome: BookingOutcome) -> dict[str, Any]:
 
 
 def _group_upcoming_by_day(
-    outcomes: list[BookingOutcome],
+    slots: list[UpcomingSlot],
 ) -> list[dict[str, Any]]:
-    """Group upcoming granted bookings by local calendar day.
+    """Group upcoming attendance slots by local calendar day.
 
     Times are shown in the operator's zone (``WORKER_TIMEZONE``) so
     the operator reads "Wed 22 Jul at 21:30" the way they wrote the
-    rule, not in UTC. Each group carries the same ``id``,
-    ``target_class`` and cancel-button data the flat history table
-    uses, so the shared cancel form template works unchanged.
+    rule, not in UTC. Both ``granted`` (already secured) and
+    ``pending`` (scheduler hasn't fired yet) slots flow through
+    here; the template renders a chip per ``kind`` and the cancel
+    button only when the slot has a ``booking_id``.
     """
     tz = operator_timezone()
     groups: list[dict[str, Any]] = []
     current_key: str | None = None
-    for outcome in outcomes:
-        local = outcome.target_slot.astimezone(tz)
+    for slot in slots:
+        local = slot.target_slot.astimezone(tz)
         key = local.date().isoformat()
         if key != current_key:
             groups.append(
@@ -190,10 +191,11 @@ def _group_upcoming_by_day(
             current_key = key
         groups[-1]["rows"].append(
             {
-                "id": int(outcome.id),
-                "target_class": outcome.target_class,
+                "kind": slot.kind,
+                "id": slot.booking_id,
+                "target_class": slot.target_class,
                 "time_label": local.strftime("%H:%M"),
-                "fallback_index": outcome.granted_fallback_index,
+                "fallback_index": slot.fallback_index,
             }
         )
     return groups

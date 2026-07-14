@@ -78,13 +78,21 @@
     </div>
   {% endif %}
 
-  {# ---- Upcoming (H.1 full) ------------------------------------- #}
+  {# ---- Upcoming (H.1 full) -------------------------------------
+
+     Two flavours share this section:
+       - ``granted`` slots come from real ``booking_outcome`` rows
+         and expose the Cancel form.
+       - ``pending`` slots come from rule projections; the scheduler
+         has not fired yet, so there is nothing to cancel and we
+         show a "scheduled" chip instead.
+  #}
   <section class="wb-upcoming">
     <h2 class="wb-section-title">🗓️ Upcoming bookings</h2>
     {% if not upcoming_days %}
       <p class="wb-muted wb-note">
-        No granted bookings on the horizon. Your rules will fire when
-        their next booking window opens.
+        No granted or scheduled bookings on the horizon. Create a
+        <a href="/rules">rule</a> to start automating attendance.
       </p>
     {% else %}
       <div class="wb-upcoming__grid">
@@ -92,24 +100,33 @@
           <article class="wb-upcoming__day">
             <header class="wb-upcoming__date">{{ day.date_label }}</header>
             <div class="wb-upcoming__list">
-              {% for booking in day.rows %}
-                <div class="wb-upcoming__item">
-                  <span class="wb-upcoming__time">{{ booking.time_label }}</span>
-                  <code class="wb-upcoming__class">{{ booking.target_class }}</code>
-                  {% if booking.fallback_index == 1 %}
+              {% for slot in day.rows %}
+                <div class="wb-upcoming__item wb-upcoming__item--{{ slot.kind }}">
+                  <span class="wb-upcoming__time">{{ slot.time_label }}</span>
+                  <code class="wb-upcoming__class">{{ slot.target_class }}</code>
+                  {% if slot.fallback_index == 1 %}
                     <span class="wb-muted wb-note--xs">(second shot)</span>
                   {% endif %}
-                  <form
-                    method="post"
-                    action="/bookings/{{ booking.id }}/cancel"
-                    class="wb-inline-form wb-upcoming__cancel"
-                    onsubmit="return wbConfirm(this, event, 'Cancel this booking on WodBuster?')"
-                  >
-                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                    <button type="submit" class="wb-btn wb-btn--danger">
-                      🚫 Cancel
-                    </button>
-                  </form>
+                  {% if slot.kind == "granted" %}
+                    <span class="wb-chip wb-chip--granted wb-upcoming__chip">
+                      granted
+                    </span>
+                    <form
+                      method="post"
+                      action="/bookings/{{ slot.id }}/cancel"
+                      class="wb-inline-form wb-upcoming__cancel"
+                      onsubmit="return wbConfirm(this, event, 'Cancel this booking on WodBuster?')"
+                    >
+                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                      <button type="submit" class="wb-btn wb-btn--danger">
+                        🚫 Cancel
+                      </button>
+                    </form>
+                  {% else %}
+                    <span class="wb-chip wb-chip--pending wb-upcoming__chip">
+                      ⏱️ scheduled
+                    </span>
+                  {% endif %}
                 </div>
               {% endfor %}
             </div>
