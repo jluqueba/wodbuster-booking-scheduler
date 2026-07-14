@@ -41,6 +41,7 @@ _EXPECTED_SECRET_NAMES = (
     "wodbuster-cookie-encryption-key",
     "session-encryption-secret",
     "telegram-bot-token",
+    "telegram-webhook-secret",
     "oauth-microsoft-client-secret",
     "oauth-github-client-secret",
     "oauth-google-client-secret",

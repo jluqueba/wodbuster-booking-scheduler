@@ -37,6 +37,8 @@ from .heartbeat.next_window import compute_next_booking
 from .heartbeat.probe import HeartbeatProbe
 from .notifications.banners import load_banners_for_operator
 from .notifications.dispatcher import NotificationDispatcher
+from .notifications.telegram_bind import TelegramBindStore
+from .notifications.telegram_webhook import router as telegram_router
 from .observability import configure_logging
 from .persistence.cookie_store import CookieStore
 from .persistence.engine import get_session
@@ -108,6 +110,40 @@ def _build_heartbeat_probe(
     return HeartbeatProbe(store, validator, ceiling=ceiling)
 
 
+def _fetch_bot_username(bot_token: str) -> str | None:
+    """Call ``getMe`` on the Bot API to resolve the bot's username.
+
+    Runs once at app startup so the ``/telegram`` page can render a
+    ``t.me/<bot>?start=<token>`` deep link. Failures are logged and
+    return ``None``; the UI degrades to showing the raw token the
+    operator can paste manually as ``/start <token>``.
+    """
+    import httpx  # local import: startup-only path.
+    import structlog
+
+    log = structlog.get_logger(__name__)
+    url = f"https://api.telegram.org/bot{bot_token}/getMe"
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(url)
+    except httpx.HTTPError as exc:
+        log.warning("telegram.getme.transport_error", error=str(exc))
+        return None
+    if response.status_code != 200:
+        log.warning("telegram.getme.unexpected_status", status=response.status_code)
+        return None
+    try:
+        payload = response.json()
+    except ValueError:
+        log.warning("telegram.getme.invalid_json")
+        return None
+    username = (payload.get("result") or {}).get("username")
+    if not isinstance(username, str) or not username:
+        log.warning("telegram.getme.no_username", payload=payload)
+        return None
+    return username
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Resolve settings, secrets, OAuth registry and templates once.
@@ -137,6 +173,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.heartbeat_probe = _build_heartbeat_probe(
             settings, app.state.cookie_store, app.state.cookie_validator
         )
+    # Telegram binding state (US9.8):
+    #   * ``telegram_bind_store``   — in-memory one-shot token bag.
+    #   * ``telegram_webhook_secret`` / ``telegram_bot_token`` are
+    #     surfaced on ``app.state`` so the webhook route can validate
+    #     the path secret and send replies without re-fetching Key
+    #     Vault on every request.
+    #   * ``telegram_bot_username`` is looked up once via
+    #     ``getMe`` so the ``/telegram`` page can render a
+    #     ``t.me/<bot>?start=<token>`` deep link.
+    if not hasattr(app.state, "telegram_bind_store"):
+        app.state.telegram_bind_store = TelegramBindStore()
+    app.state.telegram_webhook_secret = secrets.telegram_webhook_secret
+    app.state.telegram_bot_token = secrets.telegram_bot_token
+    if not getattr(app.state, "telegram_bot_username", None) and secrets.telegram_bot_token:
+        app.state.telegram_bot_username = _fetch_bot_username(secrets.telegram_bot_token)
     # Scheduler: build lazily and register the heartbeat + dispatcher
     # jobs plus a per-rule booking job. Tests that inject their own
     # scheduler (or want none at all) can pre-seed ``app.state.scheduler``.
@@ -276,6 +327,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(rules_router)
     app.include_router(history_router)
     app.include_router(vacation_router)
+    app.include_router(telegram_router)
     app.include_router(static_pages_router)
     app.add_api_route("/health", health, methods=["GET"])
     # Static assets (brand CSS, later JS / images). Mounted after

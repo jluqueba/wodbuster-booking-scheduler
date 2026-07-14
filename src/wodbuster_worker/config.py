@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     cookie_encryption_key: str | None = None
     session_encryption_secret: str | None = None
     telegram_bot_token: str | None = None
+    telegram_webhook_secret: str | None = None
     oauth_microsoft_client_secret: str | None = None
     oauth_github_client_secret: str | None = None
     oauth_google_client_secret: str | None = None
