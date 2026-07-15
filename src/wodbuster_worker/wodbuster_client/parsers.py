@@ -170,11 +170,122 @@ def _optional_int(value: Any) -> int | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Enrollment detection (booking success signal)
+# ---------------------------------------------------------------------------
+#
+# The booking-result ``Res`` field and the per-slot ``TipoEstado`` marker
+# both turned out to be unreliable against the live WodBuster API (the
+# vocabularies in this module and in the client's ``Res`` classifier were
+# educated guesses from the Spanish UI that Phase 0 never confirmed with a
+# real response body). Empirically, a successful booking is expressed by
+# the operator appearing in the target slot's ``AtletasEntrenando`` list —
+# each athlete entry carries a ``Url`` of the form
+# ``/athlete/athletes.aspx?gid=<idu-as-guid>``. This block turns that
+# observation into the authoritative success signal for the executor.
+
+
+@dataclass(frozen=True)
+class SlotEnrollment:
+    """Enrollment status of the operator in a single class instance."""
+
+    found: bool  # the slot id was present in the payload
+    enrolled: bool  # the operator is in AtletasEntrenando
+    occupied: int  # number of enrolled athletes
+    capacity: int | None  # Plazas, when present
+
+    @property
+    def is_full(self) -> bool:
+        """True when the slot has no free places left."""
+        return self.capacity is not None and self.occupied >= self.capacity
+
+
+def operator_idu_to_guid(idu: str) -> str:
+    """Format a 32-hex WodBuster ``idu`` as a dashed lowercase GUID.
+
+    The ``idu`` travels through URLs without dashes, but the athlete
+    ``Url`` in ``AtletasEntrenando`` carries the dashed GUID form. When
+    the input is not a 32-hex string it is returned lower-cased and
+    stripped so callers can still match on it verbatim.
+    """
+    normalised = idu.strip().replace("-", "").lower()
+    if len(normalised) != 32:
+        return idu.strip().lower()
+    return (
+        f"{normalised[0:8]}-{normalised[8:12]}-{normalised[12:16]}-"
+        f"{normalised[16:20]}-{normalised[20:]}"
+    )
+
+
+def read_target_enrollment(
+    payload: dict[str, Any], *, slot_id: int, operator_idu: str
+) -> SlotEnrollment:
+    """Return whether the operator is enrolled in class instance ``slot_id``.
+
+    Walks the raw ``Data[].Valores[].Valor`` objects, matches the one
+    whose ``Id`` equals ``slot_id``, and checks that slot's
+    ``AtletasEntrenando`` for the operator's identifier. Returns a
+    ``SlotEnrollment`` with ``found=False`` when the slot is absent (for
+    example a filtered calendar view that dropped it).
+    """
+    guid = operator_idu_to_guid(operator_idu)
+    raw = operator_idu.strip().lower()
+    for valor in _iter_raw_valores(payload):
+        if valor.get("Id") != slot_id or isinstance(valor.get("Id"), bool):
+            continue
+        atletas = valor.get("AtletasEntrenando")
+        athletes = atletas if isinstance(atletas, list) else []
+        enrolled = any(_athlete_is_operator(a, guid, raw) for a in athletes)
+        return SlotEnrollment(
+            found=True,
+            enrolled=enrolled,
+            occupied=len(athletes),
+            capacity=_optional_int(valor.get("Plazas")),
+        )
+    return SlotEnrollment(found=False, enrolled=False, occupied=0, capacity=None)
+
+
+def _athlete_is_operator(athlete: Any, guid: str, raw: str) -> bool:
+    """True when an ``AtletasEntrenando`` entry belongs to the operator.
+
+    Primary signal is the athlete ``Url`` (``?gid=<idu-guid>``); as a
+    safety net any string field carrying the identifier also matches, so
+    a future field rename does not silently break detection.
+    """
+    if not isinstance(athlete, dict):
+        return False
+    for value in athlete.values():
+        if isinstance(value, str):
+            lowered = value.lower()
+            if guid in lowered or raw in lowered:
+                return True
+    return False
+
+
+def _iter_raw_valores(payload: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    """Yield each raw ``Valor`` object under ``Data[].Valores[]``."""
+    data = payload.get("Data")
+    if not isinstance(data, list):
+        return
+    for bucket in data:
+        if not isinstance(bucket, dict):
+            continue
+        valores = bucket.get("Valores")
+        if not isinstance(valores, list):
+            continue
+        for entry in valores:
+            if isinstance(entry, dict) and isinstance(entry.get("Valor"), dict):
+                yield entry["Valor"]
+
+
 __all__ = [
     "ClassSlot",
     "ClassStatus",
+    "SlotEnrollment",
     "extract_class_slots",
     "extract_seconds_until_publication",
     "find_matching_slot",
+    "operator_idu_to_guid",
     "parse_class_instance",
+    "read_target_enrollment",
 ]

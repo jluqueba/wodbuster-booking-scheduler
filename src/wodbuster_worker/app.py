@@ -259,6 +259,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     client=app.state.wodbuster_client,
                     session_factory=get_session,
                     cookie_store=app.state.cookie_store,
+                    operator_idu=settings.wodbuster_idu,
                 )
                 app.state.booking_executor = executor
                 app.state.booking_scheduler = scheduler
