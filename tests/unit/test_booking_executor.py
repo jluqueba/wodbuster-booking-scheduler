@@ -161,6 +161,7 @@ def _executor(
     inscribir_responses: list[Any] | None = None,
     cookie: str | None = "cookie-abc",
     writer: _RecordingWriter | None = None,
+    operator_idu: str | None = None,
     retry_interval_s: float = 0.0,
     retry_timeout_s: float = 0.05,
     monkeypatch: pytest.MonkeyPatch | None = None,
@@ -191,6 +192,7 @@ def _executor(
         client=client,
         session_factory=_session_ctx,
         cookie_store=_FakeCookieStore(cookie),  # type: ignore[arg-type]
+        operator_idu=operator_idu,
         retry_interval_s=retry_interval_s,
         retry_timeout_s=retry_timeout_s,
         sleep=lambda _s: None,
@@ -294,6 +296,64 @@ def _inscribir_unknown() -> BookingActionResponse:
         outcome="unknown",
         raw_res="Weirdness",
         payload={"Res": "Weirdness"},
+    )
+
+
+# Operator identity used by the enrollment-based success tests. The
+# ``idu`` travels dash-free; the athlete ``Url`` carries the dashed GUID.
+_OP_IDU = "aae990e4fa584cfc894de204f0e37605"
+_OP_GUID = "aae990e4-fa58-4cfc-894d-e204f0e37605"
+
+
+def _inscribir_res_none() -> BookingActionResponse:
+    """Mirror the production booking response: a 200 whose ``Res`` is a
+    non-string (so the classifier yields ``unknown``) plus the full
+    calendar body under ``Data``."""
+    return BookingActionResponse(
+        status_code=200,
+        latency_ms=25.0,
+        outcome="unknown",
+        raw_res=None,
+        payload={"Res": True, "Data": []},
+    )
+
+
+def _load_class_enrolled(
+    *,
+    slot_id: int = 45654,
+    hora: str = "21:30:00",
+    nombre: str = "WOD",
+    plazas: int = 16,
+    enrolled: bool = True,
+    occupied: int = 1,
+) -> LoadClassResponse:
+    """LoadClass payload whose slot ``slot_id`` carries an
+    ``AtletasEntrenando`` list; the operator is present iff ``enrolled``.
+    """
+    athletes: list[dict[str, Any]] = []
+    if enrolled:
+        athletes.append(
+            {"Id": 94, "DisplayName": "Luque", "Url": f"/athlete/athletes.aspx?gid={_OP_GUID}"}
+        )
+    while len(athletes) < occupied:
+        i = len(athletes)
+        athletes.append(
+            {
+                "Id": 1000 + i,
+                "DisplayName": f"Other{i}",
+                "Url": f"/athlete/athletes.aspx?gid=stranger-{i}",
+            }
+        )
+    return _load_class_payload(
+        slots=[
+            {
+                "Id": slot_id,
+                "Nombre": nombre,
+                "HoraComienzo": hora,
+                "Plazas": plazas,
+                "AtletasEntrenando": athletes,
+            }
+        ]
     )
 
 
@@ -541,6 +601,148 @@ def test_inscribir_unknown_res_escalates_to_upstream_unavailable(
     # The raw Res string is preserved on the response_payload so the
     # classifier table can be extended after post-mortem.
     assert "Weirdness" in writer.calls[0]["response_payload"]
+
+
+# ---------------------------------------------------------------------------
+# Enrollment-based success detection (Res / TipoEstado proved unreliable)
+# ---------------------------------------------------------------------------
+
+
+def test_res_none_but_operator_enrolled_persists_granted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Production regression: the booking response carries a non-string
+    ``Res`` (classifier -> ``unknown``) yet the confirming read shows the
+    operator enrolled. The old code reported ``upstream_unavailable``;
+    the fix must persist ``granted``."""
+    ex, client, writer = _executor(
+        load_class_responses=[
+            _load_class_payload(),  # primary find
+            _load_class_enrolled(enrolled=True),  # confirming read
+        ],
+        inscribir_responses=[_inscribir_res_none()],
+        operator_idu=_OP_IDU,
+        monkeypatch=monkeypatch,
+    )
+
+    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+
+    assert result.terminal_status == "granted"
+    assert result.fallback_index == 0
+    call = writer.calls[0]
+    assert call["terminal_status"] == "granted"
+    assert "enrolled=confirmed" in call["response_payload"]
+    # inscribir response had no Data, so a confirming LoadClass read fired.
+    assert len(client.load_class_calls) == 2
+
+
+def test_inscribir_response_already_shows_enrollment_skips_confirming_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the mutating response already lists the operator, no extra
+    confirming LoadClass read is issued."""
+    enrolled_payload = _load_class_enrolled(enrolled=True).payload
+    inscribir = BookingActionResponse(
+        status_code=200,
+        latency_ms=25.0,
+        outcome="unknown",
+        raw_res=None,
+        payload=enrolled_payload,
+    )
+    ex, client, _writer = _executor(
+        load_class_responses=[_load_class_payload()],  # only the primary find
+        inscribir_responses=[inscribir],
+        operator_idu=_OP_IDU,
+        monkeypatch=monkeypatch,
+    )
+
+    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+
+    assert result.terminal_status == "granted"
+    # Only the primary-find call; the inscribir response was conclusive.
+    assert len(client.load_class_calls) == 1
+
+
+def test_not_enrolled_and_slot_full_persists_full(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ex, _client, writer = _executor(
+        load_class_responses=[
+            _load_class_payload(),
+            _load_class_enrolled(enrolled=False, occupied=16, plazas=16),  # full
+        ],
+        inscribir_responses=[_inscribir_res_none()],
+        operator_idu=_OP_IDU,
+        monkeypatch=monkeypatch,
+    )
+
+    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+
+    assert result.terminal_status == "full"
+    assert "was full" in writer.calls[0]["telegram_text"]
+
+
+def test_not_enrolled_and_not_full_persists_upstream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ex, _client, _writer = _executor(
+        load_class_responses=[
+            _load_class_payload(),
+            _load_class_enrolled(enrolled=False, occupied=3, plazas=16),  # room left
+        ],
+        inscribir_responses=[_inscribir_res_none()],
+        operator_idu=_OP_IDU,
+        monkeypatch=monkeypatch,
+    )
+
+    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+
+    assert result.terminal_status == "upstream_unavailable"
+
+
+def test_confirming_read_failure_falls_back_to_res_classifier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the confirming LoadClass read raises, classification falls back
+    to the Res outcome rather than crashing."""
+    ex, _client, _writer = _executor(
+        load_class_responses=[
+            _load_class_payload(),  # primary find
+            WodBusterTransportError("boom"),  # confirming read fails
+        ],
+        inscribir_responses=[_inscribir_ok()],  # recognised granted Res
+        operator_idu=_OP_IDU,
+        monkeypatch=monkeypatch,
+    )
+
+    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+
+    assert result.terminal_status == "granted"
+
+
+def test_enrolled_takes_priority_over_full_second_shot_not_walked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A confirmed enrollment is terminal even when a second shot is
+    configured — the walk only happens on a full primary."""
+    ex, client, _writer = _executor(
+        load_class_responses=[
+            _load_class_payload(),
+            _load_class_enrolled(enrolled=True),
+        ],
+        inscribir_responses=[_inscribir_res_none()],
+        operator_idu=_OP_IDU,
+        monkeypatch=monkeypatch,
+    )
+
+    result = ex.book(
+        rule=_rule(second_shot_class_type="Halterofilia", second_shot_class_time="20:30"),
+        target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC),
+    )
+
+    assert result.terminal_status == "granted"
+    assert result.fallback_index == 0
+    assert len(client.inscribir_calls) == 1
 
 
 # ---------------------------------------------------------------------------

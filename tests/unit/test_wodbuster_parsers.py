@@ -23,7 +23,9 @@ from wodbuster_worker.wodbuster_client.parsers import (
     extract_class_slots,
     extract_seconds_until_publication,
     find_matching_slot,
+    operator_idu_to_guid,
     parse_class_instance,
+    read_target_enrollment,
 )
 
 
@@ -274,3 +276,96 @@ def test_extract_seconds_until_publication_bad_types_return_none(value: Any) -> 
 
 def test_extract_seconds_until_publication_missing_key_returns_none() -> None:
     assert extract_seconds_until_publication({}) is None
+
+
+# ---------------------------------------------------------------------------
+# operator_idu_to_guid
+# ---------------------------------------------------------------------------
+
+
+def test_operator_idu_to_guid_formats_32_hex() -> None:
+    assert (
+        operator_idu_to_guid("aae990e4fa584cfc894de204f0e37605")
+        == "aae990e4-fa58-4cfc-894d-e204f0e37605"
+    )
+
+
+def test_operator_idu_to_guid_is_idempotent_on_dashed_input() -> None:
+    guid = "aae990e4-fa58-4cfc-894d-e204f0e37605"
+    assert operator_idu_to_guid(guid) == guid
+
+
+def test_operator_idu_to_guid_passes_through_non_hex() -> None:
+    assert operator_idu_to_guid("Not-An-Idu") == "not-an-idu"
+
+
+# ---------------------------------------------------------------------------
+# read_target_enrollment
+# ---------------------------------------------------------------------------
+
+_IDU = "aae990e4fa584cfc894de204f0e37605"
+_GUID = "aae990e4-fa58-4cfc-894d-e204f0e37605"
+
+
+def _enrolled_payload(
+    *, slot_id: int, athletes: list[dict[str, Any]], plazas: int | None = 12
+) -> dict[str, Any]:
+    valor: dict[str, Any] = {
+        "Id": slot_id,
+        "Nombre": "Cross Training",
+        "HoraComienzo": "18:30:00",
+        "AtletasEntrenando": athletes,
+    }
+    if plazas is not None:
+        valor["Plazas"] = plazas
+    return {"Data": [_bucket("18:30:00", valor)]}
+
+
+def _me() -> dict[str, Any]:
+    return {"Id": 94, "DisplayName": "Luque", "Url": f"/athlete/athletes.aspx?gid={_GUID}"}
+
+
+def _stranger(i: int) -> dict[str, Any]:
+    return {"Id": i, "DisplayName": f"S{i}", "Url": f"/athlete/athletes.aspx?gid=stranger-{i}"}
+
+
+def test_read_target_enrollment_operator_present() -> None:
+    payload = _enrolled_payload(slot_id=45872, athletes=[_stranger(1), _me(), _stranger(2)])
+    result = read_target_enrollment(payload, slot_id=45872, operator_idu=_IDU)
+    assert result.found is True
+    assert result.enrolled is True
+    assert result.occupied == 3
+    assert result.capacity == 12
+    assert result.is_full is False
+
+
+def test_read_target_enrollment_operator_absent_and_full() -> None:
+    payload = _enrolled_payload(
+        slot_id=45872, athletes=[_stranger(i) for i in range(12)], plazas=12
+    )
+    result = read_target_enrollment(payload, slot_id=45872, operator_idu=_IDU)
+    assert result.found is True
+    assert result.enrolled is False
+    assert result.occupied == 12
+    assert result.is_full is True
+
+
+def test_read_target_enrollment_slot_absent_returns_not_found() -> None:
+    payload = _enrolled_payload(slot_id=45872, athletes=[_me()])
+    result = read_target_enrollment(payload, slot_id=99999, operator_idu=_IDU)
+    assert result.found is False
+    assert result.enrolled is False
+
+
+def test_read_target_enrollment_matches_dashless_idu_in_any_field() -> None:
+    athlete = {"Id": 94, "SomeField": _IDU}  # no Url; identifier elsewhere
+    payload = _enrolled_payload(slot_id=45872, athletes=[athlete])
+    result = read_target_enrollment(payload, slot_id=45872, operator_idu=_IDU)
+    assert result.enrolled is True
+
+
+def test_read_target_enrollment_missing_plazas_is_not_full() -> None:
+    payload = _enrolled_payload(slot_id=45872, athletes=[_me()], plazas=None)
+    result = read_target_enrollment(payload, slot_id=45872, operator_idu=_IDU)
+    assert result.capacity is None
+    assert result.is_full is False

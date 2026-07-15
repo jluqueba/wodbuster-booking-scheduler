@@ -8,15 +8,21 @@ Orchestrates one booking attempt for a scheduler rule:
    class instance by ``(class_type, class_time)``. If not visible
    yet, retry every ``retry_interval_s`` up to ``retry_timeout_s``
    (US1.7, FR-010).
-3. Fire ``inscribir(primary.id)``. Classify the outcome:
-   - ``granted``    → terminal, record with ``granted_fallback_index=0``.
-   - ``full``       → walk to the second shot if configured.
-   - ``cookie_invalid`` → terminal, open cookie_invalid alert.
-   - ``upstream_unavailable`` (transport failure, non-JSON, 5xx,
-     redirect other than login) → terminal, log the reason.
-   - ``unknown``    → escalate to ``upstream_unavailable`` — the raw
-     ``Res`` value is persisted for post-mortem so the classifier
-     table can be extended.
+3. Fire ``inscribir(primary.id)``. Determine the outcome from the
+   operator's enrollment state, not from the ``Res`` string: the
+   ``Res`` field and the per-slot ``TipoEstado`` marker both proved
+   out of sync with the live API (built from Phase 0 UI guesses that
+   were never confirmed against a real response body). The
+   authoritative signal is whether the operator now appears in the
+   target slot's ``AtletasEntrenando`` list — verified against the
+   ``inscribir`` response and, if needed, one confirming ``LoadClass``
+   read (:meth:`_resolve_enrollment`):
+   - enrolled          → terminal ``granted`` (``granted_fallback_index=0``).
+   - not enrolled, full → walk to the second shot if configured.
+   - ``cookie_invalid`` (auth ``Res`` or redirect) → terminal, open alert.
+   - transport / non-JSON / 5xx → terminal ``upstream_unavailable``.
+   When the operator ``idu`` is unwired the legacy ``Res`` classifier
+   is used as a fallback.
 4. If a second shot is configured and the primary came back
    ``full``, repeat the find + fire cycle for the second shot with
    ``granted_fallback_index=1``. A missing second-shot slot follows
@@ -61,9 +67,11 @@ from ..wodbuster_client.client import (
 )
 from ..wodbuster_client.parsers import (
     ClassSlot,
+    SlotEnrollment,
     extract_class_slots,
     extract_seconds_until_publication,
     find_matching_slot,
+    read_target_enrollment,
 )
 from .outcomes import persist_outcome
 from .vacation import find_covering_window
@@ -123,6 +131,7 @@ class BookingExecutor:
         client: _BookingClientProtocol,
         session_factory: SessionFactory,
         cookie_store: CookieStore,
+        operator_idu: str | None = None,
         retry_interval_s: float = 5.0,
         retry_timeout_s: float = 120.0,
         alignment_poll_interval_s: float = 1.0,
@@ -134,6 +143,11 @@ class BookingExecutor:
         self._client = client
         self._session_factory = session_factory
         self._cookie_store = cookie_store
+        # Operator's WodBuster ``idu`` (Phase 0). Used to confirm a
+        # booking by locating the operator in the target slot's
+        # ``AtletasEntrenando`` list. ``None`` (unwired) falls back to
+        # the legacy ``Res`` classifier in :meth:`_attempt`.
+        self._operator_idu = operator_idu
         self._retry_interval_s = retry_interval_s
         self._retry_timeout_s = retry_timeout_s
         # US1.5 countdown alignment. Poll LoadClass on ``poll_interval``
@@ -420,18 +434,45 @@ class BookingExecutor:
         outcome = response.outcome
         raw_payload = _short_payload(response.payload, response.raw_res)
 
-        if outcome == "granted":
+        # Local builders so the enrollment-based and Res-fallback paths
+        # below share one definition of each terminal shape.
+        def _granted(resp_text: str) -> _AttemptResult:
             return _AttemptResult.done_terminal(
                 rule=rule,
                 target_class=class_type,
                 target_slot=target_slot,
                 terminal_status="granted",
                 fallback_index=fallback_index,
-                response=raw_payload,
+                response=resp_text,
                 telegram_text=self._render_granted_text(
                     rule, class_type, class_time, target_slot, fallback_index
                 ),
             )
+
+        def _full() -> _AttemptResult:
+            # Not yet terminal — caller may walk to the second shot.
+            return _AttemptResult.full(
+                rule=rule,
+                target_class=class_type,
+                target_slot=target_slot,
+                fallback_index=None,
+                response=raw_payload,
+                telegram_text=self._render_full_text(rule, class_type, class_time, target_slot),
+            )
+
+        def _upstream() -> _AttemptResult:
+            return _AttemptResult.done_terminal(
+                rule=rule,
+                target_class=class_type,
+                target_slot=target_slot,
+                terminal_status="upstream_unavailable",
+                fallback_index=None,
+                response=raw_payload,
+                telegram_text=self._render_upstream_text(rule, class_type, target_slot),
+            )
+
+        # A Res-signalled auth failure stays terminal regardless of the
+        # enrollment probe below.
         if outcome == "cookie_invalid":
             return _AttemptResult.done_terminal(
                 rule=rule,
@@ -442,26 +483,71 @@ class BookingExecutor:
                 response=raw_payload,
                 telegram_text=self._render_cookie_invalid_text(rule, target_slot),
             )
+
+        # Authoritative success signal: the ``Res`` field and the
+        # ``TipoEstado`` slot vocabulary both proved out of sync with the
+        # live API, so classify from whether the operator now appears in
+        # the booked slot's ``AtletasEntrenando`` list.
+        enrollment = self._resolve_enrollment(
+            cookie=cookie, ticks=ticks, slot_id=slot.id, first_payload=response.payload
+        )
+        if enrollment is not None and enrollment.found:
+            if enrollment.enrolled:
+                return _granted(
+                    f"{raw_payload} enrolled=confirmed "
+                    f"occupied={enrollment.occupied}/{enrollment.capacity}"
+                )
+            if enrollment.is_full:
+                return _full()
+            # Slot present, operator not enrolled, and it is not a
+            # capacity miss: the booking did not take.
+            return _upstream()
+
+        # Verification unavailable (idu unwired or the confirming read
+        # failed): fall back to the legacy ``Res`` classifier.
+        if outcome == "granted":
+            return _granted(raw_payload)
         if outcome == "full":
-            # Not yet terminal — caller may walk to the second shot.
-            return _AttemptResult.full(
-                rule=rule,
-                target_class=class_type,
-                target_slot=target_slot,
-                fallback_index=None,
-                response=raw_payload,
-                telegram_text=self._render_full_text(rule, class_type, class_time, target_slot),
-            )
+            return _full()
         # "unknown" — escalate to upstream_unavailable but keep the
         # raw Res so we can extend the classifier post-hoc.
-        return _AttemptResult.done_terminal(
-            rule=rule,
-            target_class=class_type,
-            target_slot=target_slot,
-            terminal_status="upstream_unavailable",
-            fallback_index=None,
-            response=raw_payload,
-            telegram_text=self._render_upstream_text(rule, class_type, target_slot),
+        return _upstream()
+
+    def _resolve_enrollment(
+        self,
+        *,
+        cookie: str,
+        ticks: int,
+        slot_id: int,
+        first_payload: dict[str, Any],
+    ) -> SlotEnrollment | None:
+        """Confirm whether the operator is enrolled in ``slot_id``.
+
+        Returns ``None`` when verification is impossible (no ``idu``
+        configured, or the confirming read failed), signalling the
+        caller to fall back to the ``Res`` classifier.
+
+        The ``inscribir`` response mirrors ``LoadClass`` and is checked
+        first; if it does not already show the operator enrolled we
+        issue one confirming ``LoadClass`` read — the exact method Phase
+        0 used to verify a booking end-to-end — in case the mutating
+        response predates the enrollment write.
+        """
+        if not self._operator_idu:
+            return None
+        first = read_target_enrollment(
+            first_payload, slot_id=slot_id, operator_idu=self._operator_idu
+        )
+        if first.found and first.enrolled:
+            return first
+        try:
+            loaded = self._client.load_class(cookie, ticks)
+        except (WodBusterAuthError, WodBusterTransportError, WodBusterProtocolError):
+            # Confirming read unavailable: use whatever the inscribir
+            # response already told us (may be "not found").
+            return first if first.found else None
+        return read_target_enrollment(
+            loaded.payload, slot_id=slot_id, operator_idu=self._operator_idu
         )
 
     def _find_slot_with_retry(
