@@ -140,7 +140,7 @@
       <thead>
         <tr>
           <th>{{ t("history.table.day") }}</th>
-          <th>{{ t("history.table.hour") }}</th>
+          <th>{{ t("history.table.date") }}</th>
           <th>{{ t("history.table.class") }}</th>
           <th>{{ t("history.table.result") }}</th>
           <th>{{ t("history.table.attempted") }}</th>
@@ -152,9 +152,8 @@
           <tr>
             <td>
               <span class="wb-chip wb-chip--accent">{{ row.day_label }}</span>
-              <span class="wb-tabular">{{ row.slot_date_label }}</span>
             </td>
-            <td class="wb-tabular">{{ row.slot_time_label }}</td>
+            <td class="wb-tabular">{{ row.slot_datetime_label }}</td>
             <td>
               <span class="wb-class-name">{{ row.target_class }}</span>
               {% if row.fallback_index == 1 %}

@@ -320,6 +320,10 @@ def test_history_attempts_table_renders_operator_local_time(
     # Slot and attempt both shift +2h into local time; nothing renders UTC.
     assert "21:30" in body
     assert "21:35" in body
+    # The Day/Date columns show the weekday name and a combined
+    # "date at time" label (15 Jul 2026 is a Wednesday).
+    assert "Wednesday" in body
+    assert "15 Jul at 21:30" in body
     assert "UTC" not in body
 
 
