@@ -155,20 +155,20 @@ EN: dict[str, str] = {
     "history.eyebrow": "Activity",
     "history.title": "📜 Booking history",
     "history.subtitle": (
-        "Every booking attempt the worker has made, newest first. Use the "
+        "This week's booking attempts, newest first. Use the "
         "Cancel button on any upcoming granted class to release your slot "
         "(this also updates WodBuster and pushes a Telegram notification)."
     ),
-    "history.empty.title": "🕓 No bookings yet",
+    "history.empty.title": "🕓 No attempts this week",
     "history.empty.body": (
-        "Once the scheduler fires against one of your rules, the outcome will show up here."
+        "Once the scheduler fires against one of your rules this week, the outcome will show up here."
     ),
     "history.upcoming.title": "🗓️ Upcoming bookings",
     "history.upcoming.empty": (
         "No granted or scheduled bookings on the horizon. Create a rule "
         "to start automating attendance."
     ),
-    "history.attempts.title": "📜 All attempts",
+    "history.attempts.title": "📜 This week's attempts",
     "history.table.when": "When",
     "history.table.class": "Class",
     "history.table.result": "Result",
@@ -193,6 +193,8 @@ EN: dict[str, str] = {
     "cookie.status.projected_expiry": "Projected expiry",
     "cookie.status.awaiting_first_heartbeat": "awaiting first heartbeat",
     "cookie.status.last_probe": "Last probe",
+    "cookie.status.valid": "valid",
+    "cookie.status.rejected": "rejected",
     "cookie.status.unknown": "unknown",
     # -- vacation ----------------------------------------------------
     "vacation.eyebrow": "Automation",
@@ -607,20 +609,20 @@ ES: dict[str, str] = {
     "history.eyebrow": "Actividad",
     "history.title": "📜 Historial de reservas",
     "history.subtitle": (
-        "Cada intento de reserva del worker, del más reciente al más antiguo. "
+        "Los intentos de reserva de esta semana, del más reciente al más antiguo. "
         "Usa el botón Cancelar en cualquier clase reservada próxima para "
         "liberar tu plaza (actualiza también WodBuster y avisa por Telegram)."
     ),
-    "history.empty.title": "🕓 Aún no hay reservas",
+    "history.empty.title": "🕓 Sin intentos esta semana",
     "history.empty.body": (
-        "Cuando el scheduler ejecute una de tus reglas, el resultado aparecerá aquí."
+        "Cuando el scheduler ejecute una de tus reglas esta semana, el resultado aparecerá aquí."
     ),
     "history.upcoming.title": "🗓️ Próximas reservas",
     "history.upcoming.empty": (
         "No hay reservas concedidas ni programadas en el horizonte. Crea "
         "una regla para empezar a automatizar."
     ),
-    "history.attempts.title": "📜 Todos los intentos",
+    "history.attempts.title": "📜 Intentos de esta semana",
     "history.table.when": "Cuándo",
     "history.table.class": "Clase",
     "history.table.result": "Resultado",
@@ -645,6 +647,8 @@ ES: dict[str, str] = {
     "cookie.status.projected_expiry": "Caducidad estimada",
     "cookie.status.awaiting_first_heartbeat": "esperando primer heartbeat",
     "cookie.status.last_probe": "Última comprobación",
+    "cookie.status.valid": "válida",
+    "cookie.status.rejected": "rechazada",
     "cookie.status.unknown": "desconocido",
     # -- vacation ----------------------------------------------------
     "vacation.eyebrow": "Automatización",

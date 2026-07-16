@@ -215,6 +215,26 @@ def test_rules_table_wrapped_for_mobile_scroll(
     assert wrap_index < table_index
 
 
+def test_rules_class_name_uses_brand_font_not_code(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Class names render as brand-font tokens, not monospace <code> chips."""
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    _seed_active_rule(postgres_engine, operator_id=op_id)
+    app = app_factory()
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/rules")
+
+    assert response.status_code == 200
+    assert '<span class="wb-class-name">WOD</span>' in response.text
+    # The rules list no longer renders class names in a <code> element.
+    assert "<code>" not in response.text
+
+
 def test_dashboard_countdown_present_when_rule_active(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],

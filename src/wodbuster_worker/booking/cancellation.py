@@ -259,25 +259,23 @@ def list_recent_bookings(
     session: Session,
     operator_id: int,
     *,
+    since: datetime | None = None,
     limit: int = 50,
 ) -> list[BookingOutcome]:
     """Return the operator's most recent booking attempts, newest first.
 
     Used by the history page (and, transitively, by the cancel
-    button which lives on that page). ``limit`` bounds the result so
-    a long-lived operator doesn't ship megabytes of rows to the
-    browser on every visit.
+    button which lives on that page). ``since`` narrows the result to
+    attempts made at or after that instant (the history page uses it
+    to show only the current week). ``limit`` bounds the result so a
+    long-lived operator doesn't ship megabytes of rows to the browser
+    on every visit.
     """
-    return list(
-        session.execute(
-            select(BookingOutcome)
-            .where(BookingOutcome.operator_id == operator_id)
-            .order_by(BookingOutcome.attempted_at.desc())
-            .limit(limit)
-        )
-        .scalars()
-        .all()
-    )
+    stmt = select(BookingOutcome).where(BookingOutcome.operator_id == operator_id)
+    if since is not None:
+        stmt = stmt.where(BookingOutcome.attempted_at >= since)
+    stmt = stmt.order_by(BookingOutcome.attempted_at.desc()).limit(limit)
+    return list(session.execute(stmt).scalars().all())
 
 
 def list_upcoming_bookings(

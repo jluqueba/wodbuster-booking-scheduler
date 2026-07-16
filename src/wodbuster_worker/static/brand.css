@@ -712,10 +712,26 @@ fieldset legend {
 .wb-rules-table tbody tr:last-child td { border-bottom: none; }
 .wb-rules-table tbody tr:hover { background: rgba(248, 255, 64, 0.03); }
 .wb-rules-table .wb-cell-actions {
+  /* Keep this a real table cell. Setting display:flex on a <td> pulls it
+     out of the table's cell layout into an anonymous cell; when the cell
+     is empty (most history rows are not cancellable) that anonymous cell
+     renders as a stray dark box at the row's right edge. A plain
+     right-aligned cell stays cleanly empty and still lines the action
+     buttons up on the right, and the inline-flex buttons keep their
+     natural height so Edit and Delete match in size. */
+  text-align: right;
   white-space: nowrap;
-  display: flex;
-  gap: 0.4rem;
-  justify-content: flex-end;
+}
+.wb-rules-table .wb-cell-actions .wb-inline-form {
+  margin-left: 0.4rem;
+}
+
+/* Class-type value inside the rules table. Uses the brand font rather
+   than the monospace ``<code>`` treatment, which read as an out-of-place
+   chip next to the rest of the condensed UI type. */
+.wb-class-name {
+  font-family: var(--wb-font);
+  font-weight: 600;
 }
 
 .wb-preflist {
@@ -1216,11 +1232,14 @@ button.wb-confirm__cancel:focus-visible,
 }
 
 .wb-upcoming__item {
+  /* Stack each slot vertically — time, then class, then status — so the
+     layout stays identical regardless of the class name length. Short
+     names no longer sit inline with the time while long ones wrap. */
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  padding: 0.55rem 0;
   border-top: 1px solid var(--wb-border);
 }
 .wb-upcoming__item:first-child {
@@ -1240,7 +1259,7 @@ button.wb-confirm__cancel:focus-visible,
 }
 
 .wb-upcoming__cancel {
-  margin-left: auto;
+  margin-left: 0;
 }
 .wb-upcoming__cancel .wb-btn {
   padding: 0.3rem 0.6rem;
@@ -1260,8 +1279,8 @@ button.wb-confirm__cancel:focus-visible,
   color: var(--wb-info);
   border-color: var(--wb-info);
 }
-/* Push the chip to the right when the slot has no Cancel button
-   (pending slots) so the row still lines up nicely. */
+/* In the stacked column layout the status chip sits on its own row and
+   left-aligns with the time and class above it. */
 .wb-upcoming__item--pending .wb-upcoming__chip {
-  margin-left: auto;
+  margin-left: 0;
 }
