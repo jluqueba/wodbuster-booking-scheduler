@@ -16,11 +16,18 @@ the routes' component tests via a fake WodBuster client.
 
 from __future__ import annotations
 
+import contextlib
+from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
+from wodbuster_worker.rules import classes as classes_module
 from wodbuster_worker.rules.classes import (
     AvailableClasses,
     extract_available_classes,
+    fetch_available_classes,
 )
 
 
@@ -192,3 +199,75 @@ def test_extract_wrong_types_on_both_arrays_returns_empty() -> None:
     payload = {"ClasesFiltradas": "not a list", "Data": 42}
     result = extract_available_classes(payload)
     assert result.is_empty
+
+
+# ---------------------------------------------------------------------------
+# fetch_available_classes week-scan behaviour
+# ---------------------------------------------------------------------------
+
+
+class _FakeStore:
+    """Stand-in cookie store that ignores the session and returns a cookie."""
+
+    def __init__(self, cookie: str | None) -> None:
+        self._cookie = cookie
+
+    def load(self, _session: Any, _operator_id: int) -> str | None:
+        return self._cookie
+
+
+class _FakeClient:
+    """Returns a per-call payload and records the ``ticks`` it saw."""
+
+    def __init__(self, payloads: list[dict[str, Any]]) -> None:
+        self._payloads = payloads
+        self.calls: list[int] = []
+
+    def load_class(self, _cookie_value: str, ticks: int) -> SimpleNamespace:
+        payload = self._payloads[len(self.calls)]
+        self.calls.append(ticks)
+        return SimpleNamespace(payload=payload)
+
+
+@contextlib.contextmanager
+def _null_session() -> Iterator[None]:
+    yield None
+
+
+def test_fetch_unions_day_specific_classes_across_the_week(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Saturday-only class surfaces even though it runs on one day.
+
+    WodBuster scopes ``ClasesFiltradas`` to the queried day, so the
+    picker probes all seven days and unions the results. Here only one
+    day carries ``Endurance``; it must still appear in the combo.
+    """
+    per_day = [
+        _clases_filtradas({"NombreE": "WOD", "Hora": "18:30:00"}) for _ in range(7)
+    ]
+    per_day[3] = _clases_filtradas(
+        {"NombreE": "WOD", "Hora": "18:30:00"},
+        {"NombreE": "Endurance", "Hora": "10:00:00"},
+    )
+    client = _FakeClient(per_day)
+    monkeypatch.setattr(classes_module, "get_session", _null_session)
+
+    result = fetch_available_classes(_FakeStore("cookie"), client, operator_id=1)
+
+    assert result is not None
+    assert result.class_types == ["Endurance", "WOD"]
+    assert result.time_slots == ["10:00", "18:30"]
+    # One probe per day of the week, each a distinct day.
+    assert len(client.calls) == 7
+    assert len(set(client.calls)) == 7
+
+
+def test_fetch_returns_none_when_no_cookie(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _FakeClient([])
+    monkeypatch.setattr(classes_module, "get_session", _null_session)
+
+    result = fetch_available_classes(_FakeStore(None), client, operator_id=1)
+
+    assert result is None
+    assert client.calls == []

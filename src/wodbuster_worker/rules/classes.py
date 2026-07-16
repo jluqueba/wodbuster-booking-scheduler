@@ -29,7 +29,7 @@ tagged ``rules.picker.*`` — invaluable when the operator reports
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -68,13 +68,24 @@ def fetch_available_classes(
     client: WodBusterClient,
     operator_id: int,
 ) -> AvailableClasses | None:
-    """Probe WodBuster once and return the distinct class/time picker set.
+    """Probe WodBuster across the week and return the class/time picker set.
 
-    Returns ``None`` when the cookie is missing or WodBuster refuses
-    the call. Returns an :class:`AvailableClasses` (possibly empty)
-    when the call succeeds but yields no parseable entries — the
-    caller inspects ``is_empty`` to decide whether to disable the
-    form.
+    WodBuster's ``ClasesFiltradas`` array is scoped to the day of the
+    queried ``ticks``, so a single probe only surfaces the classes
+    that run on that one weekday. Classes that only run on a specific
+    day (for example a Saturday-only ``Endurance`` session) are
+    invisible unless the operator happens to open the form on that
+    day. To make the picker day-independent we probe each day of the
+    current week (:func:`_week_ticks_utc`) and union the results.
+    ``LoadClass`` is an ordinary calendar read, not subject to the
+    booking-attempt quota, and the form is opened infrequently, so
+    the extra reads are cheap.
+
+    Returns ``None`` when the cookie is missing, when WodBuster
+    rejects the cookie, or when every daily probe fails. Returns an
+    :class:`AvailableClasses` (possibly empty) when at least one probe
+    succeeds — the caller inspects ``is_empty`` to decide whether to
+    disable the form.
     """
     with get_session() as session:
         cookie_value = store.load(session, operator_id)
@@ -82,29 +93,53 @@ def fetch_available_classes(
         _log.info("rules.picker.no_cookie", operator_id=operator_id)
         return None
 
-    ticks = _today_ticks_utc()
-    try:
-        loaded = client.load_class(cookie_value, ticks)
-    except WodBusterAuthError as exc:
-        _log.warning("rules.picker.auth_error", operator_id=operator_id, error=str(exc))
-        return None
-    except (WodBusterTransportError, WodBusterProtocolError) as exc:
-        _log.warning(
-            "rules.picker.upstream_error",
-            operator_id=operator_id,
-            error_type=type(exc).__name__,
-            error=str(exc),
-        )
+    class_types: set[str] = set()
+    time_slots: set[str] = set()
+    days_probed = 0
+    for ticks in _week_ticks_utc():
+        try:
+            loaded = client.load_class(cookie_value, ticks)
+        except WodBusterAuthError as exc:
+            # A rejected cookie fails identically for every day, so
+            # stop probing and let the caller render the disabled form.
+            _log.warning(
+                "rules.picker.auth_error",
+                operator_id=operator_id,
+                ticks=ticks,
+                error=str(exc),
+            )
+            return None
+        except (WodBusterTransportError, WodBusterProtocolError) as exc:
+            # Transient / day-specific failure: skip this day and keep
+            # probing the rest of the week.
+            _log.warning(
+                "rules.picker.upstream_error",
+                operator_id=operator_id,
+                ticks=ticks,
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
+            continue
+
+        days_probed += 1
+        day = extract_available_classes(loaded.payload)
+        class_types.update(day.class_types)
+        time_slots.update(day.time_slots)
+
+    if days_probed == 0:
+        _log.warning("rules.picker.all_probes_failed", operator_id=operator_id)
         return None
 
-    result = extract_available_classes(loaded.payload)
+    result = AvailableClasses(
+        class_types=sorted(class_types),
+        time_slots=sorted(time_slots),
+    )
     _log.info(
         "rules.picker.fetched",
         operator_id=operator_id,
         class_types=len(result.class_types),
         time_slots=len(result.time_slots),
-        clases_filtradas_len=_safe_len(loaded.payload.get("ClasesFiltradas")),
-        data_len=_safe_len(loaded.payload.get("Data")),
+        days_probed=days_probed,
     )
     return result
 
@@ -186,16 +221,22 @@ def _accumulate(
         time_slots.add(time_value[:5])  # "HH:MM:SS" -> "HH:MM"
 
 
-def _safe_len(value: Any) -> int | None:
-    if isinstance(value, list):
-        return len(value)
-    return None
-
-
 def _today_ticks_utc() -> int:
     now = datetime.now(tz=UTC)
     midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
     return int(midnight.timestamp())
+
+
+def _week_ticks_utc() -> list[int]:
+    """Return midnight-UTC ticks for today and the next six days.
+
+    A rolling seven-day window guarantees the next occurrence of every
+    weekday is probed exactly once, so day-specific classes surface
+    regardless of which day the operator opens the form.
+    """
+    now = datetime.now(tz=UTC)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return [int((midnight + timedelta(days=offset)).timestamp()) for offset in range(7)]
 
 
 __all__ = ["AvailableClasses", "extract_available_classes", "fetch_available_classes"]
