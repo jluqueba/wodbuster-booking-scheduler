@@ -78,186 +78,174 @@
 {% endblock %}
 
 {% block content %}
-  <span class="wb-page-title__eyebrow">Help</span>
-  <h1 class="wb-page-title">❓ Frequently asked questions</h1>
+  <span class="wb-page-title__eyebrow">{{ t("faq.eyebrow") }}</span>
+  <h1 class="wb-page-title">{{ t("faq.title") }}</h1>
   <p class="wb-page-subtitle">
-    Everything you need to run bookings on autopilot. Tap a question
-    to expand it.
+    {{ t("faq.subtitle") }}
   </p>
 
   <div class="wb-faq">
 
-    <h2 class="wb-faq__section-title">Getting started</h2>
+    <h2 class="wb-faq__section-title">{{ t("faq.section.getting_started") }}</h2>
 
     <details>
-      <summary>What is this app?</summary>
+      <summary>{{ t("faq.q.what_is_app") }}</summary>
       <p class="wb-faq__answer">
-        A background worker that books your WodBuster classes the
-        moment the reservation window opens. You configure your
-        weekly schedule once (Rules), keep a valid session cookie on
-        file (Cookie), and the app fires the booking on your behalf.
-        Every attempt is logged on the History page.
+        {{ t("faq.a.what_is_app") | safe }}
       </p>
     </details>
 
     <details>
-      <summary>How do I make my first booking?</summary>
+      <summary>{{ t("faq.q.first_booking") }}</summary>
       <p class="wb-faq__answer">
-        Three steps: (1) paste a fresh <code>.WBAuth</code> cookie on
-        the <a href="{{ lang_url('/cookie') }}">Cookie</a> page, (2) create a rule on
-        the <a href="{{ lang_url('/rules') }}">Rules</a> page describing which class
-        you attend, at what time, and when WodBuster opens the
-        reservation window for it, (3) wait — the scheduler fires
-        automatically at the window-open instant.
+        {{ t("faq.a.first_booking", cookie_url=lang_url('/cookie'), rules_url=lang_url('/rules')) | safe }}
       </p>
     </details>
 
-    <h2 class="wb-faq__section-title">Cookie</h2>
+    <h2 class="wb-faq__section-title">{{ t("faq.section.cookie") }}</h2>
 
     <details>
-      <summary>Where do I get the cookie value from?</summary>
+      <summary>{{ t("faq.q.cookie_source") }}</summary>
       <p class="wb-faq__answer">
-        Log in to WodBuster normally in your browser, open the
-        developer tools (F12), go to the Application (or Storage)
-        tab, expand Cookies for the gym subdomain, and copy the
-        value of the cookie named <code>.WBAuth</code>. Paste it
-        into the Cookie page here.
+        {{ t("faq.a.cookie_source") | safe }}
       </p>
     </details>
 
     <details>
-      <summary>How often do I need to refresh the cookie?</summary>
+      <summary>{{ t("faq.q.cookie_refresh") }}</summary>
       <p class="wb-faq__answer">
-        WodBuster's session cookie lives for about 30 days. The app
-        checks it hourly and pushes a banner + Telegram alert 24 h
-        before the projected expiry so you have time to paste a
-        fresh one without missing a booking window.
+        {{ t("faq.a.cookie_refresh") | safe }}
       </p>
     </details>
 
     <details>
-      <summary>The dashboard says "Cookie rejected". What now?</summary>
+      <summary>{{ t("faq.q.cookie_rejected") }}</summary>
       <p class="wb-faq__answer">
-        WodBuster refused the stored cookie mid-flight — usually
-        because you logged out from the website, or the session was
-        invalidated remotely. Grab a fresh cookie from the browser
-        and paste it. The alert closes automatically on the next
-        successful heartbeat.
+        {{ t("faq.a.cookie_rejected") | safe }}
       </p>
     </details>
 
-    <h2 class="wb-faq__section-title">Rules</h2>
+    <h2 class="wb-faq__section-title">{{ t("faq.section.rules") }}</h2>
 
     <details>
-      <summary>What is a rule?</summary>
+      <summary>{{ t("faq.q.what_is_rule") }}</summary>
       <p class="wb-faq__answer">
-        A recurring weekly booking. It says: on this day of the
-        week, book this class type at this time. The app also asks
-        how many days before the class WodBuster opens the
-        reservation window and at what clock time — this is what
-        the scheduler uses to fire the booking at the right instant.
+        {{ t("faq.a.what_is_rule") | safe }}
       </p>
     </details>
 
     <details>
-      <summary>What is the "second shot"?</summary>
+      <summary>{{ t("faq.q.second_shot") }}</summary>
       <p class="wb-faq__answer">
-        An optional fallback. If the primary class is already full
-        when the worker tries to book it, the second shot is a
-        different class type or time to attempt as a backup. Leave
-        it blank if you have no alternative.
+        {{ t("faq.a.second_shot") | safe }}
       </p>
     </details>
 
     <details>
-      <summary>Can I book multiple days from one form?</summary>
+      <summary>{{ t("faq.q.multi_day") }}</summary>
       <p class="wb-faq__answer">
-        Yes — pick every attendance day in the day pills and the
-        create form fans out into one rule per selected day. Edit
-        each row afterwards to tweak a specific day.
+        {{ t("faq.a.multi_day") | safe }}
       </p>
     </details>
 
     <details>
-      <summary>The class-type dropdown is empty. Why?</summary>
+      <summary>{{ t("faq.q.empty_dropdown") }}</summary>
       <p class="wb-faq__answer">
-        The picker is seeded from a live WodBuster call. If it is
-        empty, the cookie is missing, invalid, or the upstream call
-        failed. Paste a fresh cookie and refresh. If it stays empty
-        after that, hit <code>/rules/api/classes/debug</code> in
-        your browser — the JSON response shows what the picker sees.
+        {{ t("faq.a.empty_dropdown") | safe }}
       </p>
     </details>
 
-    <h2 class="wb-faq__section-title">History &amp; cancel</h2>
+    <h2 class="wb-faq__section-title">{{ t("faq.section.history") }}</h2>
 
     <details>
-      <summary>How do I cancel a booking?</summary>
+      <summary>{{ t("faq.q.how_cancel") }}</summary>
       <p class="wb-faq__answer">
-        Go to the <a href="{{ lang_url('/history') }}">History</a> page, find the
-        booking (it must be granted and its class start must still
-        be in the future), and tap Cancel. The app calls WodBuster,
-        flips the row to <em>cancelled</em>, and sends a Telegram
-        notification.
+        {{ t("faq.a.how_cancel", history_url=lang_url('/history')) | safe }}
       </p>
     </details>
 
     <details>
-      <summary>What happens if I tap Cancel twice?</summary>
+      <summary>{{ t("faq.q.cancel_twice") }}</summary>
       <p class="wb-faq__answer">
-        The second tap is a no-op. The app detects the row is
-        already cancelled and shows "Already cancelled" without
-        calling WodBuster again.
+        {{ t("faq.a.cancel_twice") | safe }}
       </p>
     </details>
 
     <details>
-      <summary>Why do some booked classes have no Cancel button?</summary>
+      <summary>{{ t("faq.q.no_cancel_button") }}</summary>
       <p class="wb-faq__answer">
-        Cancel is only shown for rows that are <em>granted</em> and
-        whose class start is in the future. Past bookings, full
-        outcomes, and rows already cancelled cannot be cancelled
-        from the app.
+        {{ t("faq.a.no_cancel_button") | safe }}
       </p>
     </details>
 
-    <h2 class="wb-faq__section-title">Notifications</h2>
+    <h2 class="wb-faq__section-title">{{ t("faq.section.vacation") }}</h2>
 
     <details>
-      <summary>Where do notifications go?</summary>
+      <summary>{{ t("faq.q.vacation_what") }}</summary>
       <p class="wb-faq__answer">
-        Every mutating event (booking granted, booking failed, cookie
-        expiring, cookie rejected) produces a banner on the
-        dashboard <em>and</em> a Telegram message — as long as you
-        have registered your Telegram chat id against your operator
-        profile. Web-only alerts still work if Telegram is not
-        wired.
-      </p>
-    </details>
-
-    <h2 class="wb-faq__section-title">Troubleshooting</h2>
-
-    <details>
-      <summary>The scheduler did not fire at the expected time.</summary>
-      <p class="wb-faq__answer">
-        Check the History page: if the row is there with a
-        non-granted outcome (full, class-not-visible,
-        upstream-unavailable), the scheduler tried but WodBuster
-        refused. If no row exists at all, the scheduler did not
-        fire — usually because the rule is inactive, the cookie is
-        missing, or the container restarted moments before the
-        window and did not re-register the job.
+        {{ t("faq.a.vacation_what") | safe }}
       </p>
     </details>
 
     <details>
-      <summary>I want to sign in from a different provider.</summary>
+      <summary>{{ t("faq.q.vacation_enable") }}</summary>
       <p class="wb-faq__answer">
-        Log out, then hit the sign-in provider you want on the
-        landing page. The app matches identities by subject id
-        provided by the OAuth callback — an account you have not
-        signed in with before will be rejected because the operator
-        allow-list is single-user for now.
+        {{ t("faq.a.vacation_enable", vacation_url=lang_url('/vacation')) | safe }}
+      </p>
+    </details>
+
+    <details>
+      <summary>{{ t("faq.q.vacation_bookings") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.vacation_bookings") | safe }}
+      </p>
+    </details>
+
+    <h2 class="wb-faq__section-title">{{ t("faq.section.notifications") }}</h2>
+
+    <details>
+      <summary>{{ t("faq.q.where_notifications") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.where_notifications") | safe }}
+      </p>
+    </details>
+
+    <h2 class="wb-faq__section-title">{{ t("faq.section.telegram") }}</h2>
+
+    <details>
+      <summary>{{ t("faq.q.telegram_why") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.telegram_why") | safe }}
+      </p>
+    </details>
+
+    <details>
+      <summary>{{ t("faq.q.telegram_setup") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.telegram_setup", telegram_url=lang_url('/telegram')) | safe }}
+      </p>
+    </details>
+
+    <details>
+      <summary>{{ t("faq.q.telegram_unbind") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.telegram_unbind", telegram_url=lang_url('/telegram')) | safe }}
+      </p>
+    </details>
+
+    <h2 class="wb-faq__section-title">{{ t("faq.section.troubleshooting") }}</h2>
+
+    <details>
+      <summary>{{ t("faq.q.scheduler_no_fire") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.scheduler_no_fire") | safe }}
+      </p>
+    </details>
+
+    <details>
+      <summary>{{ t("faq.q.different_provider") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.different_provider") | safe }}
       </p>
     </details>
 
