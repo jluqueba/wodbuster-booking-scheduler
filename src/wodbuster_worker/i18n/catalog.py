@@ -250,6 +250,31 @@ EN: dict[str, str] = {
         "telegram-bot-token is set in Key Vault and the container has "
         "been restarted since it was seeded."
     ),
+    # -- landing -----------------------------------------------------
+    "landing.hero.eyebrow": "🏋️ Booking on autopilot",
+    "landing.hero.title_pre": "Never miss a ",
+    "landing.hero.title_accent": "WOD",
+    "landing.hero.title_post": ".",
+    "landing.hero.subtitle": (
+        "Set a rule once. Paste a cookie. The worker grabs your class the "
+        "moment booking opens and pings your phone when it needs you."
+    ),
+    "landing.cards.rules.title": "📅 Recurring rules",
+    "landing.cards.rules.body": (
+        "One rule per day-of-week with a preference chain of class types. "
+        "Rule changes take effect on the next window."
+    ),
+    "landing.cards.cookie.title": "💓 Cookie heartbeat",
+    "landing.cards.cookie.body": (
+        "Hourly probe against WodBuster. Projects expiry, alerts you "
+        "24 hours before the next booking window if the cookie is "
+        "about to die."
+    ),
+    "landing.cards.notifications.title": "🔔 Dual-channel notifications",
+    "landing.cards.notifications.body": (
+        "Every outcome shows up as a banner in-app and a message on "
+        "Telegram. Never surprise-fail on a Monday."
+    ),
     # -- auth --------------------------------------------------------
     "auth.landing.title": "WodBuster Booking Scheduler",
     "auth.denied.title": "🚫 Access denied",
@@ -530,6 +555,32 @@ ES: dict[str, str] = {
         "El servidor aún no sabe el nombre del bot. Comprueba que "
         "telegram-bot-token está en Key Vault y que el contenedor se "
         "reinició después de guardarlo."
+    ),
+    # -- landing -----------------------------------------------------
+    "landing.hero.eyebrow": "🏋️ Reservas en piloto automático",
+    "landing.hero.title_pre": "No te pierdas ningún ",
+    "landing.hero.title_accent": "WOD",
+    "landing.hero.title_post": ".",
+    "landing.hero.subtitle": (
+        "Define una regla una vez. Pega una cookie. El worker reserva tu "
+        "clase en cuanto se abre la inscripción y te avisa al móvil cuando "
+        "te necesita."
+    ),
+    "landing.cards.rules.title": "📅 Reglas recurrentes",
+    "landing.cards.rules.body": (
+        "Una regla por día de la semana con una cadena de preferencias de "
+        "tipos de clase. Los cambios se aplican en la próxima ventana."
+    ),
+    "landing.cards.cookie.title": "💓 Latido de la cookie",
+    "landing.cards.cookie.body": (
+        "Sondeo cada hora contra WodBuster. Estima la caducidad y te avisa "
+        "24 horas antes de la próxima ventana de reserva si la cookie está "
+        "a punto de expirar."
+    ),
+    "landing.cards.notifications.title": "🔔 Notificaciones en dos canales",
+    "landing.cards.notifications.body": (
+        "Cada resultado aparece como aviso en la app y como mensaje en "
+        "Telegram. Sin sustos de última hora un lunes."
     ),
     # -- auth --------------------------------------------------------
     "auth.landing.title": "WodBuster Booking Scheduler",

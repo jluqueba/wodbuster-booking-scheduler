@@ -66,8 +66,16 @@ def test_es_landing_renders_spanish_content(
     assert resp.status_code == 200
     assert "Entrar con Microsoft" in resp.text
     assert "Entrar con Google" in resp.text
-    # Language does not leak the English label alongside the Spanish one.
+    # Hero and feature tiles are translated, not just the sign-in buttons.
+    assert "No te pierdas ning\u00fan" in resp.text
+    assert "Reglas recurrentes" in resp.text
+    assert "Latido de la cookie" in resp.text
+    assert "Notificaciones en dos canales" in resp.text
+    # Language does not leak the English copy alongside the Spanish one.
     assert "Sign in with Microsoft" not in resp.text
+    assert "Never miss a" not in resp.text
+    assert "Recurring rules" not in resp.text
+    assert "Dual-channel notifications" not in resp.text
 
 
 def test_es_landing_with_trailing_slash_matches_root(
