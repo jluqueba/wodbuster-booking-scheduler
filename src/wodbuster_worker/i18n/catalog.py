@@ -169,7 +169,8 @@ EN: dict[str, str] = {
         "to start automating attendance."
     ),
     "history.attempts.title": "📜 This week's attempts",
-    "history.table.when": "When",
+    "history.table.day": "Day",
+    "history.table.hour": "Hour",
     "history.table.class": "Class",
     "history.table.result": "Result",
     "history.table.attempted": "Attempted",
@@ -623,7 +624,8 @@ ES: dict[str, str] = {
         "una regla para empezar a automatizar."
     ),
     "history.attempts.title": "📜 Intentos de esta semana",
-    "history.table.when": "Cuándo",
+    "history.table.day": "Día",
+    "history.table.hour": "Hora",
     "history.table.class": "Clase",
     "history.table.result": "Resultado",
     "history.table.attempted": "Intentado",
