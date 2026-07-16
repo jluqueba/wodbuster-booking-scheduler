@@ -1,20 +1,24 @@
 # Application deployment workflow (F2.2, ADR-0001, ADR-0005, ADR-0007).
 #
 # Builds the worker container image from the repo `Dockerfile`, pushes it to
-# ACR, and updates the single Container App revision via `azd deploy`. Runs on
-# push to `main` when app code (`src/**`) or the `Dockerfile` changes, and on
-# manual dispatch. This workflow deploys app code only; infrastructure changes
-# are handled by `infra.yml` (F2.3). Authenticates via OIDC against the deploy
+# ACR, and updates the single Container App revision via `azd deploy`. Runs
+# only AFTER the `ci` workflow finishes successfully on `main` (so a red CI
+# blocks the deploy instead of racing it), and on manual dispatch. Because a
+# `workflow_run` trigger cannot carry path filters, the `gate` job below
+# re-applies the original app-code filter (`src/**` / `Dockerfile`) before the
+# deploy runs. This workflow deploys app code only; infrastructure changes are
+# handled by `infra.yml` (F2.3). Authenticates via OIDC against the deploy
 # user-assigned managed identity (ADR-0005). No client secrets in GitHub.
 
 name: deploy
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - src/**
-      - Dockerfile
+  # Gate the deploy on CI: fire only when the `ci` workflow completes, then
+  # check its conclusion in the `gate` job. A failed CI run therefore never
+  # produces a deploy. `workflow_dispatch` still allows a manual deploy.
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
   workflow_dispatch:
 
 concurrency:
@@ -28,8 +32,54 @@ permissions:
   contents: read
 
 jobs:
+  gate:
+    # Decide whether a deploy should happen. Runs only for a manual dispatch
+    # or a successful `ci` run that was itself a push to `main`; PR CI runs and
+    # failed runs are filtered out here. The step then re-applies the app-code
+    # path filter that `workflow_run` cannot express.
+    name: gate (ci success + app code changed)
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
+    outputs:
+      should_deploy: ${{ steps.decide.outputs.should_deploy }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # Check out the exact commit CI validated, with its parent, so the
+          # path-filter diff below can see what that commit changed.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          fetch-depth: 2
+
+      - name: Decide whether app code changed
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # A manual dispatch always deploys, regardless of what changed.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Preserve the original trigger's path filter: deploy only when app
+          # code or the Dockerfile changed in the validated commit. Squash and
+          # merge (the repo's merge strategy) lands one commit on main, so
+          # HEAD^..HEAD is the full change set.
+          if git diff --name-only HEAD^ HEAD | grep -Eq '^(src/|Dockerfile)'; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
   deploy:
     name: azd deploy worker (prod)
+    needs: gate
+    if: needs.gate.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -56,6 +106,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          # Deploy the exact commit CI validated (for workflow_run); falls back
+          # to the ref for a manual dispatch.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
