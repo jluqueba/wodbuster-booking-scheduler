@@ -135,6 +135,7 @@
       <p>{{ t("history.empty.body") }}</p>
     </div>
   {% else %}
+    <div class="wb-table-wrap">
     <table class="wb-rules-table wb-history-table">
       <thead>
         <tr>
@@ -187,5 +188,6 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   {% endif %}
 {% endblock %}

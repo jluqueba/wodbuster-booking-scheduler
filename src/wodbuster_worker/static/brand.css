@@ -93,6 +93,12 @@ body {
 }
 
 h1, h2, h3 {
+  /* Pin heading colour to the design token instead of inheriting
+     Pico's ``--pico-h1-color``. Pico's light theme (higher specificity
+     than our ``:root`` overrides) would otherwise tint headings
+     dark-grey on light-mode browsers, which reads as muted grey on
+     the app's always-dark background. */
+  color: var(--wb-text);
   letter-spacing: -0.02em;
 }
 
@@ -669,6 +675,16 @@ fieldset legend {
   margin-bottom: 1.5rem;
 }
 
+.wb-table-wrap {
+  /* Horizontal scroll container for wide data grids. On desktop the
+     table fits and nothing scrolls; on phones the grid scrolls inside
+     this box instead of forcing the whole page wider than the
+     viewport. */
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .wb-rules-table {
   width: 100%;
   border-collapse: separate;
@@ -1064,35 +1080,53 @@ button.wb-confirm__cancel:focus-visible,
     line-height: 1.5;
   }
   .wb-nav {
-    /* On narrow screens the centered-links grid does not have room
-       for horizontal scroll, so drop back to flex and let the link
-       row scroll horizontally while brand + logout stay pinned. */
+    /* Two-tier layout on phones: brand + logout share the top row,
+       and the nav links wrap onto full-width rows below so every
+       destination is visible and tappable without horizontal
+       scrolling. */
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     padding: 0.7rem 1rem;
-    gap: 0.75rem;
+    gap: 0.6rem 0.75rem;
+  }
+  .wb-nav__brand {
+    order: 1;
+    margin-right: auto;
+  }
+  .wb-nav form {
+    order: 2;
   }
   .wb-nav__links {
-    flex: 1 1 auto;
+    order: 3;
+    flex-basis: 100%;
+    width: 100%;
     justify-self: auto;
-    gap: 0.1rem;
-    overflow-x: auto;
-    /* Hide the horizontal scrollbar so it does not squeeze content.
-       ``scrollbar-width`` covers Firefox and modern Chromium; the
-       ``::-webkit-scrollbar`` rule below covers older WebKit /
-       Safari builds that predate CSS Scrollbars Styling. */
-    scrollbar-width: none;
-  }
-  .wb-nav__links::-webkit-scrollbar {
-    display: none;
+    flex-wrap: wrap;
+    overflow: visible;
+    gap: 0.4rem;
+    margin-top: 0.2rem;
   }
   .wb-nav__links a {
-    padding: 0.35rem 0.6rem;
-    font-size: 0.88rem;
+    padding: 0.45rem 0.7rem;
+    font-size: 0.9rem;
     white-space: nowrap;
+    border: 1px solid var(--wb-border);
+  }
+  .wb-nav__links a[aria-current="page"] {
+    border-color: rgba(248, 255, 64, 0.35);
   }
   .wb-nav__logout {
     padding: 0.35rem 0.7rem;
     font-size: 0.85rem;
+  }
+
+  /* Wide data grids scroll inside their frame instead of forcing the
+     whole page wider than the viewport. Single-line cells keep the
+     columns predictable while the operator swipes across. */
+  .wb-rules-table th,
+  .wb-rules-table td {
+    white-space: nowrap;
   }
 }
 
