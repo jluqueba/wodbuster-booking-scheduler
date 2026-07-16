@@ -96,7 +96,7 @@
               {% for slot in day.rows %}
                 <div class="wb-upcoming__item wb-upcoming__item--{{ slot.kind }}">
                   <span class="wb-upcoming__time">{{ slot.time_label }}</span>
-                  <code class="wb-upcoming__class">{{ slot.target_class }}</code>
+                  <span class="wb-upcoming__class">{{ slot.target_class }}</span>
                   {% if slot.fallback_index == 1 %}
                     <span class="wb-muted wb-note--xs">{{ t("history.second_shot_tag") }}</span>
                   {% endif %}
@@ -139,7 +139,8 @@
     <table class="wb-rules-table wb-history-table">
       <thead>
         <tr>
-          <th>{{ t("history.table.when") }}</th>
+          <th>{{ t("history.table.day") }}</th>
+          <th>{{ t("history.table.hour") }}</th>
           <th>{{ t("history.table.class") }}</th>
           <th>{{ t("history.table.result") }}</th>
           <th>{{ t("history.table.attempted") }}</th>
@@ -151,10 +152,11 @@
           <tr>
             <td>
               <span class="wb-chip wb-chip--accent">{{ row.day_label }}</span>
-              <span class="wb-tabular">{{ row.slot_label }}</span>
+              <span class="wb-tabular">{{ row.slot_date_label }}</span>
             </td>
+            <td class="wb-tabular">{{ row.slot_time_label }}</td>
             <td>
-              <code>{{ row.target_class }}</code>
+              <span class="wb-class-name">{{ row.target_class }}</span>
               {% if row.fallback_index == 1 %}
                 <span class="wb-muted wb-note--xs">
                   {{ t("history.second_shot_tag") }}

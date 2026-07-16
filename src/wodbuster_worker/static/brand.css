@@ -223,6 +223,14 @@ hr {
    Main layout
    -------------------------------------------------------------------------- */
 
+/* Reserve the scrollbar gutter on every page. Without this, a short page
+   (e.g. the Telegram binding page) has no vertical scrollbar while taller
+   pages do, so the centered layout jumps sideways by the scrollbar width
+   as you navigate between them. */
+html {
+  scrollbar-gutter: stable;
+}
+
 .wb-main {
   max-width: 56rem;
   margin: 0 auto;
@@ -725,6 +733,15 @@ fieldset legend {
 .wb-rules-table .wb-cell-actions .wb-inline-form {
   margin-left: 0.4rem;
 }
+/* Compact the in-table action buttons (rules Edit/Delete, history
+   Cancel). At full size the six-column rules table grew wider than its
+   container, so the horizontal-scroll wrapper clipped the trailing
+   Delete button at the right edge (the red fill looked cut off).
+   Smaller padding keeps the Edit/Delete pair inside the table width. */
+.wb-rules-table .wb-cell-actions .wb-btn {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+}
 
 /* Class-type value inside the rules table. Uses the brand font rather
    than the monospace ``<code>`` treatment, which read as an out-of-place
@@ -897,7 +914,10 @@ fieldset legend {
    -------------------------------------------------------------------------- */
 
 .wb-time-picker {
-  display: inline-flex;
+  /* Fill the grid cell so the class-time control lines up exactly with
+     the full-width <select> next to it (both sit in equal 1fr columns). */
+  display: flex;
+  width: 100%;
   align-items: center;
 }
 
@@ -1255,6 +1275,9 @@ button.wb-confirm__cancel:focus-visible,
 }
 
 .wb-upcoming__class {
+  /* Match the time label's font (brand, not monospace) so the class name
+     and the hour read as one coherent tile. */
+  font-family: var(--wb-font);
   color: var(--wb-text);
 }
 
