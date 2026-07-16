@@ -76,6 +76,23 @@ def test_favicon_served_as_svg(
     assert response.text.startswith("<?xml")
 
 
+def test_html_pins_dark_theme(
+    app_factory: Callable[..., FastAPI],
+) -> None:
+    """The app is dark-only; the root element pins Pico to its dark theme.
+
+    Without ``data-theme="dark"`` Pico v2 honors ``prefers-color-scheme``
+    and repaints tables, cards, and form controls with its light palette
+    on light-mode browsers, leaving unreadable white-on-light surfaces.
+    """
+    app = app_factory()
+    with TestClient(app, follow_redirects=False) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert '<html lang="en" data-theme="dark">' in response.text
+
+
 def test_faq_page_renders_behind_auth(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],
@@ -93,8 +110,39 @@ def test_faq_page_renders_behind_auth(
     assert "Cookie" in response.text
     assert "Rules" in response.text
     assert "Troubleshooting" in response.text
+    # New sections added alongside the i18n pass.
+    assert "Vacation mode" in response.text
+    assert "Telegram" in response.text
     # Question about the picker being empty is in the Rules section.
     assert "class-type dropdown is empty" in response.text
+
+
+def test_faq_page_renders_spanish(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/es/faq")
+
+    assert response.status_code == 200
+    # Whole page is translated, not just parts.
+    assert "Preguntas frecuentes" in response.text
+    assert "Primeros pasos" in response.text
+    assert "Modo vacaciones" in response.text
+    assert "Resolución de problemas" in response.text
+    # New sections carry Spanish copy.
+    assert "¿Qué es el modo vacaciones?" in response.text
+    assert "¿Cómo configuro Telegram?" in response.text
+    # Answer links keep the /es prefix.
+    assert 'href="/es/vacation"' in response.text
+    assert 'href="/es/telegram"' in response.text
+    # English copy does not leak through.
+    assert "Getting started" not in response.text
+    assert "Vacation mode" not in response.text
 
 
 def test_faq_route_gated_by_auth(
@@ -142,6 +190,29 @@ def test_rules_list_active_status_uses_success_chip(
     assert 'class="wb-chip wb-chip--success">active</span>' in response.text
     # And the old accent chip is not used for the status anymore.
     assert 'wb-chip--accent">active' not in response.text
+
+
+def test_rules_table_wrapped_for_mobile_scroll(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The data grid sits inside a scroll container so it never forces
+    the page wider than a phone viewport."""
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    _seed_active_rule(postgres_engine, operator_id=op_id)
+    app = app_factory()
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/rules")
+
+    assert response.status_code == 200
+    assert '<div class="wb-table-wrap">' in response.text
+    # The table lives inside the scroll wrapper.
+    wrap_index = response.text.index('class="wb-table-wrap"')
+    table_index = response.text.index('class="wb-rules-table"')
+    assert wrap_index < table_index
 
 
 def test_dashboard_countdown_present_when_rule_active(

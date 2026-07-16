@@ -250,6 +250,31 @@ EN: dict[str, str] = {
         "telegram-bot-token is set in Key Vault and the container has "
         "been restarted since it was seeded."
     ),
+    # -- landing -----------------------------------------------------
+    "landing.hero.eyebrow": "🏋️ Booking on autopilot",
+    "landing.hero.title_pre": "Never miss a ",
+    "landing.hero.title_accent": "WOD",
+    "landing.hero.title_post": ".",
+    "landing.hero.subtitle": (
+        "Set a rule once. Paste a cookie. The worker grabs your class the "
+        "moment booking opens and pings your phone when it needs you."
+    ),
+    "landing.cards.rules.title": "📅 Recurring rules",
+    "landing.cards.rules.body": (
+        "One rule per day-of-week with a preference chain of class types. "
+        "Rule changes take effect on the next window."
+    ),
+    "landing.cards.cookie.title": "💓 Cookie heartbeat",
+    "landing.cards.cookie.body": (
+        "Hourly probe against WodBuster. Projects expiry, alerts you "
+        "24 hours before the next booking window if the cookie is "
+        "about to die."
+    ),
+    "landing.cards.notifications.title": "🔔 Dual-channel notifications",
+    "landing.cards.notifications.body": (
+        "Every outcome shows up as a banner in-app and a message on "
+        "Telegram. Never surprise-fail on a Monday."
+    ),
     # -- auth --------------------------------------------------------
     "auth.landing.title": "WodBuster Booking Scheduler",
     "auth.denied.title": "🚫 Access denied",
@@ -261,6 +286,154 @@ EN: dict[str, str] = {
     "auth.signin.with_microsoft": "🪟 Sign in with Microsoft",
     "auth.signin.with_github": "🐙 Sign in with GitHub",
     "auth.signin.with_google": "🌐 Sign in with Google",
+    # -- faq ---------------------------------------------------------
+    "faq.eyebrow": "Help",
+    "faq.title": "❓ Frequently asked questions",
+    "faq.subtitle": (
+        "Everything you need to run bookings on autopilot. Tap a question to expand it."
+    ),
+    "faq.section.getting_started": "Getting started",
+    "faq.section.cookie": "Cookie",
+    "faq.section.rules": "Rules",
+    "faq.section.history": "History & cancel",
+    "faq.section.vacation": "Vacation mode",
+    "faq.section.notifications": "Notifications",
+    "faq.section.telegram": "Telegram",
+    "faq.section.troubleshooting": "Troubleshooting",
+    "faq.q.what_is_app": "What is this app?",
+    "faq.a.what_is_app": (
+        "A background worker that books your WodBuster classes the moment the reservation "
+        "window opens. You configure your weekly schedule once (Rules), keep a valid session "
+        "cookie on file (Cookie), and the app fires the booking on your behalf. Every attempt "
+        "is logged on the History page."
+    ),
+    "faq.q.first_booking": "How do I make my first booking?",
+    "faq.a.first_booking": (
+        "Three steps: (1) paste a fresh <code>.WBAuth</code> cookie on the "
+        "<a href='{cookie_url}'>Cookie</a> page, (2) create a rule on the "
+        "<a href='{rules_url}'>Rules</a> page describing which class you attend, at what time, "
+        "and when WodBuster opens the reservation window for it, (3) wait — the scheduler "
+        "fires automatically at the window-open instant."
+    ),
+    "faq.q.cookie_source": "Where do I get the cookie value from?",
+    "faq.a.cookie_source": (
+        "Log in to WodBuster normally in your browser, open the developer tools (F12), go to "
+        "the Application (or Storage) tab, expand Cookies for the gym subdomain, and copy the "
+        "value of the cookie named <code>.WBAuth</code>. Paste it into the Cookie page here."
+    ),
+    "faq.q.cookie_refresh": "How often do I need to refresh the cookie?",
+    "faq.a.cookie_refresh": (
+        "WodBuster's session cookie lives for about 30 days. The app checks it hourly and "
+        "pushes a banner + Telegram alert 24 h before the projected expiry so you have time "
+        "to paste a fresh one without missing a booking window."
+    ),
+    "faq.q.cookie_rejected": "The dashboard says 'Cookie rejected'. What now?",
+    "faq.a.cookie_rejected": (
+        "WodBuster refused the stored cookie mid-flight — usually because you logged out from "
+        "the website, or the session was invalidated remotely. Grab a fresh cookie from the "
+        "browser and paste it. The alert closes automatically on the next successful heartbeat."
+    ),
+    "faq.q.what_is_rule": "What is a rule?",
+    "faq.a.what_is_rule": (
+        "A recurring weekly booking. It says: on this day of the week, book this class type "
+        "at this time. The app also asks how many days before the class WodBuster opens the "
+        "reservation window and at what clock time — this is what the scheduler uses to fire "
+        "the booking at the right instant."
+    ),
+    "faq.q.second_shot": "What is the 'second shot'?",
+    "faq.a.second_shot": (
+        "An optional fallback. If the primary class is already full when the worker tries to "
+        "book it, the second shot is a different class type or time to attempt as a backup. "
+        "Leave it blank if you have no alternative."
+    ),
+    "faq.q.multi_day": "Can I book multiple days from one form?",
+    "faq.a.multi_day": (
+        "Yes — pick every attendance day in the day pills and the create form fans out into "
+        "one rule per selected day. Edit each row afterwards to tweak a specific day."
+    ),
+    "faq.q.empty_dropdown": "The class-type dropdown is empty. Why?",
+    "faq.a.empty_dropdown": (
+        "The picker is seeded from a live WodBuster call. If it is empty, the cookie is "
+        "missing, invalid, or the upstream call failed. Paste a fresh cookie and refresh. If "
+        "it stays empty after that, hit <code>/rules/api/classes/debug</code> in your browser "
+        "— the JSON response shows what the picker sees."
+    ),
+    "faq.q.how_cancel": "How do I cancel a booking?",
+    "faq.a.how_cancel": (
+        "Go to the <a href='{history_url}'>History</a> page, find the booking (it must be "
+        "granted and its class start must still be in the future), and tap Cancel. The app "
+        "calls WodBuster, flips the row to <em>cancelled</em>, and sends a Telegram "
+        "notification."
+    ),
+    "faq.q.cancel_twice": "What happens if I tap Cancel twice?",
+    "faq.a.cancel_twice": (
+        "The second tap is a no-op. The app detects the row is already cancelled and shows "
+        "'Already cancelled' without calling WodBuster again."
+    ),
+    "faq.q.no_cancel_button": "Why do some booked classes have no Cancel button?",
+    "faq.a.no_cancel_button": (
+        "Cancel is only shown for rows that are <em>granted</em> and whose class start is in "
+        "the future. Past bookings, full outcomes, and rows already cancelled cannot be "
+        "cancelled from the app."
+    ),
+    "faq.q.vacation_what": "What is vacation mode?",
+    "faq.a.vacation_what": (
+        "Vacation mode pauses your automation for a date range. While it is active the worker "
+        "stops firing new bookings, so you will not grab classes you cannot attend while you "
+        "are away."
+    ),
+    "faq.q.vacation_enable": "How do I enable vacation mode?",
+    "faq.a.vacation_enable": (
+        "Open the <a href='{vacation_url}'>Vacation</a> page, pick a start and end date, and "
+        "enable it. You can turn it off early at any time — automation resumes for any window "
+        "that has not opened yet."
+    ),
+    "faq.q.vacation_bookings": "What happens to classes I already booked?",
+    "faq.a.vacation_bookings": (
+        "Enabling a vacation range bulk-cancels the granted bookings that fall inside it and "
+        "notifies you, so you free the spots for other athletes. Bookings outside the range "
+        "are left untouched."
+    ),
+    "faq.q.where_notifications": "Where do notifications go?",
+    "faq.a.where_notifications": (
+        "Every mutating event (booking granted, booking failed, cookie expiring, cookie "
+        "rejected) produces a banner on the dashboard <em>and</em> a Telegram message — as "
+        "long as you have registered your Telegram chat id against your operator profile. "
+        "Web-only alerts still work if Telegram is not wired."
+    ),
+    "faq.q.telegram_why": "Why connect Telegram?",
+    "faq.a.telegram_why": (
+        "Telegram is the on-the-go channel. Once linked, every booking outcome, "
+        "cookie-expiring warning, and anomaly alert lands on your phone, and you can run "
+        "quick actions (cancel a class, check the next booking) without opening the web UI."
+    ),
+    "faq.q.telegram_setup": "How do I set up Telegram?",
+    "faq.a.telegram_setup": (
+        "Open the <a href='{telegram_url}'>Telegram</a> page and follow the bind flow: start "
+        "a chat with the bot, send it the one-time code shown on the page, and the app links "
+        "that chat to your operator profile. Once bound, the page shows a <em>bound</em> chip "
+        "and a test-message button."
+    ),
+    "faq.q.telegram_unbind": "How do I stop Telegram notifications?",
+    "faq.a.telegram_unbind": (
+        "Open the <a href='{telegram_url}'>Telegram</a> page and tap Unbind. The app forgets "
+        "your chat id and falls back to web-only banners until you bind again."
+    ),
+    "faq.q.scheduler_no_fire": "The scheduler did not fire at the expected time.",
+    "faq.a.scheduler_no_fire": (
+        "Check the History page: if the row is there with a non-granted outcome (full, "
+        "class-not-visible, upstream-unavailable), the scheduler tried but WodBuster refused. "
+        "If no row exists at all, the scheduler did not fire — usually because the rule is "
+        "inactive, the cookie is missing, or the container restarted moments before the "
+        "window and did not re-register the job."
+    ),
+    "faq.q.different_provider": "I want to sign in from a different provider.",
+    "faq.a.different_provider": (
+        "Log out, then hit the sign-in provider you want on the landing page. The app matches "
+        "identities by subject id provided by the OAuth callback — an account you have not "
+        "signed in with before will be rejected because the operator allow-list is "
+        "single-user for now."
+    ),
     # -- flash messages ---------------------------------------------
     "flash.booking.cancelled": "Booking cancelled. WodBuster and Telegram updated.",
     "flash.booking.already_cancelled": "Already cancelled — no action taken.",
@@ -531,6 +704,32 @@ ES: dict[str, str] = {
         "telegram-bot-token está en Key Vault y que el contenedor se "
         "reinició después de guardarlo."
     ),
+    # -- landing -----------------------------------------------------
+    "landing.hero.eyebrow": "🏋️ Reservas en piloto automático",
+    "landing.hero.title_pre": "No te pierdas ningún ",
+    "landing.hero.title_accent": "WOD",
+    "landing.hero.title_post": ".",
+    "landing.hero.subtitle": (
+        "Define una regla una vez. Pega una cookie. El worker reserva tu "
+        "clase en cuanto se abre la inscripción y te avisa al móvil cuando "
+        "te necesita."
+    ),
+    "landing.cards.rules.title": "📅 Reglas recurrentes",
+    "landing.cards.rules.body": (
+        "Una regla por día de la semana con una cadena de preferencias de "
+        "tipos de clase. Los cambios se aplican en la próxima ventana."
+    ),
+    "landing.cards.cookie.title": "💓 Latido de la cookie",
+    "landing.cards.cookie.body": (
+        "Sondeo cada hora contra WodBuster. Estima la caducidad y te avisa "
+        "24 horas antes de la próxima ventana de reserva si la cookie está "
+        "a punto de expirar."
+    ),
+    "landing.cards.notifications.title": "🔔 Notificaciones en dos canales",
+    "landing.cards.notifications.body": (
+        "Cada resultado aparece como aviso en la app y como mensaje en "
+        "Telegram. Sin sustos de última hora un lunes."
+    ),
     # -- auth --------------------------------------------------------
     "auth.landing.title": "WodBuster Booking Scheduler",
     "auth.denied.title": "🚫 Acceso denegado",
@@ -544,6 +743,160 @@ ES: dict[str, str] = {
     "auth.signin.with_microsoft": "🪟 Entrar con Microsoft",
     "auth.signin.with_github": "🐙 Entrar con GitHub",
     "auth.signin.with_google": "🌐 Entrar con Google",
+    # -- faq ---------------------------------------------------------
+    "faq.eyebrow": "Ayuda",
+    "faq.title": "❓ Preguntas frecuentes",
+    "faq.subtitle": (
+        "Todo lo que necesitas para reservar en piloto automático. Toca una pregunta para "
+        "desplegarla."
+    ),
+    "faq.section.getting_started": "Primeros pasos",
+    "faq.section.cookie": "Cookie",
+    "faq.section.rules": "Reglas",
+    "faq.section.history": "Historial y cancelaciones",
+    "faq.section.vacation": "Modo vacaciones",
+    "faq.section.notifications": "Notificaciones",
+    "faq.section.telegram": "Telegram",
+    "faq.section.troubleshooting": "Resolución de problemas",
+    "faq.q.what_is_app": "¿Qué es esta aplicación?",
+    "faq.a.what_is_app": (
+        "Un worker en segundo plano que reserva tus clases de WodBuster en cuanto se abre la "
+        "ventana de reserva. Configuras tu horario semanal una vez (Reglas), mantienes una "
+        "cookie de sesión válida guardada (Cookie) y la aplicación hace la reserva por ti. "
+        "Cada intento queda registrado en la página de Historial."
+    ),
+    "faq.q.first_booking": "¿Cómo hago mi primera reserva?",
+    "faq.a.first_booking": (
+        "Tres pasos: (1) pega una cookie <code>.WBAuth</code> reciente en la página de "
+        "<a href='{cookie_url}'>Cookie</a>, (2) crea una regla en la página de "
+        "<a href='{rules_url}'>Reglas</a> indicando a qué clase asistes, a qué hora y cuándo "
+        "abre WodBuster la ventana de reserva, (3) espera: el planificador se dispara "
+        "automáticamente en el instante en que se abre la ventana."
+    ),
+    "faq.q.cookie_source": "¿De dónde saco el valor de la cookie?",
+    "faq.a.cookie_source": (
+        "Inicia sesión en WodBuster normalmente en tu navegador, abre las herramientas de "
+        "desarrollador (F12), ve a la pestaña Aplicación (o Almacenamiento), despliega las "
+        "Cookies del subdominio del box y copia el valor de la cookie llamada "
+        "<code>.WBAuth</code>. Pégalo en la página de Cookie de aquí."
+    ),
+    "faq.q.cookie_refresh": "¿Cada cuánto tengo que renovar la cookie?",
+    "faq.a.cookie_refresh": (
+        "La cookie de sesión de WodBuster dura unos 30 días. La aplicación la comprueba cada "
+        "hora y te muestra un aviso + alerta de Telegram 24 h antes de la caducidad prevista "
+        "para que te dé tiempo a pegar una nueva sin perder ninguna ventana de reserva."
+    ),
+    "faq.q.cookie_rejected": "El panel dice «Cookie rechazada». ¿Y ahora qué?",
+    "faq.a.cookie_rejected": (
+        "WodBuster rechazó la cookie guardada a mitad de una operación, normalmente porque "
+        "cerraste sesión en la web o la sesión se invalidó de forma remota. Consigue una "
+        "cookie nueva desde el navegador y pégala. La alerta se cierra sola en el siguiente "
+        "latido correcto."
+    ),
+    "faq.q.what_is_rule": "¿Qué es una regla?",
+    "faq.a.what_is_rule": (
+        "Una reserva semanal recurrente. Dice: este día de la semana, reserva este tipo de "
+        "clase a esta hora. La aplicación también pregunta cuántos días antes de la clase "
+        "abre WodBuster la ventana de reserva y a qué hora exacta: eso es lo que usa el "
+        "planificador para disparar la reserva en el momento justo."
+    ),
+    "faq.q.second_shot": "¿Qué es el «segundo intento»?",
+    "faq.a.second_shot": (
+        "Una alternativa opcional. Si la clase principal ya está llena cuando el worker "
+        "intenta reservarla, el segundo intento es otro tipo de clase u hora que probar como "
+        "respaldo. Déjalo en blanco si no tienes alternativa."
+    ),
+    "faq.q.multi_day": "¿Puedo reservar varios días desde un mismo formulario?",
+    "faq.a.multi_day": (
+        "Sí: elige todos los días de asistencia en las pastillas de días y el formulario de "
+        "creación genera una regla por cada día seleccionado. Edita luego cada fila para "
+        "ajustar un día concreto."
+    ),
+    "faq.q.empty_dropdown": "El desplegable de tipo de clase está vacío. ¿Por qué?",
+    "faq.a.empty_dropdown": (
+        "El selector se rellena con una llamada en vivo a WodBuster. Si está vacío, la cookie "
+        "falta, no es válida o la llamada falló. Pega una cookie nueva y recarga. Si sigue "
+        "vacío, abre <code>/rules/api/classes/debug</code> en tu navegador: la respuesta JSON "
+        "muestra lo que ve el selector."
+    ),
+    "faq.q.how_cancel": "¿Cómo cancelo una reserva?",
+    "faq.a.how_cancel": (
+        "Ve a la página de <a href='{history_url}'>Historial</a>, busca la reserva (debe "
+        "estar concedida y su inicio de clase debe seguir en el futuro) y toca Cancelar. La "
+        "aplicación llama a WodBuster, cambia la fila a <em>cancelada</em> y envía una "
+        "notificación de Telegram."
+    ),
+    "faq.q.cancel_twice": "¿Qué pasa si toco Cancelar dos veces?",
+    "faq.a.cancel_twice": (
+        "El segundo toque no hace nada. La aplicación detecta que la fila ya está cancelada y "
+        "muestra «Ya cancelada» sin volver a llamar a WodBuster."
+    ),
+    "faq.q.no_cancel_button": "¿Por qué algunas clases reservadas no tienen botón de Cancelar?",
+    "faq.a.no_cancel_button": (
+        "Cancelar solo aparece en las filas <em>concedidas</em> cuyo inicio de clase está en "
+        "el futuro. Las reservas pasadas, los resultados llenos y las filas ya canceladas no "
+        "se pueden cancelar desde la aplicación."
+    ),
+    "faq.q.vacation_what": "¿Qué es el modo vacaciones?",
+    "faq.a.vacation_what": (
+        "El modo vacaciones pausa tu automatización durante un rango de fechas. Mientras está "
+        "activo, el worker deja de lanzar nuevas reservas, así no coges clases a las que no "
+        "puedes asistir mientras estás fuera."
+    ),
+    "faq.q.vacation_enable": "¿Cómo activo el modo vacaciones?",
+    "faq.a.vacation_enable": (
+        "Abre la página de <a href='{vacation_url}'>Vacaciones</a>, elige una fecha de inicio "
+        "y de fin, y actívalo. Puedes desactivarlo antes en cualquier momento: la "
+        "automatización se reanuda para cualquier ventana que aún no se haya abierto."
+    ),
+    "faq.q.vacation_bookings": "¿Qué pasa con las clases que ya tenía reservadas?",
+    "faq.a.vacation_bookings": (
+        "Al activar un rango de vacaciones se cancelan en bloque las reservas concedidas que "
+        "caen dentro y se te notifica, para que liberes las plazas para otros atletas. Las "
+        "reservas fuera del rango no se tocan."
+    ),
+    "faq.q.where_notifications": "¿Dónde llegan las notificaciones?",
+    "faq.a.where_notifications": (
+        "Cada evento que cambia algo (reserva concedida, reserva fallida, cookie por caducar, "
+        "cookie rechazada) genera un aviso en el panel <em>y</em> un mensaje de Telegram, "
+        "siempre que hayas registrado tu chat de Telegram en tu perfil de operador. Los "
+        "avisos solo web siguen funcionando aunque Telegram no esté conectado."
+    ),
+    "faq.q.telegram_why": "¿Para qué conectar Telegram?",
+    "faq.a.telegram_why": (
+        "Telegram es el canal para cuando estás fuera. Una vez enlazado, cada resultado de "
+        "reserva, aviso de cookie por caducar y alerta de anomalía llega a tu móvil, y puedes "
+        "hacer acciones rápidas (cancelar una clase, consultar la próxima reserva) sin abrir "
+        "la interfaz web."
+    ),
+    "faq.q.telegram_setup": "¿Cómo configuro Telegram?",
+    "faq.a.telegram_setup": (
+        "Abre la página de <a href='{telegram_url}'>Telegram</a> y sigue el flujo de enlace: "
+        "inicia un chat con el bot, envíale el código de un solo uso que se muestra en la "
+        "página y la aplicación enlaza ese chat con tu perfil de operador. Una vez enlazado, "
+        "la página muestra una etiqueta <em>enlazado</em> y un botón de mensaje de prueba."
+    ),
+    "faq.q.telegram_unbind": "¿Cómo dejo de recibir notificaciones de Telegram?",
+    "faq.a.telegram_unbind": (
+        "Abre la página de <a href='{telegram_url}'>Telegram</a> y toca Desenlazar. La "
+        "aplicación olvida tu chat y vuelve a los avisos solo web hasta que lo enlaces de "
+        "nuevo."
+    ),
+    "faq.q.scheduler_no_fire": "El planificador no se disparó a la hora esperada.",
+    "faq.a.scheduler_no_fire": (
+        "Revisa la página de Historial: si la fila está ahí con un resultado no concedido "
+        "(llena, clase no visible, servicio no disponible), el planificador lo intentó pero "
+        "WodBuster lo rechazó. Si no existe ninguna fila, el planificador no llegó a "
+        "dispararse, normalmente porque la regla está inactiva, falta la cookie o el "
+        "contenedor se reinició justo antes de la ventana y no volvió a registrar el trabajo."
+    ),
+    "faq.q.different_provider": "Quiero iniciar sesión con otro proveedor.",
+    "faq.a.different_provider": (
+        "Cierra sesión y pulsa el proveedor que quieras en la página de inicio. La aplicación "
+        "identifica las cuentas por el subject id que envía el callback de OAuth: una cuenta "
+        "con la que no hayas iniciado sesión antes será rechazada porque la lista de "
+        "operadores permitidos es de un solo usuario por ahora."
+    ),
     # -- flash messages ---------------------------------------------
     "flash.booking.cancelled": "Reserva cancelada. WodBuster y Telegram actualizados.",
     "flash.booking.already_cancelled": "Ya cancelada — sin acción.",

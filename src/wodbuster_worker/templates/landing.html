@@ -12,13 +12,12 @@
        image is decorative; the hero copy carries all the meaning. #}
     <div class="wb-hero__bg" aria-hidden="true"></div>
     <p class="wb-hero__brand">WodBuster Booking Scheduler</p>
-    <span class="wb-hero__eyebrow">🏋️ Booking on autopilot</span>
+    <span class="wb-hero__eyebrow">{{ t("landing.hero.eyebrow") }}</span>
     <h1 class="wb-hero__title">
-      Never miss a <span class="wb-hero__title-accent">WOD</span>.
+      {{ t("landing.hero.title_pre") }}<span class="wb-hero__title-accent">{{ t("landing.hero.title_accent") }}</span>{{ t("landing.hero.title_post") }}
     </h1>
     <p class="wb-hero__subtitle">
-      Set a rule once. Paste a cookie. The worker grabs your class the
-      moment booking opens and pings your phone when it needs you.
+      {{ t("landing.hero.subtitle") }}
     </p>
     <div class="wb-hero__ctas">
       <a href="{{ lang_url('/auth/microsoft/login') }}" class="wb-hero__cta">
@@ -32,25 +31,21 @@
 
   <div class="wb-feature-grid">
     <div class="wb-card">
-      <h3 class="wb-card__title">📅 Recurring rules</h3>
+      <h3 class="wb-card__title">{{ t("landing.cards.rules.title") }}</h3>
       <p class="wb-card__body">
-        One rule per day-of-week with a preference chain of class types.
-        Rule changes take effect on the next window.
+        {{ t("landing.cards.rules.body") }}
       </p>
     </div>
     <div class="wb-card">
-      <h3 class="wb-card__title">💓 Cookie heartbeat</h3>
+      <h3 class="wb-card__title">{{ t("landing.cards.cookie.title") }}</h3>
       <p class="wb-card__body">
-        Hourly probe against WodBuster. Projects expiry, alerts you
-        24 hours before the next booking window if the cookie is
-        about to die.
+        {{ t("landing.cards.cookie.body") }}
       </p>
     </div>
     <div class="wb-card">
-      <h3 class="wb-card__title">🔔 Dual-channel notifications</h3>
+      <h3 class="wb-card__title">{{ t("landing.cards.notifications.title") }}</h3>
       <p class="wb-card__body">
-        Every outcome shows up as a banner in-app and a message on
-        Telegram. Never surprise-fail on a Monday.
+        {{ t("landing.cards.notifications.body") }}
       </p>
     </div>
   </div>

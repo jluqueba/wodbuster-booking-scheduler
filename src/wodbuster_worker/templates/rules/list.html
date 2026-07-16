@@ -26,6 +26,7 @@
       <p>{{ t("rules.empty.body") }}</p>
     </div>
   {% else %}
+    <div class="wb-table-wrap">
     <table class="wb-rules-table">
       <thead>
         <tr>
@@ -80,5 +81,6 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   {% endif %}
 {% endblock %}
