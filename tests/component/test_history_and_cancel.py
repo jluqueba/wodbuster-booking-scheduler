@@ -65,24 +65,33 @@ def _seed_booking(
     target_class: str = "WOD",
     target_slot: datetime | None = None,
     terminal_status: str = "granted",
+    attempted_at: datetime | None = None,
 ) -> int:
     """Insert a booking outcome directly. Returns the row id."""
     if target_slot is None:
         target_slot = datetime.now(tz=UTC) + timedelta(days=3)
+    columns = "(operator_id, target_class, target_slot, terminal_status"
+    values = "(:op, :cls, :slot, :status"
+    params: dict[str, Any] = {
+        "op": operator_id,
+        "cls": target_class,
+        "slot": target_slot,
+        "status": terminal_status,
+    }
+    if attempted_at is not None:
+        columns += ", attempted_at"
+        values += ", :attempted"
+        params["attempted"] = attempted_at
+    columns += ")"
+    values += ")"
     with engine.begin() as conn:
         return int(
             conn.execute(
                 text(
                     "INSERT INTO booking_outcome "
-                    "(operator_id, target_class, target_slot, terminal_status) "
-                    "VALUES (:op, :cls, :slot, :status) RETURNING id"
+                    f"{columns} VALUES {values} RETURNING id"
                 ),
-                {
-                    "op": operator_id,
-                    "cls": target_class,
-                    "slot": target_slot,
-                    "status": terminal_status,
-                },
+                params,
             ).scalar_one()
         )
 
@@ -175,7 +184,7 @@ def test_history_empty_state(
         response = client.get("/history")
 
     assert response.status_code == 200
-    assert "No bookings yet" in response.text
+    assert "No attempts this week" in response.text
 
 
 def test_history_lists_own_bookings_with_cancel_button_on_granted_future(
@@ -240,8 +249,78 @@ def test_history_isolates_by_operator(
     assert response.status_code == 200
     assert "BobsSecretClass" not in response.text
     # Alice has no bookings → empty state.
-    assert "No bookings yet" in response.text
+    assert "No attempts this week" in response.text
     _ = op_a  # unused but binds the fixture return
+
+
+def test_history_attempts_table_shows_only_current_week(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The attempts table is scoped to the current week so it can't
+    grow unbounded. An attempt made last week is filtered out; one
+    made this week shows."""
+    monkeypatch.setenv("WORKER_TIMEZONE", "UTC")
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+
+    _seed_booking(
+        postgres_engine,
+        operator_id=op_id,
+        target_class="LastWeekClass",
+        target_slot=datetime.now(tz=UTC) - timedelta(days=10),
+        terminal_status="granted",
+        attempted_at=datetime.now(tz=UTC) - timedelta(days=10),
+    )
+    _seed_booking(
+        postgres_engine,
+        operator_id=op_id,
+        target_class="ThisWeekClass",
+        target_slot=datetime.now(tz=UTC) + timedelta(days=2),
+        terminal_status="granted",
+        attempted_at=datetime.now(tz=UTC),
+    )
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/history")
+
+    assert response.status_code == 200
+    assert "ThisWeekClass" in response.text
+    assert "LastWeekClass" not in response.text
+
+
+def test_history_attempts_table_renders_operator_local_time(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Attempt times are shown in the operator's zone (WORKER_TIMEZONE),
+    like the rest of the app, not in UTC. A slot stored at 19:30 UTC
+    renders as 21:30 in Europe/Madrid (CEST, UTC+2 in July)."""
+    monkeypatch.setenv("WORKER_TIMEZONE", "Europe/Madrid")
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    _seed_booking(
+        postgres_engine,
+        operator_id=op_id,
+        target_class="WOD",
+        target_slot=datetime(2026, 7, 15, 19, 30, tzinfo=UTC),
+        terminal_status="granted",
+        attempted_at=datetime(2026, 7, 15, 19, 35, tzinfo=UTC),
+    )
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/history")
+
+    assert response.status_code == 200
+    body = response.text
+    # Slot and attempt both shift +2h into local time; nothing renders UTC.
+    assert "21:30" in body
+    assert "21:35" in body
+    assert "UTC" not in body
 
 
 def test_history_upcoming_section_groups_future_granted_bookings(
@@ -253,7 +332,7 @@ def test_history_upcoming_section_groups_future_granted_bookings(
     """H.1 full: the ``🗓️ Upcoming bookings`` section lists granted
     bookings whose class start is in the future, grouped by day.
     Past-granted and non-granted rows do not appear in that section
-    (they still show up in the ``📜 All attempts`` table below)."""
+    (they still show up in the ``📜 This week's attempts`` table below)."""
     monkeypatch.setenv("WORKER_TIMEZONE", "UTC")
     op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
 
@@ -285,7 +364,10 @@ def test_history_upcoming_section_groups_future_granted_bookings(
 
     assert response.status_code == 200
     text = response.text
-    upcoming, _sep, past_and_below = text.partition("📜 All attempts")
+    section_start = text.index('<section class="wb-upcoming">')
+    section_end = text.index("</section>", section_start)
+    upcoming = text[section_start:section_end]
+    past_and_below = text[section_end:]
 
     # Only the future-granted class shows in the upcoming grid.
     assert "UpcomingWOD" in upcoming
@@ -356,7 +438,9 @@ def test_history_upcoming_section_projects_pending_rule_attempts(
 
     assert response.status_code == 200
     text_body = response.text
-    upcoming, _sep, _rest = text_body.partition("📜 All attempts")
+    section_start = text_body.index('<section class="wb-upcoming">')
+    section_end = text_body.index("</section>", section_start)
+    upcoming = text_body[section_start:section_end]
     assert "ScheduledWOD" in upcoming
     assert "scheduled" in upcoming  # pending chip label
 

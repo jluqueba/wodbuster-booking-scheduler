@@ -26,8 +26,9 @@
 
       <dt>{{ t("cookie.status.last_probe") }}</dt>
       <dd>
-        <span class="wb-chip {% if last_probe_status == 'valid' %}wb-chip--accent{% else %}wb-chip--muted{% endif %}">
-          {{ last_probe_status or t("cookie.status.unknown") }}
+        {% set probe = last_probe_status or 'unknown' %}
+        <span class="wb-chip {% if probe == 'valid' %}wb-chip--success{% else %}wb-chip--muted{% endif %}">
+          {{ t("cookie.status." ~ probe) }}
         </span>
       </dd>
     </dl>

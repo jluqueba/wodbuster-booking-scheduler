@@ -15,7 +15,7 @@ CRUD. Both routes are auth-gated.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
@@ -73,9 +73,10 @@ def history_list(
     """List the operator's most recent booking outcomes."""
     templates = _templates(request)
     now = datetime.now(tz=UTC)
+    week_start = _current_week_start(now)
     with get_session() as session:
         upcoming = list_upcoming_slots(session, operator_id, now=now)
-        outcomes = list_recent_bookings(session, operator_id)
+        outcomes = list_recent_bookings(session, operator_id, since=week_start)
         upcoming_days = _group_upcoming_by_day(upcoming)
         rows = [_outcome_to_row(o) for o in outcomes]
     return templates.TemplateResponse(
@@ -141,6 +142,22 @@ def booking_cancel(
     return _redirect_with_flash(t("flash.booking.cancelled"), kind="info")
 
 
+def _current_week_start(now: datetime) -> datetime:
+    """Return Monday 00:00 of ``now``'s week, in the operator's zone, as UTC.
+
+    The history "attempts" table is scoped to the current week so it
+    can't grow unbounded. The week boundary is computed in the
+    operator's timezone (``WORKER_TIMEZONE``) so "this week" matches
+    their local calendar, then converted back to UTC for the query
+    (attempts are stored UTC).
+    """
+    local = now.astimezone(operator_timezone())
+    monday = (local - timedelta(days=local.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return monday.astimezone(UTC)
+
+
 def _redirect_with_flash(message: str, *, kind: str) -> RedirectResponse:
     """303 back to /history with a URL-encoded flash message."""
     query = urlencode({"flash": message, "flash_kind": kind})
@@ -149,16 +166,17 @@ def _redirect_with_flash(message: str, *, kind: str) -> RedirectResponse:
 
 def _outcome_to_row(outcome: BookingOutcome) -> dict[str, Any]:
     """Build a view-model dict for a single history row."""
-    slot = outcome.target_slot.astimezone(UTC)
+    tz = operator_timezone()
+    slot = outcome.target_slot.astimezone(tz)
     return {
         "id": int(outcome.id),
         "target_class": outcome.target_class,
         "target_slot": slot,
         "day_label": _DAY_LABELS[slot.weekday()],
-        "slot_label": slot.strftime("%d %b %H:%M UTC"),
+        "slot_label": slot.strftime("%d %b %H:%M"),
         "terminal_status": outcome.terminal_status,
         "fallback_index": outcome.granted_fallback_index,
-        "attempted_at": outcome.attempted_at.astimezone(UTC),
+        "attempted_at": outcome.attempted_at.astimezone(tz),
         "cancellable": outcome.terminal_status == "granted"
         and outcome.target_slot.astimezone(UTC) > datetime.now(tz=UTC),
     }

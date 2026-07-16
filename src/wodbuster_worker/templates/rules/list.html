@@ -45,11 +45,11 @@
               <span class="wb-chip wb-chip--accent">{{ rule.day_label }}</span>
             </td>
             <td class="wb-tabular">
-              <code>{{ rule.class_type }}</code> @ {{ rule.class_time }}
+              <span class="wb-class-name">{{ rule.class_type }}</span> @ {{ rule.class_time }}
             </td>
             <td class="wb-tabular">
               {% if rule.second_shot_class_type %}
-                <code>{{ rule.second_shot_class_type }}</code>
+                <span class="wb-class-name">{{ rule.second_shot_class_type }}</span>
                 @ {{ rule.second_shot_class_time }}
               {% else %}
                 <span class="wb-muted">—</span>
