@@ -87,10 +87,7 @@ def _seed_booking(
     with engine.begin() as conn:
         return int(
             conn.execute(
-                text(
-                    "INSERT INTO booking_outcome "
-                    f"{columns} VALUES {values} RETURNING id"
-                ),
+                text(f"INSERT INTO booking_outcome {columns} VALUES {values} RETURNING id"),
                 params,
             ).scalar_one()
         )

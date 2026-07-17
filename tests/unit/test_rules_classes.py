@@ -243,9 +243,7 @@ def test_fetch_unions_day_specific_classes_across_the_week(
     picker probes all seven days and unions the results. Here only one
     day carries ``Endurance``; it must still appear in the combo.
     """
-    per_day = [
-        _clases_filtradas({"NombreE": "WOD", "Hora": "18:30:00"}) for _ in range(7)
-    ]
+    per_day = [_clases_filtradas({"NombreE": "WOD", "Hora": "18:30:00"}) for _ in range(7)]
     per_day[3] = _clases_filtradas(
         {"NombreE": "WOD", "Hora": "18:30:00"},
         {"NombreE": "Endurance", "Hora": "10:00:00"},

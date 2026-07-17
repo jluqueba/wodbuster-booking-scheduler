@@ -216,6 +216,29 @@ def close_open_cookie_expiring(session: Session, operator_id: int, *, now: datet
     return int(open_alert.id)
 
 
+def acknowledge_open_cookie_expiring(
+    session: Session, operator_id: int, *, now: datetime
+) -> int | None:
+    """Acknowledge the operator's open ``cookie_expiring`` alert (US4/FR-027).
+
+    Powers the Telegram ``/ack`` command. Sets ``acknowledged_at`` on
+    the single open ``cookie_expiring`` row for ``operator_id`` so the
+    evaluator suppresses re-emission for the current heartbeat cycle
+    (see :func:`evaluate_cookie_expiring`). The underlying condition is
+    not cleared — acknowledgement only quiets the nag for one cycle.
+
+    Returns the acknowledged alert id, or ``None`` when the operator
+    has no open ``cookie_expiring`` alert (nothing to acknowledge).
+    The ``_open_alert`` filter is scoped to ``operator_id`` so one
+    operator can never acknowledge another's alert (FR-005).
+    """
+    open_alert = _open_alert(session, operator_id)
+    if open_alert is None:
+        return None
+    open_alert.acknowledged_at = now
+    return int(open_alert.id)
+
+
 def _open_alert(session: Session, operator_id: int) -> Alert | None:
     """Return the currently-open ``cookie_expiring`` row, or ``None``."""
     return session.scalar(
