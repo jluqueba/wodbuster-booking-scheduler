@@ -204,6 +204,7 @@ def _group_upcoming_by_day(
             groups.append(
                 {
                     "date_label": local.strftime("%a %d %b"),
+                    "date_dt": local,
                     "iso_date": key,
                     "rows": [],
                 }
@@ -215,6 +216,7 @@ def _group_upcoming_by_day(
                 "id": slot.booking_id,
                 "target_class": slot.target_class,
                 "time_label": local.strftime("%H:%M"),
+                "slot_dt": local,
                 "fallback_index": slot.fallback_index,
             }
         )

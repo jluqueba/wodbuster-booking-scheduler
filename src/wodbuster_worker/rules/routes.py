@@ -76,6 +76,19 @@ _DAY_LABELS = [
 _TIME_FALLBACK: list[str] = []
 
 
+def _window_open_dt(rule: SchedulerRule, now: datetime) -> datetime | None:
+    """Return the next window-open instant in the operator's zone.
+
+    ``None`` when the rule's ``HH:MM`` is malformed, so callers fall
+    back to the raw string.
+    """
+    try:
+        window_open = next_window_open_for_rule(rule, now=now)
+    except ValueError:
+        return None
+    return window_open.astimezone(operator_timezone())
+
+
 def _format_window_opens(rule: SchedulerRule, now: datetime) -> str:
     """Return the operator-facing next-window label for ``rule``.
 
@@ -83,11 +96,9 @@ def _format_window_opens(rule: SchedulerRule, now: datetime) -> str:
     in the operator's timezone. Falls back to the raw ``HH:MM`` when
     the ``HH:MM`` field is malformed so the row still renders.
     """
-    try:
-        window_open = next_window_open_for_rule(rule, now=now)
-    except ValueError:
+    local = _window_open_dt(rule, now)
+    if local is None:
         return rule.booking_opens_at
-    local = window_open.astimezone(operator_timezone())
     # ``%a`` = short weekday, ``%d %b`` = "20 Jul", ``%H:%M`` = 24h.
     # ``strftime`` respects the process locale; on the container we
     # ship no locale so it lands on the C locale (English short
@@ -166,6 +177,7 @@ def rules_list(request: Request, operator_id: int = Depends(require_session)) ->
                 "booking_opens_days_before": rule.booking_opens_days_before,
                 "booking_opens_at": rule.booking_opens_at,
                 "window_opens_label": _format_window_opens(rule, now),
+                "window_opens_at": _window_open_dt(rule, now),
                 "second_shot_class_type": rule.second_shot_class_type,
                 "second_shot_class_time": rule.second_shot_class_time,
                 "active": rule.active,

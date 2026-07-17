@@ -1,0 +1,21 @@
+{# Shared date/time rendering macro.
+
+   Emits a <time> element carrying the ISO instant plus a mode hint.
+   `static/wb-datetime.js` upgrades the text to a locale-aware,
+   gym-timezone-pinned label on load and after HTMX swaps. The
+   `fallback` (a server-rendered strftime label) stays visible when
+   JS is unavailable and on first paint.
+
+   Modes: "stamp" (weekday + date + time), "date" (weekday + date),
+   "dateyear" (weekday + date + year), "time" (time only).
+
+   `dt` must be a timezone-aware datetime so `dt.isoformat()` carries
+   an offset and the browser parses the correct instant. When `dt` is
+   None the macro renders `fallback` verbatim (no <time> wrapper). #}
+{% macro wb_time(dt, mode="stamp", fallback="—") -%}
+  {%- if dt is none -%}
+    {{ fallback }}
+  {%- else -%}
+    <time datetime="{{ dt.isoformat() }}" data-wb-datetime="{{ mode }}">{{ fallback }}</time>
+  {%- endif -%}
+{%- endmacro %}

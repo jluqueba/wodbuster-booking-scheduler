@@ -64,6 +64,7 @@
 {% endblock %}
 
 {% block content %}
+  {% from "_datetime.html" import wb_time %}
   <span class="wb-page-title__eyebrow">{{ t("history.eyebrow") }}</span>
   <h1 class="wb-page-title">{{ t("history.title") }}</h1>
   <p class="wb-page-subtitle">{{ t("history.subtitle") }}</p>
@@ -91,11 +92,11 @@
       <div class="wb-upcoming__grid">
         {% for day in upcoming_days %}
           <article class="wb-upcoming__day">
-            <header class="wb-upcoming__date">{{ day.date_label }}</header>
+            <header class="wb-upcoming__date">{{ wb_time(day.date_dt, "date", day.date_label) }}</header>
             <div class="wb-upcoming__list">
               {% for slot in day.rows %}
                 <div class="wb-upcoming__item wb-upcoming__item--{{ slot.kind }}">
-                  <span class="wb-upcoming__time">{{ slot.time_label }}</span>
+                  <span class="wb-upcoming__time">{{ wb_time(slot.slot_dt, "time", slot.time_label) }}</span>
                   <span class="wb-upcoming__class">{{ slot.target_class }}</span>
                   {% if slot.fallback_index == 1 %}
                     <span class="wb-muted wb-note--xs">{{ t("history.second_shot_tag") }}</span>
@@ -153,7 +154,7 @@
             <td>
               <span class="wb-chip wb-chip--accent">{{ row.day_label }}</span>
             </td>
-            <td class="wb-tabular">{{ row.slot_datetime_label }}</td>
+            <td class="wb-tabular">{{ wb_time(row.target_slot, "stamp", row.slot_datetime_label) }}</td>
             <td>
               <span class="wb-class-name">{{ row.target_class }}</span>
               {% if row.fallback_index == 1 %}
@@ -168,7 +169,7 @@
               </span>
             </td>
             <td class="wb-tabular">
-              {{ row.attempted_at.strftime("%d %b %H:%M") }}
+              {{ wb_time(row.attempted_at, "stamp", row.attempted_at.strftime("%d %b %H:%M")) }}
             </td>
             <td class="wb-cell-actions">
               {% if row.cancellable %}

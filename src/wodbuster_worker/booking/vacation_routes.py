@@ -183,6 +183,8 @@ def _window_to_row(window: Any, tz: ZoneInfo) -> dict[str, Any]:
         "id": int(window.id),
         "start_label": start_local.strftime("%a %d %b %Y"),
         "end_label": end_local.strftime("%a %d %b %Y"),
+        "start_dt": start_local,
+        "end_dt": end_local,
         "start_iso": start_local.date().isoformat(),
         "end_iso": end_local.date().isoformat(),
         "active_now": window.start_date <= now <= window.end_date,

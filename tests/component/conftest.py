@@ -130,6 +130,10 @@ def app_factory(
 
     def _build(**overrides: Any) -> FastAPI:
         settings = Settings(
+            # Hermetic: never read the developer's repo-root ``.env``.
+            # Otherwise locally-set values (e.g. WODBUSTER_GYM/IDU) leak
+            # in and flip stack-wiring assertions.
+            _env_file=None,  # type: ignore[call-arg]
             wodbuster_env="local",
             postgres_host="localhost",
             postgres_db="wodbuster",

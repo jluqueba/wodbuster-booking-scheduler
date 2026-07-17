@@ -20,6 +20,10 @@
     <meta name="theme-color" content="#0a0e14">
     <title>{% block title %}WodBuster Booking Scheduler{% endblock %}</title>
     <meta name="csrf-token" content="{{ csrf_token | default('') }}">
+    {# Gym timezone for client-side date rendering (static/wb-datetime.js).
+       Locale picks the format; this pins the instant so class times
+       never shift with the viewer's device timezone. #}
+    <meta name="wb-timezone" content="{{ worker_timezone | default('Europe/Madrid') }}">
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/static/favicon.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -31,6 +35,10 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/@picocss/pico@2.0.6/css/pico.min.css">
     <link rel="stylesheet" href="/static/brand.css">
+    {# Loaded synchronously (no defer) so window.wbDateTime is defined
+       before inline page scripts (e.g. the dashboard countdown) run.
+       The DOM scan itself waits for DOMContentLoaded internally. #}
+    <script src="/static/wb-datetime.js"></script>
     <script src="https://unpkg.com/htmx.org@2.0.3" defer></script>
     {% block head_extra %}{% endblock %}
   </head>
