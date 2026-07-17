@@ -63,6 +63,13 @@ from ..booking.cancellation import (
     cancel_booking,
     list_recent_bookings,
 )
+from ..booking.manual import (
+    BookingWindowClosedError,
+    ClassNotVisibleError,
+    ManualBookingService,
+    ManualBookingUpstreamError,
+    NoCookieError,
+)
 from ..booking.upcoming import list_upcoming_slots
 from ..heartbeat.alerts import acknowledge_open_cookie_expiring
 from ..heartbeat.next_window import compute_next_booking
@@ -577,24 +584,57 @@ def _handle_ack(request: Request, *, chat_id: str) -> str:
 def _handle_bookclass(request: Request, *, chat_id: str, argument: str) -> str:
     """US8.3: one-off manual booking ``/bookclass <YYYY-MM-DD> <HH:MM>``.
 
-    The argument shape is validated here so operators get immediate
-    feedback, but the actual booking is not yet wired: it depends on
-    the manual-booking service (US8.1), which is not implemented. Until
-    then this returns an honest deferral rather than a silent no-op or a
-    fabricated confirmation.
+    Validates the argument shape, resolves the bound operator (FR-031),
+    then delegates to :class:`ManualBookingService`. The service issues
+    a single read-only ``LoadClass`` probe to check the reservation
+    window (CC-010) and resolve the class type before firing exactly
+    one booking attempt.
     """
     args = argument.split()
     if len(args) != 2 or not _valid_date(args[0]) or not _valid_time(args[1]):
         return "Usage: /bookclass <YYYY-MM-DD> <HH:MM>. Example: /bookclass 2026-07-15 18:30."
+
+    client = getattr(request.app.state, "wodbuster_client", None)
+    cookie_store = getattr(request.app.state, "cookie_store", None)
+    if client is None or cookie_store is None:
+        return "Manual booking is temporarily unavailable. Try again shortly."
+
     with get_session() as session:
         operator = _operator_for_chat(session, chat_id)
         if operator is None:
             return _UNBOUND_REJECTION
-    return (
-        "Manual booking from Telegram isn't available yet. "
-        "This command is recognised but the one-off booking service "
-        "is still being built — use the web UI to book in the meantime."
+        operator_id = operator.id
+
+    settings = getattr(request.app.state, "settings", None)
+    operator_idu = getattr(settings, "wodbuster_idu", None) if settings is not None else None
+    service = ManualBookingService(
+        client=client,
+        cookie_store=cookie_store,
+        operator_idu=operator_idu,
     )
+
+    target_date = datetime.strptime(args[0], "%Y-%m-%d").date()
+    try:
+        result = service.book(
+            operator_id=operator_id,
+            target_date=target_date,
+            target_time=args[1],
+        )
+    except NoCookieError:
+        return "No active WodBuster session on file. Refresh your cookie and retry."
+    except BookingWindowClosedError:
+        return (
+            f"{args[1]} on {args[0]} isn't open for booking yet. "
+            "Try again once its reservation window opens."
+        )
+    except ClassNotVisibleError:
+        return f"No class found at {args[1]} on {args[0]}."
+    except ManualBookingUpstreamError:
+        return "Couldn't reach WodBuster to book. Try again in a moment."
+
+    if result.terminal_status == "granted":
+        return f"Booked {result.class_type} at {args[1]} on {args[0]}."
+    return f"Booking for {args[1]} on {args[0]} wasn't granted ({result.terminal_status})."
 
 
 def _valid_date(value: str) -> bool:

@@ -290,6 +290,109 @@ class BookingExecutor:
         return self._persist_terminal(**second_result.full_payload)
 
     # ------------------------------------------------------------------
+    # Single-attempt entry point (US8.1 — manual / one-off bookings)
+    # ------------------------------------------------------------------
+
+    def book_single_attempt(
+        self,
+        *,
+        operator_id: int,
+        class_type: str,
+        class_time: str,
+        target_slot: datetime,
+        rule_id: int | None = None,
+    ) -> BookingResult:
+        """Fire ONE booking attempt without the alignment poll or retry loop.
+
+        Manual / one-off bookings (web ``/book-now`` and Telegram
+        ``/bookclass``) reach WodBuster from a request or webhook
+        context, so the long-running :meth:`book` path
+        (:meth:`_align_to_publication` poll + :meth:`_find_slot_with_retry`
+        loop + second shot) would block the handler. This variant
+        loads the cookie, reads ``LoadClass`` once, tries the target
+        slot a single time, resolves enrollment, and persists the
+        outcome with the supplied ``rule_id`` (``None`` marks a true
+        one-off, so the row carries ``rule_id IS NULL``).
+
+        The reservation-window precondition (FR-019, CC-010) is the
+        caller's responsibility: :class:`ManualBookingService` checks
+        ``SegundosHastaPublicacion`` before delegating here and never
+        calls this method while the window is still closed.
+        """
+        start = time.monotonic()
+        result: BookingResult | None = None
+        try:
+            result = self._book_single_attempt_inner(
+                operator_id=operator_id,
+                class_type=class_type,
+                class_time=class_time,
+                target_slot=target_slot,
+                rule_id=rule_id,
+            )
+            return result
+        finally:
+            elapsed_ms = (time.monotonic() - start) * 1000.0
+            try:
+                telemetry.booking_attempt_latency_ms().record(
+                    elapsed_ms,
+                    {
+                        "terminal_status": (result.terminal_status if result else "unknown"),
+                    },
+                )
+            except Exception:  # pragma: no cover - metric emit must not raise
+                _log.exception("booking.metric.record_failed")
+
+    def _book_single_attempt_inner(
+        self,
+        *,
+        operator_id: int,
+        class_type: str,
+        class_time: str,
+        target_slot: datetime,
+        rule_id: int | None,
+    ) -> BookingResult:
+        """Body of :meth:`book_single_attempt`; wrapped for latency timing."""
+        if target_slot.tzinfo is None:
+            raise ValueError("target_slot must be timezone-aware")
+
+        ticks = _midnight_utc_ticks(target_slot)
+        rule = _manual_rule(operator_id=operator_id, rule_id=rule_id)
+        _log.info(
+            "booking.manual.start",
+            operator_id=operator_id,
+            rule_id=rule_id,
+            target_slot=target_slot.isoformat(),
+            ticks=ticks,
+        )
+
+        cookie = self._load_cookie(operator_id)
+        if cookie is None:
+            return self._persist_terminal(
+                rule=rule,
+                target_class=class_type,
+                target_slot=target_slot,
+                terminal_status="cookie_invalid",
+                fallback_index=None,
+                response="no cookie on file",
+                telegram_text=self._render_no_cookie_text(rule, target_slot),
+            )
+
+        attempt = self._attempt(
+            rule=rule,
+            target_slot=target_slot,
+            ticks=ticks,
+            cookie=cookie,
+            class_type=class_type,
+            class_time=class_time,
+            fallback_index=0,
+            find_once=True,
+        )
+        if attempt.done:
+            return self._persist_terminal(**attempt.payload)
+        # No second shot for a one-off booking — persist the "full" row.
+        return self._persist_terminal(**attempt.full_payload)
+
+    # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
@@ -387,11 +490,23 @@ class BookingExecutor:
         class_type: str,
         class_time: str,
         fallback_index: int,
+        find_once: bool = False,
     ) -> _AttemptResult:
-        """Try to book a single class instance with retry-on-not-visible."""
-        slot = self._find_slot_with_retry(
-            cookie=cookie, ticks=ticks, class_type=class_type, class_time=class_time
-        )
+        """Try to book a single class instance with retry-on-not-visible.
+
+        When ``find_once`` is set (manual single-attempt path, US8.1)
+        the target slot is read exactly once instead of polling
+        :meth:`_find_slot_with_retry`, so the call never blocks a
+        request or webhook handler.
+        """
+        if find_once:
+            slot = self._find_slot_once(
+                cookie=cookie, ticks=ticks, class_type=class_type, class_time=class_time
+            )
+        else:
+            slot = self._find_slot_with_retry(
+                cookie=cookie, ticks=ticks, class_type=class_type, class_time=class_time
+            )
         if slot is None:
             return _AttemptResult.done_terminal(
                 rule=rule,
@@ -549,6 +664,29 @@ class BookingExecutor:
         return read_target_enrollment(
             loaded.payload, slot_id=slot_id, operator_idu=self._operator_idu
         )
+
+    def _find_slot_once(
+        self,
+        *,
+        cookie: str,
+        ticks: int,
+        class_type: str,
+        class_time: str,
+    ) -> ClassSlot | None:
+        """Read LoadClass once and return the matching slot (no retry).
+
+        The manual single-attempt path (US8.1) runs from request /
+        webhook context, so a missing slot maps straight to
+        ``class_not_visible`` rather than blocking on the retry loop.
+        Upstream errors are swallowed to ``None`` (no slot) for the
+        same reason.
+        """
+        try:
+            loaded = self._client.load_class(cookie, ticks)
+        except (WodBusterAuthError, WodBusterTransportError, WodBusterProtocolError):
+            return None
+        slots = extract_class_slots(loaded.payload)
+        return find_matching_slot(slots, class_type=class_type, class_time=class_time)
 
     def _find_slot_with_retry(
         self,
@@ -737,6 +875,22 @@ class _AttemptResult:
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
+
+
+def _manual_rule(*, operator_id: int, rule_id: int | None) -> SchedulerRule:
+    """Build a transient rule to carry a one-off booking through the
+    shared attempt / persist path (US8.1).
+
+    Manual bookings have no stored :class:`SchedulerRule`; the
+    persistence and render helpers only read ``operator_id`` and
+    ``id`` off the rule, so a transient instance (never added to a
+    session) is enough. ``id`` is set to ``rule_id`` (``None`` for a
+    true one-off) so :func:`persist_outcome` records the outcome with
+    the right ``rule_id``.
+    """
+    rule = SchedulerRule(operator_id=operator_id)
+    rule.id = rule_id  # type: ignore[assignment]
+    return rule
 
 
 def _midnight_utc_ticks(target_slot: datetime) -> int:

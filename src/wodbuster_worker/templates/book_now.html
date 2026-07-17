@@ -1,0 +1,92 @@
+{# One-off manual booking form (US8.2).
+
+   A single form with a date and a time input. Submitting fires the
+   manual booking service, which checks the reservation window and
+   resolves the class type from whichever class runs at that time,
+   then redirects back here with a flash message.
+
+   The window precondition (CC-010) lives server-side: an out-of-window
+   class is rejected with a "window not open" flash and no WodBuster
+   booking call.
+#}
+{% extends "base.html" %}
+
+{% block title %}{{ t("nav.book_now") }} — WodBuster Booking Scheduler{% endblock %}
+
+{% block head %}
+<style>
+  .wb-flash {
+    padding: 0.75rem 1rem;
+    border-radius: var(--wb-radius);
+    border-left: 4px solid var(--wb-info);
+    background: rgba(96, 165, 250, 0.06);
+    color: var(--wb-text);
+    margin-bottom: 1.25rem;
+  }
+  .wb-flash--warning {
+    border-left-color: var(--wb-warning);
+    background: rgba(251, 191, 36, 0.06);
+  }
+  .wb-flash--error {
+    border-left-color: var(--wb-danger);
+    background: rgba(248, 113, 113, 0.06);
+  }
+  .wb-booknow-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    align-items: end;
+    margin-bottom: 2rem;
+    padding: 1.15rem 1.35rem;
+    background: var(--wb-bg-card);
+    border-radius: var(--wb-radius);
+    border: 1px solid var(--wb-border);
+  }
+  .wb-booknow-form label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--wb-text-muted);
+    margin-bottom: 0.35rem;
+  }
+  .wb-booknow-form input[type="date"],
+  .wb-booknow-form input[type="time"] {
+    width: 100%;
+  }
+</style>
+{% endblock %}
+
+{% block nav %}
+  {% set active_nav = "book_now" %}
+  {% include "_nav.html" %}
+{% endblock %}
+
+{% block content %}
+  <span class="wb-page-title__eyebrow">{{ t("book_now.eyebrow") }}</span>
+  <h1 class="wb-page-title">{{ t("book_now.title") }}</h1>
+  <p class="wb-page-subtitle">{{ t("book_now.subtitle") }}</p>
+
+  {% if flash %}
+    <div class="wb-flash wb-flash--{{ flash_kind }}" role="status">
+      {{ flash }}
+    </div>
+  {% endif %}
+
+  <form method="post" action="{{ lang_url('/book-now') }}" class="wb-booknow-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <div>
+      <label for="book-date">{{ t("book_now.form.date") }}</label>
+      <input type="date" id="book-date" name="book_date" required>
+    </div>
+    <div>
+      <label for="book-time">{{ t("book_now.form.time") }}</label>
+      <input type="time" id="book-time" name="book_time" required>
+    </div>
+    <div>
+      <button type="submit" class="wb-btn wb-btn--primary">
+        {{ t("book_now.submit_button") }}
+      </button>
+    </div>
+  </form>
+
+  <p class="wb-muted wb-note">{{ t("book_now.hint") }}</p>
+{% endblock %}

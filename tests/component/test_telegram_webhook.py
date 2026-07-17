@@ -147,18 +147,21 @@ def _seed_open_cookie_alert(engine: Engine, operator_id: int) -> int:
 
 
 class _FakeWodBusterClient:
-    """Stub WodBuster client scripting ``load_class`` + ``borrar``."""
+    """Stub WodBuster client scripting ``load_class`` + ``borrar`` + ``inscribir``."""
 
     def __init__(
         self,
         *,
         load_response: LoadClassResponse | Exception | None = None,
         borrar_response: BookingActionResponse | Exception | None = None,
+        inscribir_response: BookingActionResponse | Exception | None = None,
     ) -> None:
         self._load_response = load_response
         self._borrar_response = borrar_response
+        self._inscribir_response = inscribir_response
         self.load_calls: list[dict[str, Any]] = []
         self.borrar_calls: list[dict[str, Any]] = []
+        self.inscribir_calls: list[dict[str, Any]] = []
 
     def load_class(self, cookie_value: str, ticks: int) -> LoadClassResponse:
         self.load_calls.append({"cookie": cookie_value, "ticks": ticks})
@@ -178,8 +181,20 @@ class _FakeWodBusterClient:
             raise AssertionError("fake: no borrar response scripted")
         return self._borrar_response
 
+    def inscribir(
+        self, cookie_value: str, *, class_id: str | int, ticks: int
+    ) -> BookingActionResponse:
+        self.inscribir_calls.append({"cookie": cookie_value, "class_id": class_id, "ticks": ticks})
+        if isinstance(self._inscribir_response, Exception):
+            raise self._inscribir_response
+        if self._inscribir_response is None:
+            raise AssertionError("fake: no inscribir response scripted")
+        return self._inscribir_response
 
-def _load_response_with(class_type: str, class_time: str) -> LoadClassResponse:
+
+def _load_response_with(
+    class_type: str, class_time: str, *, seconds_until_publication: float = -100.0
+) -> LoadClassResponse:
     return LoadClassResponse(
         status_code=200,
         latency_ms=10.0,
@@ -201,7 +216,7 @@ def _load_response_with(class_type: str, class_time: str) -> LoadClassResponse:
                     ],
                 }
             ],
-            "SegundosHastaPublicacion": -100.0,
+            "SegundosHastaPublicacion": seconds_until_publication,
         },
     )
 
@@ -213,6 +228,16 @@ def _borrar_ok() -> BookingActionResponse:
         outcome="granted",
         raw_res="Ok",
         payload={"Res": "Ok"},
+    )
+
+
+def _inscribir_ok() -> BookingActionResponse:
+    return BookingActionResponse(
+        status_code=200,
+        latency_ms=25.0,
+        outcome="granted",
+        raw_res="Ok",
+        payload={"Res": "Ok", "Data": []},
     )
 
 
@@ -674,28 +699,82 @@ def test_ack_with_no_open_alert_reports_nothing_to_do(
     assert "no open cookie-expiring" in replies[-1]["text"].lower()
 
 
-def test_bookclass_is_recognised_but_deferred(
+def test_bookclass_books_within_window(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],
     postgres_engine: Engine,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """US8.3: /bookclass validates its argument shape and is recognised
-    (not an unknown command), but manual booking is not wired yet
-    (depends on the unimplemented US8.1 service)."""
+    """US8.3 / CC-013: /bookclass for an in-window class with an
+    available slot is granted on both surfaces (booking_outcome row
+    with rule_id NULL + a notification signal)."""
     op_id, _ = seed_operator()
     _bind_chat(postgres_engine, op_id, "424242")
+    store = _seed_cookie(postgres_engine, op_id)
+    fake = _FakeWodBusterClient(
+        load_response=_load_response_with("WOD", "18:30"),
+        inscribir_response=_inscribir_ok(),
+    )
     replies = _capture_replies(monkeypatch)
 
     app = app_factory()
     with TestClient(app) as client:
         _override_after_lifespan(app, bind_store=TelegramBindStore(), bot_token="tok")
+        app.state.cookie_store = store
+        app.state.wodbuster_client = fake
         _post_command(client, chat_id=424242, text_body="/bookclass 2026-07-15 18:30")
 
     assert replies
     body = replies[-1]["text"].lower()
-    assert "unknown command" not in body
-    assert "isn't available yet" in body or "not available yet" in body
+    assert "booked" in body
+    assert "wod" in body
+    assert len(fake.inscribir_calls) == 1
+    with postgres_engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT terminal_status, rule_id FROM booking_outcome "
+                "WHERE operator_id = :op ORDER BY id DESC LIMIT 1"
+            ),
+            {"op": op_id},
+        ).one()
+    assert row.terminal_status == "granted"
+    assert row.rule_id is None
+
+
+def test_bookclass_window_closed_rejects_without_booking(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CC-010: /bookclass outside the reservation window is rejected
+    with no ``inscribir`` (booking) call."""
+    op_id, _ = seed_operator()
+    _bind_chat(postgres_engine, op_id, "424242")
+    store = _seed_cookie(postgres_engine, op_id)
+    fake = _FakeWodBusterClient(
+        load_response=_load_response_with("WOD", "18:30", seconds_until_publication=3600.0),
+        inscribir_response=_inscribir_ok(),
+    )
+    replies = _capture_replies(monkeypatch)
+
+    app = app_factory()
+    with TestClient(app) as client:
+        _override_after_lifespan(app, bind_store=TelegramBindStore(), bot_token="tok")
+        app.state.cookie_store = store
+        app.state.wodbuster_client = fake
+        _post_command(client, chat_id=424242, text_body="/bookclass 2026-07-15 18:30")
+
+    assert replies
+    assert "open for booking" in replies[-1]["text"].lower()
+    # The mutating booking call must NOT fire while the window is closed.
+    assert fake.inscribir_calls == []
+    with postgres_engine.connect() as conn:
+        count = conn.execute(
+            text("SELECT count(*) FROM booking_outcome WHERE operator_id = :op"),
+            {"op": op_id},
+        ).scalar_one()
+    assert count == 0
 
 
 def test_bookclass_rejects_malformed_arguments(
