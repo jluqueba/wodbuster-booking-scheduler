@@ -60,29 +60,19 @@
         function fmt(n, w) {
           return String(n).padStart(w || 2, '0');
         }
+        // Reuse the shared formatter (static/wb-datetime.js) so the
+        // countdown stamp matches every other date on the site and
+        // honours the gym timezone pinned in <meta name="wb-timezone">.
+        var WB_TZ =
+          (window.wbDateTime && window.wbDateTime.defaultTz()) || undefined;
         function fmtStamp(dt) {
-          return dt.toLocaleString(undefined, {
-            weekday: 'short',
-            day: '2-digit',
-            month: 'short',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-          });
+          return window.wbDateTime.format(dt, 'stamp', WB_TZ);
         }
         function fmtDate(dt) {
-          return dt.toLocaleDateString(undefined, {
-            weekday: 'short',
-            day: '2-digit',
-            month: 'short',
-          });
+          return window.wbDateTime.format(dt, 'date', WB_TZ);
         }
         function fmtTime(dt) {
-          return dt.toLocaleTimeString(undefined, {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-          });
+          return window.wbDateTime.format(dt, 'time', WB_TZ);
         }
         function tick(root) {
           var target = new Date(root.getAttribute('data-next-window'));

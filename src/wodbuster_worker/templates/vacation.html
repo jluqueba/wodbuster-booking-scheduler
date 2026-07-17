@@ -61,6 +61,7 @@
 {% endblock %}
 
 {% block content %}
+  {% from "_datetime.html" import wb_time %}
   <span class="wb-page-title__eyebrow">{{ t("vacation.eyebrow") }}</span>
   <h1 class="wb-page-title">{{ t("vacation.title") }}</h1>
   <p class="wb-page-subtitle">{{ t("vacation.subtitle") }}</p>
@@ -107,8 +108,8 @@
       <tbody>
         {% for w in windows %}
           <tr>
-            <td class="wb-tabular">{{ w.start_label }}</td>
-            <td class="wb-tabular">{{ w.end_label }}</td>
+            <td class="wb-tabular">{{ wb_time(w.start_dt, "dateyear", w.start_label) }}</td>
+            <td class="wb-tabular">{{ wb_time(w.end_dt, "dateyear", w.end_label) }}</td>
             <td>
               {% if w.active_now %}
                 <span class="wb-chip wb-chip--accent">{{ t("chip.active") }}</span>

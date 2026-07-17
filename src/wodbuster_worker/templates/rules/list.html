@@ -12,6 +12,7 @@
 {% endblock %}
 
 {% block content %}
+  {% from "_datetime.html" import wb_time %}
   <span class="wb-page-title__eyebrow">{{ t("rules.eyebrow") }}</span>
   <h1 class="wb-page-title">{{ t("rules.title") }}</h1>
   <p class="wb-page-subtitle">{{ t("rules.subtitle") }}</p>
@@ -66,7 +67,7 @@
               {% endif %}
             </td>
             <td class="wb-tabular">
-              {{ rule.window_opens_label }}
+              {{ wb_time(rule.window_opens_at, "stamp", rule.window_opens_label) }}
             </td>
             <td>
               {% if rule.active %}

@@ -2,6 +2,7 @@
 
    Rendered on its own for the POST response and included inside
    page.html on the initial GET. #}
+{% from "_datetime.html" import wb_time %}
 {% if banner %}
   <div class="banner banner-{{ banner.level }}" role="status">
     {{ banner.message }}
@@ -16,13 +17,13 @@
   {% else %}
     <dl>
       <dt>{{ t("cookie.status.pasted") }}</dt>
-      <dd class="wb-tabular">{% if pasted_at %}{{ pasted_at.isoformat(sep=" ", timespec="seconds") }}{% else %}—{% endif %}</dd>
+      <dd class="wb-tabular">{% if pasted_at %}{{ wb_time(pasted_at, "stamp", pasted_at.isoformat(sep=" ", timespec="seconds")) }}{% else %}—{% endif %}</dd>
 
       <dt>{{ t("cookie.status.last_validated") }}</dt>
-      <dd class="wb-tabular">{% if last_validated_at %}{{ last_validated_at.isoformat(sep=" ", timespec="seconds") }}{% else %}—{% endif %}</dd>
+      <dd class="wb-tabular">{% if last_validated_at %}{{ wb_time(last_validated_at, "stamp", last_validated_at.isoformat(sep=" ", timespec="seconds")) }}{% else %}—{% endif %}</dd>
 
       <dt>{{ t("cookie.status.projected_expiry") }}</dt>
-      <dd class="wb-tabular">{% if projected_ttl_at %}{{ projected_ttl_at.isoformat(sep=" ", timespec="seconds") }}{% else %}<span class="wb-muted">{{ t("cookie.status.awaiting_first_heartbeat") }}</span>{% endif %}</dd>
+      <dd class="wb-tabular">{% if projected_ttl_at %}{{ wb_time(projected_ttl_at, "stamp", projected_ttl_at.isoformat(sep=" ", timespec="seconds")) }}{% else %}<span class="wb-muted">{{ t("cookie.status.awaiting_first_heartbeat") }}</span>{% endif %}</dd>
 
       <dt>{{ t("cookie.status.last_probe") }}</dt>
       <dd>

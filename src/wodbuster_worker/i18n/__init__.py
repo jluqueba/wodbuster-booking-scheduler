@@ -25,6 +25,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 from contextvars import ContextVar
 from typing import Any
 
@@ -132,6 +133,11 @@ def register_jinja_globals(env: Any) -> None:
     env.globals["lang_url"] = lang_url
     env.globals["lang_prefix"] = lang_prefix
     env.globals["supported_languages"] = list(SUPPORTED_LANGUAGES)
+    # Gym timezone (WORKER_TIMEZONE) surfaced to templates so
+    # base.html can emit the <meta name="wb-timezone"> that the
+    # client-side date formatter pins every instant to. Read from the
+    # environment directly to avoid importing the scheduler here.
+    env.globals["worker_timezone"] = os.environ.get("WORKER_TIMEZONE", "Europe/Madrid")
 
 
 __all__ = [
