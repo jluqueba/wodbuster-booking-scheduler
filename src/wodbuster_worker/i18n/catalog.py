@@ -60,6 +60,7 @@ EN: dict[str, str] = {
     "nav.dashboard": "🏠 Dashboard",
     "nav.rules": "📅 Rules",
     "nav.history": "📜 History",
+    "nav.book_now": "⚡ Book now",
     "nav.vacation": "🏖️ Vacation",
     "nav.cookie": "🍪 Cookie",
     "nav.telegram": "🤖 Telegram",
@@ -156,6 +157,21 @@ EN: dict[str, str] = {
     # -- history / upcoming -----------------------------------------
     "history.eyebrow": "Activity",
     "history.title": "📜 Booking history",
+    "book_now.eyebrow": "One-off booking",
+    "book_now.title": "⚡ Book a class now",
+    "book_now.subtitle": (
+        "Fire a single booking for a specific date and time, outside your "
+        "recurring rules. The class type is resolved from whichever class "
+        "runs at that time."
+    ),
+    "book_now.form.date": "Date",
+    "book_now.form.time": "Time",
+    "book_now.submit_button": "Book now",
+    "book_now.hint": (
+        "The booking only fires when the class is already within its "
+        "reservation window. Outside the window the attempt is rejected "
+        "without contacting WodBuster."
+    ),
     "history.subtitle": (
         "This week's booking attempts, newest first. Use the "
         "Cancel button on any upcoming granted class to release your slot "
@@ -446,6 +462,17 @@ EN: dict[str, str] = {
     "flash.booking.service_unavailable": (
         "Booking service unavailable — check WodBuster configuration."
     ),
+    "flash.booking.manual_granted": "Booked {klass} at {time}. Confirmation sent to Telegram.",
+    "flash.booking.manual_not_granted": "Booking not granted ({status}).",
+    "flash.booking.manual_window_closed": (
+        "That class is not open for booking yet. Try again once its reservation window opens."
+    ),
+    "flash.booking.manual_no_class": "No class found at {time} on {date}.",
+    "flash.booking.manual_no_cookie": (
+        "No active WodBuster session on file. Refresh your cookie and retry."
+    ),
+    "flash.booking.manual_invalid_input": "Enter a valid date and time (HH:MM).",
+    "flash.booking.manual_failed": "Booking failed: {reason}",
     "flash.vacation.enabled": (
         "Vacation mode enabled from {start} through {end}. Granted "
         "bookings inside the range have been cancelled."
@@ -511,6 +538,7 @@ ES: dict[str, str] = {
     "nav.dashboard": "🏠 Panel",
     "nav.rules": "📅 Reglas",
     "nav.history": "📜 Historial",
+    "nav.book_now": "⚡ Reservar ya",
     "nav.vacation": "🏖️ Vacaciones",
     "nav.cookie": "🍪 Cookie",
     "nav.telegram": "🤖 Telegram",
@@ -613,6 +641,21 @@ ES: dict[str, str] = {
     # -- history / upcoming -----------------------------------------
     "history.eyebrow": "Actividad",
     "history.title": "📜 Historial de reservas",
+    "book_now.eyebrow": "Reserva puntual",
+    "book_now.title": "⚡ Reserva una clase ya",
+    "book_now.subtitle": (
+        "Lanza una reserva única para una fecha y hora concretas, al "
+        "margen de tus reglas periódicas. El tipo de clase se resuelve "
+        "según la clase que se imparta a esa hora."
+    ),
+    "book_now.form.date": "Fecha",
+    "book_now.form.time": "Hora",
+    "book_now.submit_button": "Reservar ya",
+    "book_now.hint": (
+        "La reserva solo se lanza cuando la clase ya está dentro de su "
+        "ventana de reserva. Fuera de la ventana el intento se rechaza "
+        "sin contactar con WodBuster."
+    ),
     "history.subtitle": (
         "Los intentos de reserva de esta semana, del más reciente al más antiguo. "
         "Usa el botón Cancelar en cualquier clase reservada próxima para "
@@ -914,6 +957,18 @@ ES: dict[str, str] = {
     "flash.booking.service_unavailable": (
         "Servicio de reservas no disponible — revisa la configuración de WodBuster."
     ),
+    "flash.booking.manual_granted": "Reservada {klass} a las {time}. Confirmación enviada a Telegram.",
+    "flash.booking.manual_not_granted": "Reserva no concedida ({status}).",
+    "flash.booking.manual_window_closed": (
+        "Esa clase todavía no está abierta para reservar. Vuelve a "
+        "intentarlo cuando se abra su ventana de reserva."
+    ),
+    "flash.booking.manual_no_class": "No hay ninguna clase a las {time} el {date}.",
+    "flash.booking.manual_no_cookie": (
+        "No hay sesión activa de WodBuster. Renueva tu cookie e inténtalo de nuevo."
+    ),
+    "flash.booking.manual_invalid_input": "Introduce una fecha y hora válidas (HH:MM).",
+    "flash.booking.manual_failed": "Fallo en la reserva: {reason}",
     "flash.vacation.enabled": (
         "Modo vacaciones activado del {start} al {end}. Las reservas "
         "concedidas dentro del rango se han cancelado."

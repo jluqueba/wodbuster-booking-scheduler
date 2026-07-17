@@ -1,6 +1,6 @@
-"""Booking history + cancel routes (US6.2, H.1 lite).
+"""Booking history + cancel + manual booking routes (US6.2, US8.2, H.1 lite).
 
-Two routes:
+Routes:
 
 - ``GET /history`` — the operator's recent booking attempts. One row
   per outcome, newest first, with a cancel button on every
@@ -8,19 +8,23 @@ Two routes:
 - ``POST /bookings/{id}/cancel`` — invokes the
   :func:`cancel_booking` service and redirects back to /history with
   a flash-style result. CSRF-protected. Idempotent per CC-015.
+- ``GET /book-now`` — the one-off manual booking form (date + time).
+- ``POST /book-now`` — invokes :class:`ManualBookingService` and
+  redirects back with a flash-style result. CSRF-protected. Rejects
+  outside the booking window without any WodBuster call (CC-010).
 
 Kept in its own router so the rules router stays focused on rule
-CRUD. Both routes are auth-gated.
+CRUD. Every route is auth-gated.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
@@ -32,6 +36,13 @@ from ..booking.cancellation import (
     CancellationUpstreamError,
     cancel_booking,
     list_recent_bookings,
+)
+from ..booking.manual import (
+    BookingWindowClosedError,
+    ClassNotVisibleError,
+    ManualBookingService,
+    ManualBookingUpstreamError,
+    NoCookieError,
 )
 from ..booking.upcoming import UpcomingSlot, list_upcoming_slots
 from ..i18n import lang_url, t
@@ -140,6 +151,112 @@ def booking_cancel(
             )
 
     return _redirect_with_flash(t("flash.booking.cancelled"), kind="info")
+
+
+@router.get("/book-now", name="book_now_form")
+def book_now_form(
+    request: Request,
+    operator_id: int = Depends(require_session),
+    flash: str | None = None,
+    flash_kind: str = "info",
+) -> Response:
+    """Render the one-off manual booking form (US8.2)."""
+    _ = operator_id  # auth gate only; the form needs no operator data
+    templates = _templates(request)
+    return templates.TemplateResponse(
+        request=request,
+        name="book_now.html",
+        context={
+            "csrf_token": get_csrf_token(request) or "",
+            "flash": flash,
+            "flash_kind": flash_kind if flash_kind in {"info", "warning", "error"} else "info",
+        },
+    )
+
+
+@router.post(
+    "/book-now",
+    name="book_now_submit",
+    dependencies=[Depends(verify_csrf)],
+)
+def book_now_submit(
+    request: Request,
+    book_date: str = Form(...),
+    book_time: str = Form(...),
+    operator_id: int = Depends(require_session),
+) -> Response:
+    """Fire a one-off manual booking and redirect back with a flash.
+
+    Rejects an out-of-window class without any WodBuster booking call
+    (CC-010); the service issues a single read-only LoadClass probe to
+    check the countdown and resolve the class type.
+    """
+    service = _manual_service(request)
+    if service is None:
+        return _redirect_book_now(t("flash.booking.service_unavailable"), kind="error")
+
+    try:
+        target_date = date.fromisoformat(book_date.strip())
+    except ValueError:
+        return _redirect_book_now(t("flash.booking.manual_invalid_input"), kind="error")
+
+    try:
+        result = service.book(
+            operator_id=operator_id,
+            target_date=target_date,
+            target_time=book_time,
+        )
+    except ValueError:
+        # Malformed HH:MM slipped past the client-side <input type=time>.
+        return _redirect_book_now(t("flash.booking.manual_invalid_input"), kind="error")
+    except NoCookieError:
+        return _redirect_book_now(t("flash.booking.manual_no_cookie"), kind="error")
+    except BookingWindowClosedError:
+        return _redirect_book_now(t("flash.booking.manual_window_closed"), kind="warning")
+    except ClassNotVisibleError:
+        return _redirect_book_now(
+            t("flash.booking.manual_no_class", time=book_time, date=book_date),
+            kind="warning",
+        )
+    except ManualBookingUpstreamError as exc:
+        _log.warning("booking.manual.upstream_error", operator_id=operator_id, error=str(exc))
+        return _redirect_book_now(t("flash.booking.manual_failed", reason=str(exc)), kind="error")
+
+    if result.terminal_status == "granted":
+        return _redirect_book_now(
+            t("flash.booking.manual_granted", klass=result.class_type, time=book_time),
+            kind="info",
+        )
+    return _redirect_book_now(
+        t("flash.booking.manual_not_granted", status=result.terminal_status),
+        kind="warning",
+    )
+
+
+def _manual_service(request: Request) -> ManualBookingService | None:
+    """Build a :class:`ManualBookingService` from app.state, or ``None``.
+
+    Same wiring guard as :func:`booking_cancel`: when the WodBuster
+    client or cookie store is unwired (config missing) the caller
+    surfaces ``service_unavailable`` instead of a silent no-op.
+    """
+    client = getattr(request.app.state, "wodbuster_client", None)
+    store = getattr(request.app.state, "cookie_store", None)
+    if client is None or store is None:
+        return None
+    settings = getattr(request.app.state, "settings", None)
+    operator_idu = getattr(settings, "wodbuster_idu", None) if settings is not None else None
+    return ManualBookingService(
+        client=client,
+        cookie_store=store,
+        operator_idu=operator_idu,
+    )
+
+
+def _redirect_book_now(message: str, *, kind: str) -> RedirectResponse:
+    """303 back to /book-now with a URL-encoded flash message."""
+    query = urlencode({"flash": message, "flash_kind": kind})
+    return RedirectResponse(url=f"{lang_url('/book-now')}?{query}", status_code=303)
 
 
 def _current_week_start(now: datetime) -> datetime:

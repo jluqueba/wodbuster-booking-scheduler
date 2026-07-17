@@ -142,6 +142,21 @@ def find_matching_slot(
     return None
 
 
+def find_slot_by_time(slots: list[ClassSlot], *, class_time: str) -> ClassSlot | None:
+    """Return the first slot starting at ``class_time`` (HH:MM), else ``None``.
+
+    Time-only lookup used by the manual booking path (US8.1): the
+    operator picks a date + time from the web ``/book-now`` form or
+    Telegram ``/bookclass`` and gives no class name, so the service
+    resolves the class type from whichever class runs at that time.
+    Matching is exact on the ``HH:MM`` start time.
+    """
+    for slot in slots:
+        if slot.hora_comienzo == class_time:
+            return slot
+    return None
+
+
 def extract_seconds_until_publication(payload: dict[str, Any]) -> float | None:
     """Return ``SegundosHastaPublicacion`` from the payload.
 
@@ -285,6 +300,7 @@ __all__ = [
     "extract_class_slots",
     "extract_seconds_until_publication",
     "find_matching_slot",
+    "find_slot_by_time",
     "operator_idu_to_guid",
     "parse_class_instance",
     "read_target_enrollment",
