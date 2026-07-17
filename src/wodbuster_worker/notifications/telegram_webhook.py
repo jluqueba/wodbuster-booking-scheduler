@@ -9,9 +9,28 @@ Two routes live here:
 - ``POST /telegram/webhook/{secret}``   Telegram Bot API webhook.
   ``secret`` is a Key Vault-sourced path component (US9.9); a
   mismatch returns 404 so Telegram is the only party that can
-  reach the handler. The only command implemented today is
-  ``/start <token>`` — future slices (US6.3 ``/cancel``, US8.3
-  ``/bookclass``) plug in here.
+  reach the handler.
+
+Command dispatcher (TG.2):
+
+The webhook routes on an explicit allow-list of commands. Anything
+outside the list is either an explanatory rejection (rule-mutation
+verbs, which are web-UI-only per US5.6 / CC-009) or a polite unknown-
+command nudge. Recognised commands:
+
+- ``/start <token>``  bind this chat to the operator (US9.8).
+- ``/help``           list the supported commands (TG.4).
+- ``/status``         report bind status.
+- ``/next``           next scheduled booking + upcoming slots (TG.3).
+- ``/last``           most recent booking outcome (TG.3).
+- ``/cancel <id>``    idempotent cancel of a booking (US6.3, CC-015).
+- ``/ack``            acknowledge the open cookie-expiring alert (TG.5).
+- ``/bookclass <YYYY-MM-DD> <HH:MM>``  one-off manual booking (US8.3).
+
+Every stateful command (``/next``, ``/last``, ``/cancel``, ``/ack``,
+``/bookclass``) requires the chat to be bound to an operator (FR-031);
+unbound chats get a no-data-leak rejection, never another operator's
+data.
 
 Auth model:
 
@@ -23,6 +42,7 @@ Auth model:
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote, urlencode
 
@@ -32,12 +52,24 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
+from ..booking.cancellation import (
+    BookingAlreadyCancelledError,
+    BookingNotFoundError,
+    CancellationUpstreamError,
+    cancel_booking,
+    list_recent_bookings,
+)
+from ..booking.upcoming import list_upcoming_slots
+from ..heartbeat.alerts import acknowledge_open_cookie_expiring
+from ..heartbeat.next_window import compute_next_booking
 from ..i18n import lang_url, t
 from ..persistence.engine import get_session
 from ..persistence.models import OperatorProfile
+from ..scheduler.rule_jobs import operator_timezone
 from . import telegram as telegram_sender
 from .telegram_bind import TelegramBindStore
 
@@ -277,14 +309,115 @@ def _handle_command(request: Request, *, chat_id: str, text: str) -> str | None:
     command = parts[0].lower()
     argument = parts[1] if len(parts) > 1 else ""
 
-    if command == "/start":
+    route = _route(command)
+    if route == "start":
         return _handle_start(request, chat_id=chat_id, token=argument)
-    if command in {"/help", "/status"}:
+    if route == "help":
+        return _handle_help()
+    if route == "status":
         return _render_status(request, chat_id=chat_id)
+    if route == "next":
+        return _handle_next(request, chat_id=chat_id)
+    if route == "last":
+        return _handle_last(request, chat_id=chat_id)
+    if route == "cancel":
+        return _handle_cancel(request, chat_id=chat_id, argument=argument)
+    if route == "ack":
+        return _handle_ack(request, chat_id=chat_id)
+    if route == "bookclass":
+        return _handle_bookclass(request, chat_id=chat_id, argument=argument)
+    if route == "rule_mutation":
+        # US5.6 / CC-009: rule create/update/delete is web-UI only.
+        # Reject with an explanation and change no state.
+        return (
+            "Rules can't be changed from Telegram. Open the web UI "
+            "(Rules page) to create, edit, or delete a scheduling rule. "
+            "This chat is for status checks and one-off actions only."
+        )
     # Any other command: helpful nudge, no state change.
     return (
-        "Unknown command. Send /help for a status check, or /start "
+        "Unknown command. Send /help to see what I can do, or /start "
         "<token> with the token from the web UI to bind this chat."
+    )
+
+
+def _route(command: str) -> str:
+    """Classify ``command`` into a dispatch label (TG.2 allow-list).
+
+    Pure and dependency-free so the routing table can be unit-tested
+    without a request or a database (TG.T1). Every supported verb maps
+    to its own label; rule-mutation verbs map to ``rule_mutation`` so
+    the dispatcher can reject them with an explanation (CC-009); every
+    other token is ``unknown``.
+    """
+    supported = {
+        "/start": "start",
+        "/help": "help",
+        "/status": "status",
+        "/next": "next",
+        "/last": "last",
+        "/cancel": "cancel",
+        "/ack": "ack",
+        "/bookclass": "bookclass",
+    }
+    if command in supported:
+        return supported[command]
+    if command in _RULE_MUTATION_COMMANDS:
+        return "rule_mutation"
+    return "unknown"
+
+
+# Rule-mutation verbs are web-UI only (US5.6 / CC-009). Recognising
+# them explicitly lets the dispatcher explain *why* they are refused
+# instead of falling through to the generic unknown-command nudge.
+_RULE_MUTATION_COMMANDS = frozenset(
+    {
+        "/newrule",
+        "/addrule",
+        "/createrule",
+        "/editrule",
+        "/updaterule",
+        "/setrule",
+        "/deleterule",
+        "/delrule",
+        "/removerule",
+        "/rmrule",
+        "/rule",
+        "/rules",
+    }
+)
+
+# Shared no-data-leak rejection for stateful commands on an unbound
+# chat (FR-031): never surface another operator's data or confirm a
+# chat's binding state beyond "not bound".
+_UNBOUND_REJECTION = (
+    "This chat is not bound. Open the web UI (Telegram page) and click "
+    "'Generate link' to bind it before using this command."
+)
+
+
+def _operator_for_chat(session: Session, chat_id: str) -> OperatorProfile | None:
+    """Resolve the operator bound to ``chat_id`` (or ``None``).
+
+    Central bound-chat lookup shared by every stateful handler so the
+    ``telegram_chat_id`` scoping (FR-031) lives in one place.
+    """
+    return session.execute(
+        select(OperatorProfile).where(OperatorProfile.telegram_chat_id == chat_id)
+    ).scalar_one_or_none()
+
+
+def _handle_help() -> str:
+    """TG.4: list the supported commands."""
+    return (
+        "Commands:\n"
+        "/status — is this chat bound?\n"
+        "/next — next scheduled booking and upcoming slots\n"
+        "/last — most recent booking outcome\n"
+        "/cancel <booking-id> — cancel a booking\n"
+        "/ack — acknowledge the cookie-expiring warning\n"
+        "/bookclass <YYYY-MM-DD> <HH:MM> — one-off manual booking\n"
+        "Rules are managed in the web UI, not here."
     )
 
 
@@ -321,9 +454,7 @@ def _handle_start(request: Request, *, chat_id: str, token: str) -> str:
 
 def _render_status(request: Request, *, chat_id: str) -> str:
     with get_session() as session:
-        row = session.execute(
-            select(OperatorProfile).where(OperatorProfile.telegram_chat_id == chat_id)
-        ).scalar_one_or_none()
+        row = _operator_for_chat(session, chat_id)
     if row is None:
         return (
             "This chat is not bound. Open the web UI (Telegram page) "
@@ -333,6 +464,153 @@ def _render_status(request: Request, *, chat_id: str) -> str:
         f"Bound to operator {row.display_name or f'#{row.id}'}. "
         "You will receive booking outcomes and alerts here."
     )
+
+
+def _handle_next(request: Request, *, chat_id: str) -> str:
+    """TG.3: report the next scheduled booking and upcoming slots."""
+    now = datetime.now(tz=UTC)
+    tz = operator_timezone()
+    with get_session() as session:
+        operator = _operator_for_chat(session, chat_id)
+        if operator is None:
+            return _UNBOUND_REJECTION
+        next_booking = compute_next_booking(session, operator.id, now)
+        upcoming = list_upcoming_slots(session, operator.id, now=now)
+
+    if next_booking is None and not upcoming:
+        return "Nothing scheduled. No active rules have a window on the horizon."
+
+    lines: list[str] = []
+    if next_booking is not None:
+        slot_local = next_booking.target_slot.astimezone(tz)
+        opens_local = next_booking.window_open.astimezone(tz)
+        lines.append(
+            "Next booking: "
+            f"{slot_local:%a %d %b at %H:%M} "
+            f"(window opens {opens_local:%a %d %b at %H:%M})."
+        )
+    if upcoming:
+        lines.append("Upcoming slots:")
+        for slot in upcoming[:5]:
+            slot_local = slot.target_slot.astimezone(tz)
+            chip = "granted" if slot.kind == "granted" else "scheduled"
+            lines.append(f"- {slot_local:%a %d %b at %H:%M} {slot.target_class} ({chip})")
+    return "\n".join(lines)
+
+
+def _handle_last(request: Request, *, chat_id: str) -> str:
+    """TG.3: report the most recent booking outcome."""
+    tz = operator_timezone()
+    with get_session() as session:
+        operator = _operator_for_chat(session, chat_id)
+        if operator is None:
+            return _UNBOUND_REJECTION
+        recent = list_recent_bookings(session, operator.id, limit=1)
+
+    if not recent:
+        return "No bookings yet. Nothing has been attempted for this operator."
+    last = recent[0]
+    slot_local = last.target_slot.astimezone(tz)
+    attempted_local = last.attempted_at.astimezone(tz)
+    return (
+        f"Last booking: {last.target_class} on {slot_local:%a %d %b at %H:%M} "
+        f"— {last.terminal_status} (attempted {attempted_local:%a %d %b at %H:%M})."
+    )
+
+
+def _handle_cancel(request: Request, *, chat_id: str, argument: str) -> str:
+    """US6.3 / CC-015: idempotent cancel of a booking by id."""
+    booking_id_text = argument.strip()
+    if not booking_id_text:
+        return "Usage: /cancel <booking-id>. Find the id in /last or the web UI."
+    try:
+        booking_id = int(booking_id_text)
+    except ValueError:
+        return "Booking id must be a number. Usage: /cancel <booking-id>."
+
+    client = getattr(request.app.state, "wodbuster_client", None)
+    cookie_store = getattr(request.app.state, "cookie_store", None)
+    if client is None or cookie_store is None:
+        return "Cancellation is temporarily unavailable. Try again shortly."
+
+    tz = operator_timezone()
+    with get_session() as session:
+        operator = _operator_for_chat(session, chat_id)
+        if operator is None:
+            return _UNBOUND_REJECTION
+        try:
+            outcome = cancel_booking(
+                session,
+                operator_id=operator.id,
+                booking_id=booking_id,
+                client=client,
+                cookie_store=cookie_store,
+            )
+        except BookingNotFoundError:
+            return f"Booking #{booking_id} not found for this operator."
+        except BookingAlreadyCancelledError:
+            # CC-015: idempotent — no WodBuster call was issued.
+            return f"Booking #{booking_id} is already cancelled. Nothing to do."
+        except CancellationUpstreamError:
+            return f"Couldn't reach WodBuster to cancel #{booking_id}. Try again in a moment."
+        # Capture display values before commit expires the attributes.
+        target_class = outcome.target_class
+        slot_local = outcome.target_slot.astimezone(tz)
+        session.commit()
+    return f"Cancelled #{booking_id}: {target_class} on {slot_local:%a %d %b at %H:%M}."
+
+
+def _handle_ack(request: Request, *, chat_id: str) -> str:
+    """TG.5: acknowledge the open cookie-expiring alert."""
+    now = datetime.now(tz=UTC)
+    with get_session() as session:
+        operator = _operator_for_chat(session, chat_id)
+        if operator is None:
+            return _UNBOUND_REJECTION
+        alert_id = acknowledge_open_cookie_expiring(session, operator.id, now=now)
+        if alert_id is None:
+            return "No open cookie-expiring warning to acknowledge."
+        session.commit()
+    return "Acknowledged. I'll stop nagging about the cookie for this cycle."
+
+
+def _handle_bookclass(request: Request, *, chat_id: str, argument: str) -> str:
+    """US8.3: one-off manual booking ``/bookclass <YYYY-MM-DD> <HH:MM>``.
+
+    The argument shape is validated here so operators get immediate
+    feedback, but the actual booking is not yet wired: it depends on
+    the manual-booking service (US8.1), which is not implemented. Until
+    then this returns an honest deferral rather than a silent no-op or a
+    fabricated confirmation.
+    """
+    args = argument.split()
+    if len(args) != 2 or not _valid_date(args[0]) or not _valid_time(args[1]):
+        return "Usage: /bookclass <YYYY-MM-DD> <HH:MM>. Example: /bookclass 2026-07-15 18:30."
+    with get_session() as session:
+        operator = _operator_for_chat(session, chat_id)
+        if operator is None:
+            return _UNBOUND_REJECTION
+    return (
+        "Manual booking from Telegram isn't available yet. "
+        "This command is recognised but the one-off booking service "
+        "is still being built — use the web UI to book in the meantime."
+    )
+
+
+def _valid_date(value: str) -> bool:
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return False
+    return True
+
+
+def _valid_time(value: str) -> bool:
+    try:
+        datetime.strptime(value, "%H:%M")
+    except ValueError:
+        return False
+    return True
 
 
 def _send_reply(request: Request, *, chat_id: str, text: str) -> None:
