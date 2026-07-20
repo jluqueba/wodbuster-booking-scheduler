@@ -10,8 +10,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Detect non-documentation changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # `code` is true when the change set touches anything that is
+          # not a Markdown file. Documentation-only changes (README or
+          # docs/*.md edits) leave it false so the lint+type+test job
+          # below is skipped. The ci-gate job still reports a result so
+          # the branch ruleset's required check is satisfied.
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+
   check:
     name: ruff, mypy, pytest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -66,3 +91,26 @@ jobs:
 
       - name: pytest
         run: pytest -m "not live_contract"
+
+  ci-gate:
+    # Single required status check for the `main` branch ruleset. It
+    # always runs (even when `check` is skipped for docs-only changes),
+    # so the required check is never left pending. It passes when the
+    # heavy job succeeded or was intentionally skipped, and fails only
+    # when the heavy job actually failed or was cancelled.
+    name: ci-gate
+    needs: [changes, check]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate the check job result
+        env:
+          CHECK_RESULT: ${{ needs.check.result }}
+        run: |
+          echo "check job result: ${CHECK_RESULT}"
+          if [ "${CHECK_RESULT}" = "success" ] || [ "${CHECK_RESULT}" = "skipped" ]; then
+            echo "CI gate passed."
+            exit 0
+          fi
+          echo "CI gate failed: the check job did not succeed."
+          exit 1
