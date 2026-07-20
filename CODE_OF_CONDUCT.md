@@ -24,12 +24,10 @@ Examples of unacceptable behavior:
 
 ## Enforcement
 
-[TODO: Describe how violations will be handled.]
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the maintainer, [@jluqueba](https://github.com/jluqueba), through a direct GitHub contact or a confidential report via the repository's Security tab.
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to: [TODO: Add contact email or link]
-
-All complaints will be reviewed and investigated and will result in a response that is deemed necessary and appropriate to the circumstances.
+All complaints will be reviewed and investigated promptly and fairly. The maintainer is obligated to respect the privacy and security of the reporter of any incident, and will respond in a way deemed necessary and appropriate to the circumstances.
 
 ## Attribution
 
-[TODO: If adopting an existing code of conduct (e.g., Contributor Covenant), add attribution here.]
+This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org/), version 2.1, available at <https://www.contributor-covenant.org/version/2/1/code_of_conduct.html>.
