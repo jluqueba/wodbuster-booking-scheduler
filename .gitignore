@@ -31,6 +31,15 @@ Thumbs.db
 # main.parameters.json is a real source file; only main.json is generated.
 infra/main.json
 
+# Internal design documentation kept out of the public repository:
+# specs, ADRs, envisioning, and migration notes. The single tracked,
+# developer-facing document is docs/DEVELOPER_GUIDE.md (directly under
+# docs/, so it is not matched by the folder patterns below).
+docs/architecture/
+docs/envisioning/
+docs/features/
+docs/migrations/
+
 # Spike artifacts that may contain credentials, session material, or PII.
 # See docs/features/phase-0-api-discovery/scripts/README.md for the rationale.
 # These patterns are intentionally broad. When in doubt, do not commit.
