@@ -1,0 +1,27 @@
+# GitHub Pages (branch mode) configuration.
+#
+# Renders README.md as the site home page using a Jekyll theme.
+# Publishing happens automatically on every push to `main`. No separate
+# page is authored; the README is the source of the published site.
+
+title: WodBuster Booking Worker
+description: Unattended worker that books your CrossFit classes the instant the booking window opens.
+theme: jekyll-theme-cayman
+show_downloads: false
+
+# Keep the rendered site focused on the README and the community docs.
+# Application code, tests, and infrastructure are not part of the site.
+exclude:
+  - src/
+  - tests/
+  - infra/
+  - alembic/
+  - docker/
+  - site/
+  - "*.py"
+  - "*.toml"
+  - "*.ini"
+  - "*.ps1"
+  - Dockerfile
+  - docker-compose.yml
+  - Makefile

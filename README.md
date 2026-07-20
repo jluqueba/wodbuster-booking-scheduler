@@ -1,66 +1,39 @@
-# WodBuster Booking Worker
+# 🏋️ WodBuster Booking Worker
 
-Unattended booking worker for the WodBuster platform. Single FastAPI ASGI process running on Azure Container Apps with APScheduler, Postgres 16 (Azure Database for PostgreSQL Flexible Server), and dual-channel notifications (Telegram + web banner).
+> Popular CrossFit classes open at a fixed time and fill up in under 10 seconds. Booking by hand means logging in, racing the clock, and often losing the spot anyway. **This project books the class for you.**
 
-See `docs/features/wodbuster-booking-worker/` for the feature spec, plan, and tasks, and `docs/architecture/decisions/` for the architectural decisions (ADRs 0001-0007).
+You set up your preferred classes once. A small service then watches the clock and reserves your spot the instant each booking window opens, so you never land on the waitlist again.
 
-## Local development
+## What it does
 
-Requires Python 3.12 or newer plus Docker Desktop (for the local Postgres).
+- **Books automatically** the moment a class window opens, with an optional backup class if the first one is full.
+- **Simple web page** to manage everything: preferred classes, session cookie, booking history, and worker health.
+- **Telegram notifications** on every outcome, so a booking is never a mystery. You can also check status, cancel a class, or book a one-off class straight from the chat.
+- **Early warnings** (hours ahead) when your WodBuster session is about to expire, so you are never caught out at booking time.
+- **Never fails silently.** If a scheduled run does not happen, that itself raises an alert.
+- **Keeps your credentials safe.** Your WodBuster username and password are never stored. Only the session cookie is kept, encrypted.
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e ".[dev]"
-docker compose up -d postgres
-.\check.ps1
-```
+## How it works, in plain terms
 
-On Linux or macOS:
+1. You sign in to the web page and paste your WodBuster session cookie once.
+2. You create rules for the classes you want (for example, "Tuesday 19:00 CrossFit, or 20:00 if that is full").
+3. The service runs quietly in the background on Azure. When a booking window opens, it makes the reservation in the first second.
+4. You get a Telegram notification with the result, and you can check or cancel anything on the go.
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-docker compose up -d postgres
-make check
-```
+It runs as a single always-on service on Microsoft Azure, using a scheduler for the timing, a small database for your rules and history, and Telegram for notifications.
 
-`docker compose up -d postgres` brings up the local Postgres 16 container declared in `docker-compose.yml`. It listens on `localhost:5432` and matches the `POSTGRES_*` block in `.env.example`. Wipe it with `docker compose down -v` if you need a clean slate.
+## Documentation
 
-`check` runs `ruff check`, `mypy src`, and `pytest` (excluding the `live_contract` marker).
+- [Developer Guide](docs/DEVELOPER_GUIDE.md): the deep dive. Architecture and diagrams, the Azure services in use, how to run the project locally, how to deploy the infrastructure, and a full tour of the features, the Telegram commands, and every page.
+- [Contributing](CONTRIBUTING.md): how to propose changes and the workflow to follow.
+- [Security policy](SECURITY.md): how to report a security issue.
+- [Code of Conduct](CODE_OF_CONDUCT.md): the standards expected in this community.
+- [License](LICENSE): the terms this project is released under.
 
-## Run the app locally
+## For developers
 
-```powershell
-uvicorn wodbuster_worker.app:app --reload --port 8000
-```
+Want to run the project locally, deploy it, or understand how it is built? Head to the [Developer Guide](docs/DEVELOPER_GUIDE.md) for the full walkthrough.
 
-Then `GET http://localhost:8000/health` returns `200 OK`.
+## Status
 
-## Container build
-
-```powershell
-docker build -t wodbuster-worker:dev .
-docker run --rm -p 8000:8000 wodbuster-worker:dev
-```
-
-## Deployments
-
-Provisioning and application deploys both run from **GitHub Actions** using OIDC federation against a dedicated **deploy user-assigned managed identity** (`id-deploy-wodbuster-prod`), separate from the runtime UAMI. Details in ADR-0005 and ADR-0007.
-
-| Workflow | Trigger | Action |
-|----------|---------|--------|
-| `.github/workflows/infra.yml` | Push to `main` touching `infra/**` or `azure.yaml`; `workflow_dispatch`. | `azd provision` (applies immediately, no approval gate for MVP). |
-| `.github/workflows/deploy.yml` | Push to `main` touching `src/**` or `Dockerfile`; `workflow_dispatch`. | Build image, push to ACR, `azd deploy`. |
-| `.github/workflows/infra-preview.yml` | `pull_request` touching `infra/**` or `azure.yaml`. | `azd provision --preview`, posts what-if diff as a PR comment. Read-only. |
-
-### Bootstrap (one-time per subscription)
-
-The deploy UAMI is a prerequisite for the mutating workflows, so it cannot be provisioned by them. Bootstrap runs once from the operator's laptop against a clean subscription:
-
-1. `azd up` (or `azd provision` + `azd deploy`) to create the resource group and initial resource footprint (F3.5).
-2. Create the deploy UAMI, assign RBAC, and configure federated credentials for `main` and `pull_request` (F3.10). See `docs/features/wodbuster-booking-worker/tasks.md` F3.10 for the exact commands.
-3. Publish the three GitHub Actions repository variables: `AZURE_CLIENT_ID` (deploy UAMI's `clientId`), `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`.
-
-After bootstrap, **laptop `azd provision` is forbidden by convention**. All infra changes go through pull requests and the `infra.yml` workflow so ARM state and IaC stay in sync. If the operator ever needs to reset from zero (new subscription), that is a fresh bootstrap and stays out of Actions.
+Personal project, designed for a single user with room to invite a friend or two later. Built for reliability and low latency first, at a cost that stays reasonable for personal use.
