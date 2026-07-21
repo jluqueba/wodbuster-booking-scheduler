@@ -82,6 +82,16 @@
       <input type="time" id="book-time" name="book_time" required>
     </div>
     <div>
+      <label for="book-class">{{ t("book_now.form.class_type") }}</label>
+      <select id="book-class" name="book_class"
+              data-classes-url="{{ lang_url('/book-now/api/classes') }}"
+              data-placeholder="{{ t('book_now.form.class_type_placeholder') }}"
+              data-loading="{{ t('book_now.form.class_type_loading') }}"
+              data-any="{{ t('book_now.form.class_type_any') }}">
+        <option value="">{{ t("book_now.form.class_type_placeholder") }}</option>
+      </select>
+    </div>
+    <div>
       <button type="submit" class="wb-btn wb-btn--primary">
         {{ t("book_now.submit_button") }}
       </button>
@@ -89,4 +99,69 @@
   </form>
 
   <p class="wb-muted wb-note">{{ t("book_now.hint") }}</p>
+
+  <script>
+    (function () {
+      const dateInput = document.getElementById("book-date");
+      const timeInput = document.getElementById("book-time");
+      const classSelect = document.getElementById("book-class");
+      if (!dateInput || !timeInput || !classSelect) {
+        return;
+      }
+      const baseUrl = classSelect.dataset.classesUrl;
+      const placeholder = classSelect.dataset.placeholder;
+      const loadingLabel = classSelect.dataset.loading;
+      const anyLabel = classSelect.dataset.any;
+
+      function setSingleOption(label) {
+        classSelect.innerHTML = "";
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = label;
+        classSelect.appendChild(opt);
+      }
+
+      async function refreshClasses() {
+        const bookDate = dateInput.value;
+        const bookTime = timeInput.value;
+        if (!bookDate || !bookTime) {
+          setSingleOption(placeholder);
+          return;
+        }
+        setSingleOption(loadingLabel);
+        const params = new URLSearchParams({ book_date: bookDate, book_time: bookTime });
+        let data;
+        try {
+          const resp = await fetch(baseUrl + "?" + params.toString(), {
+            headers: { "Accept": "application/json" },
+          });
+          data = await resp.json();
+        } catch (err) {
+          setSingleOption(anyLabel);
+          return;
+        }
+        const classTypes = (data && Array.isArray(data.class_types)) ? data.class_types : [];
+        classSelect.innerHTML = "";
+        // Keep an empty option so the operator can fall back to
+        // "any class at this time" (server first-match behavior).
+        const anyOpt = document.createElement("option");
+        anyOpt.value = "";
+        anyOpt.textContent = classTypes.length ? anyLabel : placeholder;
+        classSelect.appendChild(anyOpt);
+        classTypes.forEach(function (name) {
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          classSelect.appendChild(opt);
+        });
+        // Auto-select when exactly one class runs at that time.
+        if (classTypes.length === 1) {
+          classSelect.value = classTypes[0];
+        }
+      }
+
+      dateInput.addEventListener("change", refreshClasses);
+      timeInput.addEventListener("change", refreshClasses);
+    })();
+  </script>
 {% endblock %}

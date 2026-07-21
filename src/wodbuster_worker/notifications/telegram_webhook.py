@@ -424,7 +424,7 @@ def _handle_help() -> str:
         "/last — most recent booking outcome\n"
         "/cancel <booking-id> — cancel a booking\n"
         "/ack — acknowledge the cookie-expiring warning\n"
-        "/bookclass <YYYY-MM-DD> <HH:MM> — one-off manual booking\n"
+        "/bookclass <YYYY-MM-DD> <HH:MM> [class type] — one-off manual booking\n"
         "Rules are managed in the web UI, not here."
     )
 
@@ -589,17 +589,25 @@ def _handle_ack(request: Request, *, chat_id: str) -> str:
 
 
 def _handle_bookclass(request: Request, *, chat_id: str, argument: str) -> str:
-    """US8.3: one-off manual booking ``/bookclass <YYYY-MM-DD> <HH:MM>``.
+    """US8.3: one-off manual booking ``/bookclass <YYYY-MM-DD> <HH:MM> [class type]``.
 
     Validates the argument shape, resolves the bound operator (FR-031),
     then delegates to :class:`ManualBookingService`. The service issues
     a single read-only ``LoadClass`` probe to check the reservation
     window (CC-010) and resolve the class type before firing exactly
     one booking attempt.
+
+    The optional trailing ``class type`` disambiguates several classes
+    sharing a start time (Cross Training vs Open Endurance at 08:30).
+    When omitted, the service books whichever class runs at that time.
     """
     args = argument.split()
-    if len(args) != 2 or not _valid_date(args[0]) or not _valid_time(args[1]):
-        return "Usage: /bookclass <YYYY-MM-DD> <HH:MM>. Example: /bookclass 2026-07-15 18:30."
+    if len(args) < 2 or not _valid_date(args[0]) or not _valid_time(args[1]):
+        return (
+            "Usage: /bookclass <YYYY-MM-DD> <HH:MM> [class type]. "
+            "Example: /bookclass 2026-07-15 18:30 Cross Training."
+        )
+    class_type = " ".join(args[2:]).strip() or None
 
     client = getattr(request.app.state, "wodbuster_client", None)
     cookie_store = getattr(request.app.state, "cookie_store", None)
@@ -626,6 +634,7 @@ def _handle_bookclass(request: Request, *, chat_id: str, argument: str) -> str:
             operator_id=operator_id,
             target_date=target_date,
             target_time=args[1],
+            class_type=class_type,
         )
     except NoCookieError:
         return "No active WodBuster session on file. Refresh your cookie and retry."
@@ -635,6 +644,8 @@ def _handle_bookclass(request: Request, *, chat_id: str, argument: str) -> str:
             "Try again once its reservation window opens."
         )
     except ClassNotVisibleError:
+        if class_type is not None:
+            return f"No {class_type} class found at {args[1]} on {args[0]}."
         return f"No class found at {args[1]} on {args[0]}."
     except ManualBookingUpstreamError:
         return "Couldn't reach WodBuster to book. Try again in a moment."

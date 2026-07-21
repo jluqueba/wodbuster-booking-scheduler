@@ -231,6 +231,36 @@ def _borrar_ok() -> BookingActionResponse:
     )
 
 
+def _load_response_multi(
+    class_time: str,
+    slots: list[tuple[str, int]],
+    *,
+    seconds_until_publication: float = -100.0,
+) -> LoadClassResponse:
+    """LoadClass payload with several classes at the same start time."""
+    valores = [
+        {
+            "Valor": {
+                "Id": slot_id,
+                "Nombre": name,
+                "HoraComienzo": f"{class_time}:00",
+                "TipoEstado": "Inscribible",
+                "Plazas": 16,
+                "AtletasEnListaDeEspera": 0,
+            }
+        }
+        for name, slot_id in slots
+    ]
+    return LoadClassResponse(
+        status_code=200,
+        latency_ms=10.0,
+        payload={
+            "Data": [{"Hora": f"{class_time}:00", "Valores": valores}],
+            "SegundosHastaPublicacion": seconds_until_publication,
+        },
+    )
+
+
 def _inscribir_ok() -> BookingActionResponse:
     return BookingActionResponse(
         status_code=200,
@@ -743,6 +773,48 @@ def test_bookclass_books_within_window(
         ).one()
     assert row.terminal_status == "granted"
     assert row.rule_id is None
+
+
+def test_bookclass_books_chosen_class_type_on_collision(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """US8.3: an optional trailing class type disambiguates a collision."""
+    op_id, _ = seed_operator()
+    _bind_chat(postgres_engine, op_id, "424242")
+    store = _seed_cookie(postgres_engine, op_id)
+    fake = _FakeWodBusterClient(
+        load_response=_load_response_multi(
+            "08:30", [("Cross Training", 111), ("Open Endurance", 222)]
+        ),
+        inscribir_response=_inscribir_ok(),
+    )
+    replies = _capture_replies(monkeypatch)
+
+    app = app_factory()
+    with TestClient(app) as client:
+        _override_after_lifespan(app, bind_store=TelegramBindStore(), bot_token="tok")
+        app.state.cookie_store = store
+        app.state.wodbuster_client = fake
+        _post_command(
+            client, chat_id=424242, text_body="/bookclass 2026-07-15 08:30 Open Endurance"
+        )
+
+    assert replies
+    assert "open endurance" in replies[-1]["text"].lower()
+    assert len(fake.inscribir_calls) == 1
+    assert fake.inscribir_calls[0]["class_id"] == 222
+    with postgres_engine.connect() as conn:
+        target_class = conn.execute(
+            text(
+                "SELECT target_class FROM booking_outcome "
+                "WHERE operator_id = :op ORDER BY id DESC LIMIT 1"
+            ),
+            {"op": op_id},
+        ).scalar_one()
+    assert target_class == "Open Endurance"
 
 
 def test_bookclass_window_closed_rejects_without_booking(

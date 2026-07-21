@@ -161,11 +161,15 @@ EN: dict[str, str] = {
     "book_now.title": "⚡ Book a class now",
     "book_now.subtitle": (
         "Fire a single booking for a specific date and time, outside your "
-        "recurring rules. The class type is resolved from whichever class "
-        "runs at that time."
+        "recurring rules. Pick the class type when several classes share "
+        "the same start time."
     ),
     "book_now.form.date": "Date",
     "book_now.form.time": "Time",
+    "book_now.form.class_type": "Class type",
+    "book_now.form.class_type_placeholder": "Pick a date and time first",
+    "book_now.form.class_type_loading": "Loading classes…",
+    "book_now.form.class_type_any": "Any class at this time",
     "book_now.submit_button": "Book now",
     "book_now.hint": (
         "The booking only fires when the class is already within its "
@@ -645,11 +649,15 @@ ES: dict[str, str] = {
     "book_now.title": "⚡ Reserva una clase ya",
     "book_now.subtitle": (
         "Lanza una reserva única para una fecha y hora concretas, al "
-        "margen de tus reglas periódicas. El tipo de clase se resuelve "
-        "según la clase que se imparta a esa hora."
+        "margen de tus reglas periódicas. Elige el tipo de clase cuando "
+        "varias clases comparten la misma hora de inicio."
     ),
     "book_now.form.date": "Fecha",
     "book_now.form.time": "Hora",
+    "book_now.form.class_type": "Tipo de clase",
+    "book_now.form.class_type_placeholder": "Elige antes fecha y hora",
+    "book_now.form.class_type_loading": "Cargando clases…",
+    "book_now.form.class_type_any": "Cualquier clase a esa hora",
     "book_now.submit_button": "Reservar ya",
     "book_now.hint": (
         "La reserva solo se lanza cuando la clase ya está dentro de su "
