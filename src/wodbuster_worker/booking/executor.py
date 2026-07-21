@@ -917,8 +917,16 @@ def _short_payload(payload: dict[str, Any], raw_res: str | None) -> str:
 
 
 def _format_slot(target_slot: datetime) -> str:
-    """Short human-readable slot label for notification copy."""
-    return target_slot.astimezone(UTC).strftime("%a %d %b %H:%M UTC")
+    """Short human-readable slot label for notification copy.
+
+    Rendered in the operator's local timezone (``WORKER_TIMEZONE``,
+    default ``Europe/Madrid``) so booking messages read in the same
+    wall-clock the operator books against. Imported lazily to avoid a
+    circular import (``rule_jobs`` imports this module).
+    """
+    from ..scheduler.rule_jobs import operator_timezone
+
+    return target_slot.astimezone(operator_timezone()).strftime("%a %d %b %H:%M %Z")
 
 
 __all__ = ["BookingExecutor", "BookingResult", "SessionFactory"]

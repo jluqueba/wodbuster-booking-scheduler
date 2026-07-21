@@ -22,8 +22,7 @@ command nudge. Recognised commands:
 - ``/help``           list the supported commands (TG.4).
 - ``/status``         report bind status.
 - ``/next``           next scheduled booking + upcoming slots (TG.3).
-- ``/last``           most recent booking outcome (TG.3).
-- ``/cancel <id>``    idempotent cancel of a booking (US6.3, CC-015).
+- ``/last``           most recent booking outcome (TG.3).- ``/list``         upcoming cancellable bookings with their ids.- ``/cancel <id>``    idempotent cancel of a booking (US6.3, CC-015).
 - ``/ack``            acknowledge the open cookie-expiring alert (TG.5).
 - ``/bookclass <YYYY-MM-DD> <HH:MM>``  one-off manual booking (US8.3).
 
@@ -62,6 +61,7 @@ from ..booking.cancellation import (
     CancellationUpstreamError,
     cancel_booking,
     list_recent_bookings,
+    list_upcoming_bookings,
 )
 from ..booking.manual import (
     BookingWindowClosedError,
@@ -327,6 +327,8 @@ def _handle_command(request: Request, *, chat_id: str, text: str) -> str | None:
         return _handle_next(request, chat_id=chat_id)
     if route == "last":
         return _handle_last(request, chat_id=chat_id)
+    if route == "list":
+        return _handle_list(request, chat_id=chat_id)
     if route == "cancel":
         return _handle_cancel(request, chat_id=chat_id, argument=argument)
     if route == "ack":
@@ -363,6 +365,7 @@ def _route(command: str) -> str:
         "/status": "status",
         "/next": "next",
         "/last": "last",
+        "/list": "list",
         "/cancel": "cancel",
         "/ack": "ack",
         "/bookclass": "bookclass",
@@ -421,6 +424,7 @@ def _handle_help() -> str:
         "/status — is this chat bound?\n"
         "/next — next scheduled booking and upcoming slots\n"
         "/last — most recent booking outcome\n"
+        "/list — upcoming bookings with their ids\n"
         "/cancel <booking-id> — cancel a booking\n"
         "/ack — acknowledge the cookie-expiring warning\n"
         "/bookclass <YYYY-MM-DD> <HH:MM> — one-off manual booking\n"
@@ -520,16 +524,40 @@ def _handle_last(request: Request, *, chat_id: str) -> str:
     slot_local = last.target_slot.astimezone(tz)
     attempted_local = last.attempted_at.astimezone(tz)
     return (
-        f"Last booking: {last.target_class} on {slot_local:%a %d %b at %H:%M} "
+        f"Last booking #{last.id}: {last.target_class} on {slot_local:%a %d %b at %H:%M} "
         f"— {last.terminal_status} (attempted {attempted_local:%a %d %b at %H:%M})."
     )
+
+
+def _handle_list(request: Request, *, chat_id: str) -> str:
+    """List upcoming cancellable bookings with their ids.
+
+    Surfaces the booking id ``/cancel`` needs: only ``granted`` future
+    bookings can be cancelled, which is exactly what
+    :func:`list_upcoming_bookings` returns.
+    """
+    tz = operator_timezone()
+    with get_session() as session:
+        operator = _operator_for_chat(session, chat_id)
+        if operator is None:
+            return _UNBOUND_REJECTION
+        upcoming = list_upcoming_bookings(session, operator.id)
+        if not upcoming:
+            return "No upcoming bookings to cancel."
+        lines = ["Upcoming bookings (cancel with /cancel <id>):"]
+        for booking in upcoming:
+            slot_local = booking.target_slot.astimezone(tz)
+            lines.append(
+                f"#{booking.id} — {booking.target_class} on {slot_local:%a %d %b at %H:%M}"
+            )
+        return "\n".join(lines)
 
 
 def _handle_cancel(request: Request, *, chat_id: str, argument: str) -> str:
     """US6.3 / CC-015: idempotent cancel of a booking by id."""
     booking_id_text = argument.strip()
     if not booking_id_text:
-        return "Usage: /cancel <booking-id>. Find the id in /last or the web UI."
+        return "Usage: /cancel <booking-id>. Find the id in /list, /last, or the web UI."
     try:
         booking_id = int(booking_id_text)
     except ValueError:
