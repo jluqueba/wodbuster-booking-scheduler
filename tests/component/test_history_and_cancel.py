@@ -298,6 +298,15 @@ def test_history_attempts_table_renders_operator_local_time(
     like the rest of the app, not in UTC. A slot stored at 19:30 UTC
     renders as 21:30 in Europe/Madrid (CEST, UTC+2 in July)."""
     monkeypatch.setenv("WORKER_TIMEZONE", "Europe/Madrid")
+    # Freeze the route clock to a fixed instant in the same week as the
+    # seeded slot. The attempts table is week-scoped, and the assertions
+    # below rely on Europe/Madrid summer time (CEST, +2), so "now" must be
+    # pinned to a July date. Without this the test would fail every week
+    # outside 2026-07-13..19 and on every winter run.
+    monkeypatch.setattr(
+        "wodbuster_worker.booking.routes._utcnow",
+        lambda: datetime(2026, 7, 16, 12, 0, tzinfo=UTC),
+    )
     op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
     _seed_booking(
         postgres_engine,

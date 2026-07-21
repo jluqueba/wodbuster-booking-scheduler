@@ -66,6 +66,16 @@ _DAY_LABELS = [
 ]
 
 
+def _utcnow() -> datetime:
+    """Current UTC instant.
+
+    A single seam for "now" so time-sensitive views (the week-scoped
+    attempts table) can be frozen deterministically in tests instead of
+    depending on the wall clock of the machine running the suite.
+    """
+    return datetime.now(tz=UTC)
+
+
 def _templates(request: Request) -> Jinja2Templates:
     templates = getattr(request.app.state, "templates", None)
     if templates is None:  # pragma: no cover - misconfiguration
@@ -83,7 +93,7 @@ def history_list(
 ) -> Response:
     """List the operator's most recent booking outcomes."""
     templates = _templates(request)
-    now = datetime.now(tz=UTC)
+    now = _utcnow()
     week_start = _current_week_start(now)
     with get_session() as session:
         upcoming = list_upcoming_slots(session, operator_id, now=now)
@@ -295,7 +305,7 @@ def _outcome_to_row(outcome: BookingOutcome) -> dict[str, Any]:
         "fallback_index": outcome.granted_fallback_index,
         "attempted_at": outcome.attempted_at.astimezone(tz),
         "cancellable": outcome.terminal_status == "granted"
-        and outcome.target_slot.astimezone(UTC) > datetime.now(tz=UTC),
+        and outcome.target_slot.astimezone(UTC) > _utcnow(),
     }
 
 
