@@ -897,7 +897,7 @@ def test_alignment_polls_until_countdown_below_threshold(
         load_class_responses=[
             _aligned_payload(15.0),
             _aligned_payload(8.0),
-            _aligned_payload(0.5),
+            _aligned_payload(0.1),
             _load_class_payload(),  # primary attempt's own LoadClass
         ],
         inscribir_responses=[_inscribir_ok()],
@@ -909,7 +909,7 @@ def test_alignment_polls_until_countdown_below_threshold(
     result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
 
     assert result.terminal_status == "granted"
-    # Three alignment polls (15s -> 8s -> 0.5s aligned) + one primary
+    # Three alignment polls (15s -> 8s -> 0.1s aligned) + one primary
     # LoadClass = four total.
     assert len(client.load_class_calls) == 4
     # Two sleeps between the three alignment polls; no sleep after

@@ -132,10 +132,10 @@ class BookingExecutor:
         session_factory: SessionFactory,
         cookie_store: CookieStore,
         operator_idu: str | None = None,
-        retry_interval_s: float = 5.0,
+        retry_interval_s: float = 0.25,
         retry_timeout_s: float = 120.0,
-        alignment_poll_interval_s: float = 1.0,
-        alignment_threshold_s: float = 1.0,
+        alignment_poll_interval_s: float = 0.2,
+        alignment_threshold_s: float = 0.25,
         alignment_deadline_s: float = 60.0,
         sleep: Callable[[float], None] = time.sleep,
         time_source: Callable[[], float] = time.monotonic,
@@ -148,15 +148,22 @@ class BookingExecutor:
         # ``AtletasEntrenando`` list. ``None`` (unwired) falls back to
         # the legacy ``Res`` classifier in :meth:`_attempt`.
         self._operator_idu = operator_idu
+        # Slot-appearance retry cadence. The target class only becomes
+        # bookable the instant WodBuster publishes the week, so a poll
+        # that lands a hair before publication must re-check quickly (a
+        # sub-second interval) rather than sleep for seconds and cede
+        # the first slots to manual users.
         self._retry_interval_s = retry_interval_s
         self._retry_timeout_s = retry_timeout_s
-        # US1.5 countdown alignment. Poll LoadClass on ``poll_interval``
-        # until ``SegundosHastaPublicacion`` drops to ``<= threshold``,
-        # capped by ``deadline`` seconds since alignment started. The
-        # scheduler wrapper fires the job ~30s before the window (see
-        # ``rule_jobs.register_rule_job``) so the poll loop has time
-        # to warm the connection pool and sync against WodBuster's
-        # clock instead of relying on the operator's wall time.
+        # US1.5 countdown alignment. Poll LoadClass, backing off from
+        # coarse to fine steps, until ``SegundosHastaPublicacion`` drops
+        # to ``<= threshold`` (a small sub-second value so we release at
+        # ~publication rather than up to a full second early), capped by
+        # ``deadline`` seconds since alignment started. The scheduler
+        # wrapper fires the job ~30s before the window (see
+        # ``rule_jobs.register_rule_job``) so the poll loop has time to
+        # warm the connection pool and sync against WodBuster's clock
+        # instead of relying on the operator's wall time.
         self._alignment_poll_interval_s = alignment_poll_interval_s
         self._alignment_threshold_s = alignment_threshold_s
         self._alignment_deadline_s = alignment_deadline_s
@@ -418,8 +425,10 @@ class BookingExecutor:
         """Poll ``LoadClass`` until the server reports the window is open.
 
         Reads ``SegundosHastaPublicacion`` off each response and sleeps
-        until the value drops to ``<= alignment_threshold_s`` (default
-        1 second). Also serves as the pre-warm tick: the first
+        (coarse steps far out, fine steps near the window) until the
+        value drops to ``<= alignment_threshold_s`` (default 0.25s, so
+        we release at ~publication rather than up to a second early).
+        Also serves as the pre-warm tick: the first
         request pays the TCP + TLS handshake cost so the ``inscribir``
         call rides on a warm keep-alive socket.
 
@@ -472,10 +481,16 @@ class BookingExecutor:
                     countdown=countdown,
                 )
                 return
-            # Sleep the smaller of the poll interval and the remaining
-            # time until the deadline — we never want to overshoot.
+            # Adaptive back-off: sleep roughly half the remaining
+            # countdown so we take coarse steps while publication is far
+            # off and fine steps (down to the poll-interval floor) as it
+            # nears. This lands the final poll within one poll interval
+            # of publication instead of up to a full second early,
+            # without polling LoadClass hundreds of times across the
+            # pre-warm lead. Never sleep past the deadline.
+            remaining = countdown - self._alignment_threshold_s
             sleep_for = min(
-                self._alignment_poll_interval_s,
+                max(self._alignment_poll_interval_s, remaining / 2.0),
                 max(0.0, deadline - now),
             )
             self._sleep(sleep_for)
