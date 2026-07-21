@@ -30,7 +30,6 @@ from wodbuster_worker.notifications.telegram_webhook import (
         ("/status", "status"),
         ("/next", "next"),
         ("/last", "last"),
-        ("/list", "list"),
         ("/cancel", "cancel"),
         ("/ack", "ack"),
         ("/bookclass", "bookclass"),
