@@ -450,7 +450,7 @@ def test_help_lists_supported_commands(
 
     assert replies, "expected a reply"
     body = replies[-1]["text"]
-    for verb in ("/cancel", "/next", "/last", "/list", "/ack", "/bookclass"):
+    for verb in ("/cancel", "/next", "/last", "/ack", "/bookclass"):
         assert verb in body
 
 
@@ -547,57 +547,6 @@ def test_last_reports_most_recent_outcome(
     assert "#" in body
 
 
-def test_list_shows_upcoming_bookings_with_ids(
-    app_factory: Callable[..., FastAPI],
-    seed_operator: Callable[..., tuple[int, str]],
-    postgres_engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The /list command surfaces the booking id that /cancel needs."""
-    op_id, _ = seed_operator()
-    _bind_chat(postgres_engine, op_id, "424242")
-    booking_id = _seed_booking(
-        postgres_engine,
-        operator_id=op_id,
-        target_class="ListWOD",
-        target_slot=datetime.now(tz=UTC) + timedelta(days=2),
-        terminal_status="granted",
-    )
-    replies = _capture_replies(monkeypatch)
-
-    app = app_factory()
-    with TestClient(app) as client:
-        _override_after_lifespan(app, bind_store=TelegramBindStore(), bot_token="tok")
-        _post_command(client, chat_id=424242, text_body="/list")
-
-    assert replies
-    body = replies[-1]["text"]
-    assert "ListWOD" in body
-    assert f"#{booking_id}" in body
-
-
-def test_list_on_unbound_chat_leaks_no_data(
-    app_factory: Callable[..., FastAPI],
-    seed_operator: Callable[..., tuple[int, str]],
-    postgres_engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """FR-031: /list from an unbound chat surfaces no operator data."""
-    op_id, _ = seed_operator()
-    _seed_booking(postgres_engine, operator_id=op_id, target_class="SecretWOD")
-    replies = _capture_replies(monkeypatch)
-
-    app = app_factory()
-    with TestClient(app) as client:
-        _override_after_lifespan(app, bind_store=TelegramBindStore(), bot_token="tok")
-        _post_command(client, chat_id=999, text_body="/list")
-
-    assert replies
-    body = replies[-1]["text"]
-    assert "not bound" in body.lower()
-    assert "SecretWOD" not in body
-
-
 def test_next_lists_upcoming_granted_booking(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],
@@ -606,7 +555,7 @@ def test_next_lists_upcoming_granted_booking(
 ) -> None:
     op_id, _ = seed_operator()
     _bind_chat(postgres_engine, op_id, "424242")
-    _seed_booking(
+    booking_id = _seed_booking(
         postgres_engine,
         operator_id=op_id,
         target_class="UpcomingWOD",
@@ -621,7 +570,10 @@ def test_next_lists_upcoming_granted_booking(
         _post_command(client, chat_id=424242, text_body="/next")
 
     assert replies
-    assert "UpcomingWOD" in replies[-1]["text"]
+    body = replies[-1]["text"]
+    assert "UpcomingWOD" in body
+    # Granted (cancellable) slots surface the id /cancel needs.
+    assert f"#{booking_id}" in body
 
 
 def test_cancel_flips_booking_and_confirms(
