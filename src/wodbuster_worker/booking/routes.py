@@ -25,7 +25,7 @@ from urllib.parse import urlencode
 
 import structlog
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from ..auth.csrf import get_csrf_token, verify_csrf
@@ -184,6 +184,39 @@ def book_now_form(
     )
 
 
+@router.get("/book-now/api/classes", name="book_now_classes")
+def book_now_classes(
+    request: Request,
+    book_date: str,
+    book_time: str,
+    operator_id: int = Depends(require_session),
+) -> Response:
+    """Return the class types available at a given date + time.
+
+    Backs the ``/book-now`` class-type picker: the browser fetches this
+    once the operator has chosen a date and time, then populates the
+    class-type dropdown so several classes sharing a start time can be
+    disambiguated. Failure modes collapse to an empty list so the
+    client renders its free-text fallback.
+    """
+    service = _manual_service(request)
+    if service is None:
+        return JSONResponse({"class_types": [], "available": False})
+    try:
+        target_date = date.fromisoformat(book_date.strip())
+    except ValueError:
+        return JSONResponse({"class_types": [], "available": False})
+    try:
+        class_types = service.list_class_types_at(
+            operator_id=operator_id,
+            target_date=target_date,
+            target_time=book_time,
+        )
+    except ValueError:
+        return JSONResponse({"class_types": [], "available": False})
+    return JSONResponse({"class_types": class_types, "available": True})
+
+
 @router.post(
     "/book-now",
     name="book_now_submit",
@@ -193,13 +226,16 @@ def book_now_submit(
     request: Request,
     book_date: str = Form(...),
     book_time: str = Form(...),
+    book_class: str = Form(""),
     operator_id: int = Depends(require_session),
 ) -> Response:
     """Fire a one-off manual booking and redirect back with a flash.
 
     Rejects an out-of-window class without any WodBuster booking call
     (CC-010); the service issues a single read-only LoadClass probe to
-    check the countdown and resolve the class type.
+    check the countdown and resolve the class type. ``book_class`` is
+    the operator's chosen class type when several classes share the
+    start time; empty falls back to the first class at that time.
     """
     service = _manual_service(request)
     if service is None:
@@ -215,6 +251,7 @@ def book_now_submit(
             operator_id=operator_id,
             target_date=target_date,
             target_time=book_time,
+            class_type=book_class.strip() or None,
         )
     except ValueError:
         # Malformed HH:MM slipped past the client-side <input type=time>.

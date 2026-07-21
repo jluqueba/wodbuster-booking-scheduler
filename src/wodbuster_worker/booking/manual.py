@@ -62,6 +62,7 @@ from ..wodbuster_client.client import (
 from ..wodbuster_client.parsers import (
     extract_class_slots,
     extract_seconds_until_publication,
+    find_matching_slot,
     find_slot_by_time,
 )
 from .executor import BookingExecutor, BookingResult, SessionFactory, _midnight_utc_ticks
@@ -167,8 +168,16 @@ class ManualBookingService:
         operator_id: int,
         target_date: date,
         target_time: str,
+        class_type: str | None = None,
     ) -> ManualBookingResult:
         """Fire one manual booking for ``target_date`` + ``target_time``.
+
+        When ``class_type`` is given, the service books the class whose
+        type matches (case-insensitive) at ``target_time`` — this is how
+        the operator disambiguates several classes sharing a start time
+        (Cross Training vs Open Endurance at 08:30). When ``class_type``
+        is ``None`` the service falls back to whichever class runs at
+        that time (first match).
 
         Returns a :class:`ManualBookingResult` on delegation. Raises a
         :class:`ManualBookingError` subclass for the expected rejection
@@ -206,12 +215,17 @@ class ManualBookingService:
             )
             raise BookingWindowClosedError(seconds)
 
-        slot = find_slot_by_time(extract_class_slots(payload), class_time=hhmm)
+        slots = extract_class_slots(payload)
+        if class_type is not None:
+            slot = find_matching_slot(slots, class_type=class_type, class_time=hhmm)
+        else:
+            slot = find_slot_by_time(slots, class_time=hhmm)
         if slot is None:
             _log.info(
                 "booking.manual.no_class",
                 operator_id=operator_id,
                 target_time=hhmm,
+                class_type=class_type,
             )
             raise ClassNotVisibleError(f"no class at {hhmm} on {target_date.isoformat()}")
 
@@ -236,6 +250,41 @@ class ManualBookingService:
             class_type=slot.nombre,
             target_slot=target_slot,
         )
+
+    def list_class_types_at(
+        self,
+        *,
+        operator_id: int,
+        target_date: date,
+        target_time: str,
+    ) -> list[str]:
+        """Return the distinct class types available at ``target_date`` + time.
+
+        Backs the ``/book-now`` class-type picker: a single read-only
+        ``LoadClass`` probe resolves every class instance whose start
+        time matches ``target_time`` and returns their sorted, distinct
+        type names so the operator can disambiguate collisions (several
+        classes at the same hour).
+
+        Degrades gracefully like the rules picker: returns an empty list
+        when no cookie is on file, when the probe fails, or when no class
+        runs at that time. Raises ``ValueError`` when ``target_time`` is
+        not ``HH:MM``.
+        """
+        hhmm = _normalize_hhmm(target_time)
+        target_slot = self._target_slot(target_date, hhmm)
+        ticks = _midnight_utc_ticks(target_slot)
+
+        cookie = self._load_cookie(operator_id)
+        if cookie is None:
+            return []
+        try:
+            payload = self._load_once(cookie, ticks)
+        except ManualBookingUpstreamError:
+            return []
+
+        names = {slot.nombre for slot in extract_class_slots(payload) if slot.hora_comienzo == hhmm}
+        return sorted(names)
 
     # ------------------------------------------------------------------
     # Internals

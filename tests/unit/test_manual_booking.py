@@ -230,3 +230,128 @@ def test_granted_delegates_and_returns_result(monkeypatch: pytest.MonkeyPatch) -
     assert len(client.inscribir_calls) == 1
     # US8: manual bookings carry no rule (rule_id IS NULL).
     assert writer_calls[-1]["rule_id"] is None
+
+
+# ---------------------------------------------------------------------------
+# Class-type disambiguation (several classes share a start time)
+# ---------------------------------------------------------------------------
+
+
+def _load_payload_multi(
+    *,
+    hora: str = "08:30:00",
+    slots: tuple[tuple[str, int], ...] = (("Cross Training", 111), ("Open Endurance", 222)),
+    seconds_until_publication: float = -100.0,
+) -> dict[str, Any]:
+    """LoadClass payload with several classes at the same start time."""
+    valores = [
+        {
+            "Valor": {
+                "Id": slot_id,
+                "Nombre": name,
+                "HoraComienzo": hora,
+                "TipoEstado": "Inscribible",
+                "Plazas": 16,
+                "AtletasEnListaDeEspera": 0,
+            }
+        }
+        for name, slot_id in slots
+    ]
+    return {
+        "Data": [{"Hora": hora, "Valores": valores}],
+        "SegundosHastaPublicacion": seconds_until_publication,
+    }
+
+
+def test_class_type_disambiguates_collision(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With several classes at one time, the chosen type is booked."""
+    monkeypatch.setattr(
+        "wodbuster_worker.booking.executor.persist_outcome",
+        lambda session, **kwargs: type("O", (), {"id": 1})(),
+    )
+    client = _FakeClient(
+        load_payload=_load_payload_multi(),
+        inscribir_responses=[_inscribir_granted()],
+    )
+    service = _service(client=client)
+
+    result = service.book(
+        operator_id=1,
+        target_date=_TARGET_DATE,
+        target_time="08:30",
+        class_type="Open Endurance",
+    )
+
+    assert result.class_type == "Open Endurance"
+    # The booked instance id must be the Open Endurance slot, not the
+    # first (Cross Training) one.
+    assert client.inscribir_calls[-1]["class_id"] == 222
+
+
+def test_class_type_match_is_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The chosen class type matches regardless of case."""
+    monkeypatch.setattr(
+        "wodbuster_worker.booking.executor.persist_outcome",
+        lambda session, **kwargs: type("O", (), {"id": 1})(),
+    )
+    client = _FakeClient(
+        load_payload=_load_payload_multi(),
+        inscribir_responses=[_inscribir_granted()],
+    )
+    service = _service(client=client)
+
+    result = service.book(
+        operator_id=1,
+        target_date=_TARGET_DATE,
+        target_time="08:30",
+        class_type="cross training",
+    )
+
+    assert result.class_type == "Cross Training"
+    assert client.inscribir_calls[-1]["class_id"] == 111
+
+
+def test_unknown_class_type_rejects_without_booking() -> None:
+    """A class type that is not on the schedule rejects with no booking."""
+    client = _FakeClient(
+        load_payload=_load_payload_multi(),
+        inscribir_responses=[_inscribir_granted()],
+    )
+    service = _service(client=client)
+
+    with pytest.raises(ClassNotVisibleError):
+        service.book(
+            operator_id=1,
+            target_date=_TARGET_DATE,
+            target_time="08:30",
+            class_type="Yoga",
+        )
+
+    assert client.inscribir_calls == []
+
+
+def test_list_class_types_at_returns_sorted_distinct() -> None:
+    """The picker lists every class at the time, sorted and distinct."""
+    client = _FakeClient(load_payload=_load_payload_multi())
+    service = _service(client=client)
+
+    names = service.list_class_types_at(
+        operator_id=1, target_date=_TARGET_DATE, target_time="08:30"
+    )
+
+    assert names == ["Cross Training", "Open Endurance"]
+    # No booking call from a read-only picker probe.
+    assert client.inscribir_calls == []
+
+
+def test_list_class_types_at_no_cookie_returns_empty() -> None:
+    """The picker degrades to an empty list when no cookie is on file."""
+    client = _FakeClient(load_payload=_load_payload_multi())
+    service = _service(client=client, cookie=None)
+
+    names = service.list_class_types_at(
+        operator_id=1, target_date=_TARGET_DATE, target_time="08:30"
+    )
+
+    assert names == []
+    assert client.load_class_calls == []

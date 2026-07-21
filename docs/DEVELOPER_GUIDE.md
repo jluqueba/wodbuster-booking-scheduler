@@ -321,7 +321,7 @@ The dispatcher routes on an explicit allow-list of eight commands (`src/wodbuste
 | `/last` | Information | Yes | Most recent booking outcome. |
 | `/cancel <booking-id>` | Action | Yes | Idempotent cancel of a booking. |
 | `/ack` | Action | Yes | Acknowledge the open cookie-expiring alert. |
-| `/bookclass <YYYY-MM-DD> <HH:MM>` | Action | Yes | One-off manual booking. |
+| `/bookclass <YYYY-MM-DD> <HH:MM> [class type]` | Action | Yes | One-off manual booking. Optional class type disambiguates classes sharing a start time. |
 
 Information-extraction commands: three commands return operator data (`/status`, `/next`, `/last`), and `/help` enumerates the full set. Every stateful command requires the chat to be bound to an operator; unbound chats receive a no-data-leak rejection that never surfaces another operator's data.
 
