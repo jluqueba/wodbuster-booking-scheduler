@@ -252,7 +252,11 @@ def _hhmm_from_datetime(target_slot: datetime) -> str:
 
 
 def _format_slot(target_slot: datetime) -> str:
-    return target_slot.astimezone(UTC).strftime("%a %d %b %H:%M UTC")
+    # Local import avoids a circular import (rule_jobs -> executor ->
+    # vacation -> cancellation). Rendered in the operator's timezone.
+    from ..scheduler.rule_jobs import operator_timezone
+
+    return target_slot.astimezone(operator_timezone()).strftime("%a %d %b %H:%M %Z")
 
 
 def list_recent_bookings(
