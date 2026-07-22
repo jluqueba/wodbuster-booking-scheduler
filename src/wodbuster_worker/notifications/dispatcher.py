@@ -198,11 +198,9 @@ class NotificationDispatcher:
         """
         if row.target:
             return row.target
-        op = session.get(OperatorProfile, row.operator_id)
+        op = session.get(OperatorProfile, row.user_id)
         if op is None or not op.telegram_chat_id:
-            raise telegram.PermanentTelegramError(
-                f"operator {row.operator_id} has no telegram_chat_id"
-            )
+            raise telegram.PermanentTelegramError(f"operator {row.user_id} has no telegram_chat_id")
         return op.telegram_chat_id
 
     def _mark_exhausted(self, row: NotificationOutbox, *, reason: str) -> None:

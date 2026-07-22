@@ -39,6 +39,7 @@ from ..auth.deps import require_session
 from ..heartbeat.alerts import close_open_cookie_expiring
 from ..persistence.cookie_store import CookieDecryptError, CookieStore
 from ..persistence.engine import get_session
+from ..persistence.gym_accounts import resolve_sole_gym_account_id
 from ..persistence.models import CookieCredential
 from ..security.cookie import CookieValidator, Rejected, Unknown, Valid
 
@@ -96,22 +97,24 @@ def _store(request: Request) -> CookieStore:
     return store  # type: ignore[no-any-return]
 
 
-def _load_current_status(store: CookieStore, operator_id: int) -> dict[str, object]:
+def _load_current_status(store: CookieStore, gym_account_id: int | None) -> dict[str, object]:
     """Return the template context describing the current cookie row.
 
     Reads the metadata columns (never the plaintext) so a partial
     render never risks leaking cookie material into the response body.
-    A missing row returns ``has_cookie=False`` and the template routes
-    to the "no cookie on file" branch.
+    A missing row (or no gym account yet) returns ``has_cookie=False``
+    and the template routes to the "no cookie on file" branch.
 
     A row that fails decryption is surfaced as ``has_cookie=True`` with
     a ``decrypt_error=True`` flag so the UI can prompt for a re-paste
     without hiding the fact that a stored row exists (which would be
     confusing when the row is visible in the DB).
     """
+    if gym_account_id is None:
+        return {"has_cookie": False}
     with get_session() as session:
         row: CookieCredential | None = (
-            session.query(CookieCredential).filter_by(operator_id=operator_id).one_or_none()
+            session.query(CookieCredential).filter_by(gym_account_id=gym_account_id).one_or_none()
         )
         if row is None:
             return {"has_cookie": False}
@@ -132,14 +135,14 @@ def _load_current_status(store: CookieStore, operator_id: int) -> dict[str, obje
 
 def _render_partial(
     request: Request,
-    operator_id: int,
+    gym_account_id: int | None,
     *,
     banner: dict[str, str] | None = None,
     status_code: int = 200,
 ) -> Response:
     """Render just the status-card partial (HTMX swap target)."""
     templates = _templates(request)
-    context = _load_current_status(_store(request), operator_id)
+    context = _load_current_status(_store(request), gym_account_id)
     context["banner"] = banner
     return templates.TemplateResponse(
         request=request,
@@ -153,7 +156,9 @@ def _render_partial(
 def cookie_page(request: Request, operator_id: int = Depends(require_session)) -> Response:
     """Render the paste-and-validate page for the current operator."""
     templates = _templates(request)
-    context = _load_current_status(_store(request), operator_id)
+    with get_session() as session:
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+    context = _load_current_status(_store(request), gym_account_id)
     context["banner"] = None
     # The form on the full page carries a hidden ``_csrf`` field and
     # HTMX sends ``X-CSRF-Token`` via ``hx-headers`` on <body>. Both
@@ -183,11 +188,20 @@ async def cookie_paste(
 
     verdict = validator.validate(cookie_value)
 
+    with get_session() as session:
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+    if gym_account_id is None:
+        banner = {
+            "level": "unknown",
+            "message": "⚠️ Add a gym account before storing a cookie.",
+        }
+        return _render_partial(request, None, banner=banner)
+
     if isinstance(verdict, Valid):
         with get_session() as session:
             store.save(
                 session,
-                operator_id,
+                gym_account_id,
                 cookie_value,
                 validated_at=verdict.probed_at,
             )
@@ -196,12 +210,12 @@ async def cookie_paste(
             # any open ``cookie_expiring`` alert in the same
             # transaction so the banner disappears immediately rather
             # than at the next heartbeat.
-            close_open_cookie_expiring(session, operator_id, now=verdict.probed_at)
+            close_open_cookie_expiring(session, gym_account_id, now=verdict.probed_at)
         banner = {
             "level": "valid",
             "message": "✅ Cookie validated and stored.",
         }
-        return _render_partial(request, operator_id, banner=banner)
+        return _render_partial(request, gym_account_id, banner=banner)
 
     if isinstance(verdict, Rejected):
         banner = {
@@ -211,7 +225,7 @@ async def cookie_paste(
                 "browser session and try again."
             ),
         }
-        return _render_partial(request, operator_id, banner=banner)
+        return _render_partial(request, gym_account_id, banner=banner)
 
     # Unknown: the probe itself failed. Explicitly no state mutation
     # (FR-020) and a "retry" banner rather than a "rejected" one.
@@ -223,7 +237,7 @@ async def cookie_paste(
             "your stored cookie was not touched."
         ),
     }
-    return _render_partial(request, operator_id, banner=banner)
+    return _render_partial(request, gym_account_id, banner=banner)
 
 
 # Silence "imported but unused" — the exception is re-exported so the

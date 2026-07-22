@@ -66,7 +66,7 @@ class AvailableClasses:
 def fetch_available_classes(
     store: CookieStore,
     client: WodBusterClient,
-    operator_id: int,
+    gym_account_id: int,
 ) -> AvailableClasses | None:
     """Probe WodBuster across the week and return the class/time picker set.
 
@@ -88,9 +88,9 @@ def fetch_available_classes(
     disable the form.
     """
     with get_session() as session:
-        cookie_value = store.load(session, operator_id)
+        cookie_value = store.load(session, gym_account_id)
     if cookie_value is None:
-        _log.info("rules.picker.no_cookie", operator_id=operator_id)
+        _log.info("rules.picker.no_cookie", gym_account_id=gym_account_id)
         return None
 
     class_types: set[str] = set()
@@ -104,7 +104,7 @@ def fetch_available_classes(
             # stop probing and let the caller render the disabled form.
             _log.warning(
                 "rules.picker.auth_error",
-                operator_id=operator_id,
+                gym_account_id=gym_account_id,
                 ticks=ticks,
                 error=str(exc),
             )
@@ -114,7 +114,7 @@ def fetch_available_classes(
             # probing the rest of the week.
             _log.warning(
                 "rules.picker.upstream_error",
-                operator_id=operator_id,
+                gym_account_id=gym_account_id,
                 ticks=ticks,
                 error_type=type(exc).__name__,
                 error=str(exc),
@@ -127,7 +127,7 @@ def fetch_available_classes(
         time_slots.update(day.time_slots)
 
     if days_probed == 0:
-        _log.warning("rules.picker.all_probes_failed", operator_id=operator_id)
+        _log.warning("rules.picker.all_probes_failed", gym_account_id=gym_account_id)
         return None
 
     result = AvailableClasses(
@@ -136,7 +136,7 @@ def fetch_available_classes(
     )
     _log.info(
         "rules.picker.fetched",
-        operator_id=operator_id,
+        gym_account_id=gym_account_id,
         class_types=len(result.class_types),
         time_slots=len(result.time_slots),
         days_probed=days_probed,

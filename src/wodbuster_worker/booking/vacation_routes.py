@@ -33,6 +33,7 @@ from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
 from ..i18n import lang_url, t
 from ..persistence.engine import get_session
+from ..persistence.gym_accounts import resolve_sole_gym_account_id
 from ..scheduler.rule_jobs import operator_timezone
 from . import vacation as vacation_service
 from .vacation import VacationNotFoundError, VacationRangeError
@@ -59,7 +60,8 @@ def vacation_list(
     templates = _templates(request)
     tz = operator_timezone()
     with get_session() as session:
-        windows = vacation_service.list_open(session, operator_id)
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+        windows = vacation_service.list_open(session, gym_account_id) if gym_account_id else []
         rows = [_window_to_row(w, tz) for w in windows]
     return templates.TemplateResponse(
         request=request,
@@ -104,10 +106,16 @@ def vacation_enable(
         )
 
     with get_session() as session:
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+        if gym_account_id is None:
+            return _redirect_with_flash(
+                t("flash.booking.service_unavailable"),
+                kind="error",
+            )
         try:
             vacation_service.enable(
                 session,
-                operator_id=operator_id,
+                gym_account_id=gym_account_id,
                 start_date=start_dt,
                 end_date=end_dt,
                 client=client,
@@ -136,10 +144,13 @@ def vacation_close(
     """End an open vacation window early."""
     _ = request
     with get_session() as session:
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+        if gym_account_id is None:
+            raise HTTPException(status_code=404)
         try:
             vacation_service.close_early(
                 session,
-                operator_id=operator_id,
+                gym_account_id=gym_account_id,
                 window_id=window_id,
             )
         except VacationNotFoundError:

@@ -22,7 +22,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..persistence.models import Alert
+from ..persistence.models import Alert, GymAccount
 
 
 @dataclass(frozen=True)
@@ -38,17 +38,21 @@ class BannerItem:
 
 
 def load_banners_for_operator(session: Session, operator_id: int) -> list[BannerItem]:
-    """Return every open alert for ``operator_id`` as a banner item.
+    """Return every open alert owned by ``operator_id`` as a banner item.
 
-    Rows are ordered by ``first_emitted_at`` descending so the newest
-    condition sits at the top of the banner stack — matches how the
-    operator's attention actually flows.
+    Alerts are gym-account-scoped (ADR-0007); this joins through
+    ``gym_account`` so a user sees the open alerts across all their
+    gym accounts (today, the single seeded account). Rows are ordered
+    by ``first_emitted_at`` descending so the newest condition sits at
+    the top of the banner stack — matches how the operator's attention
+    actually flows.
     """
     rows = (
         session.execute(
             select(Alert)
+            .join(GymAccount, Alert.gym_account_id == GymAccount.id)
             .where(
-                Alert.operator_id == operator_id,
+                GymAccount.user_id == operator_id,
                 Alert.closed_at.is_(None),
             )
             .order_by(Alert.first_emitted_at.desc())

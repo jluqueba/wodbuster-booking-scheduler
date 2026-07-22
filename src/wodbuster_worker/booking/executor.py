@@ -223,7 +223,7 @@ class BookingExecutor:
         _log.info(
             "booking.start",
             rule_id=rule.id,
-            operator_id=rule.operator_id,
+            gym_account_id=rule.gym_account_id,
             target_slot=target_slot.isoformat(),
             ticks=ticks,
         )
@@ -232,7 +232,7 @@ class BookingExecutor:
         # vacation window for the operator, do not attempt the
         # booking. Persist a ``skipped`` terminal so the history
         # page still reports the run.
-        vacation = self._vacation_covering(rule.operator_id, target_slot)
+        vacation = self._vacation_covering(rule.gym_account_id, target_slot)
         if vacation is not None:
             return self._persist_terminal(
                 rule=rule,
@@ -244,7 +244,7 @@ class BookingExecutor:
                 telegram_text=self._render_vacation_skip_text(rule, target_slot),
             )
 
-        cookie = self._load_cookie(rule.operator_id)
+        cookie = self._load_cookie(rule.gym_account_id)
         if cookie is None:
             return self._persist_terminal(
                 rule=rule,
@@ -303,7 +303,7 @@ class BookingExecutor:
     def book_single_attempt(
         self,
         *,
-        operator_id: int,
+        gym_account_id: int,
         class_type: str,
         class_time: str,
         target_slot: datetime,
@@ -330,7 +330,7 @@ class BookingExecutor:
         result: BookingResult | None = None
         try:
             result = self._book_single_attempt_inner(
-                operator_id=operator_id,
+                gym_account_id=gym_account_id,
                 class_type=class_type,
                 class_time=class_time,
                 target_slot=target_slot,
@@ -352,7 +352,7 @@ class BookingExecutor:
     def _book_single_attempt_inner(
         self,
         *,
-        operator_id: int,
+        gym_account_id: int,
         class_type: str,
         class_time: str,
         target_slot: datetime,
@@ -363,16 +363,16 @@ class BookingExecutor:
             raise ValueError("target_slot must be timezone-aware")
 
         ticks = _midnight_utc_ticks(target_slot)
-        rule = _manual_rule(operator_id=operator_id, rule_id=rule_id)
+        rule = _manual_rule(gym_account_id=gym_account_id, rule_id=rule_id)
         _log.info(
             "booking.manual.start",
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             rule_id=rule_id,
             target_slot=target_slot.isoformat(),
             ticks=ticks,
         )
 
-        cookie = self._load_cookie(operator_id)
+        cookie = self._load_cookie(gym_account_id)
         if cookie is None:
             return self._persist_terminal(
                 rule=rule,
@@ -403,11 +403,11 @@ class BookingExecutor:
     # Internals
     # ------------------------------------------------------------------
 
-    def _load_cookie(self, operator_id: int) -> str | None:
+    def _load_cookie(self, gym_account_id: int) -> str | None:
         with self._session_factory() as session:
-            return self._cookie_store.load(session, operator_id)
+            return self._cookie_store.load(session, gym_account_id)
 
-    def _vacation_covering(self, operator_id: int, target_slot: datetime) -> Any:
+    def _vacation_covering(self, gym_account_id: int, target_slot: datetime) -> Any:
         """Return the open vacation window covering ``target_slot`` or ``None``.
 
         Read-only lookup; opens a short-lived session so the guard
@@ -417,7 +417,7 @@ class BookingExecutor:
         with self._session_factory() as session:
             return find_covering_window(
                 session,
-                operator_id=operator_id,
+                gym_account_id=gym_account_id,
                 target_slot=target_slot,
             )
 
@@ -752,7 +752,7 @@ class BookingExecutor:
         with self._session_factory() as session:
             outcome: BookingOutcome = persist_outcome(
                 session,
-                operator_id=rule.operator_id,
+                gym_account_id=rule.gym_account_id,
                 rule_id=rule.id,
                 target_class=target_class,
                 target_slot=target_slot,
@@ -765,7 +765,7 @@ class BookingExecutor:
             _log.info(
                 "booking.persist",
                 rule_id=rule.id,
-                operator_id=rule.operator_id,
+                gym_account_id=rule.gym_account_id,
                 terminal_status=terminal_status,
                 fallback_index=fallback_index,
                 outcome_id=outcome.id,
@@ -892,18 +892,18 @@ class _AttemptResult:
 # ----------------------------------------------------------------------
 
 
-def _manual_rule(*, operator_id: int, rule_id: int | None) -> SchedulerRule:
+def _manual_rule(*, gym_account_id: int, rule_id: int | None) -> SchedulerRule:
     """Build a transient rule to carry a one-off booking through the
     shared attempt / persist path (US8.1).
 
     Manual bookings have no stored :class:`SchedulerRule`; the
-    persistence and render helpers only read ``operator_id`` and
+    persistence and render helpers only read ``gym_account_id`` and
     ``id`` off the rule, so a transient instance (never added to a
     session) is enough. ``id`` is set to ``rule_id`` (``None`` for a
     true one-off) so :func:`persist_outcome` records the outcome with
     the right ``rule_id``.
     """
-    rule = SchedulerRule(operator_id=operator_id)
+    rule = SchedulerRule(gym_account_id=gym_account_id)
     rule.id = rule_id  # type: ignore[assignment]
     return rule
 

@@ -197,7 +197,7 @@ def book_rule(
 def _detach_rule(rule: SchedulerRule) -> SchedulerRule:
     """Return a transient copy of ``rule`` safe to use after session close."""
     copy = SchedulerRule(
-        operator_id=rule.operator_id,
+        gym_account_id=rule.gym_account_id,
         day_of_week=rule.day_of_week,
         class_type=rule.class_type,
         class_time=rule.class_time,

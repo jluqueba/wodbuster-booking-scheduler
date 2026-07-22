@@ -50,6 +50,7 @@ Phase 0 feasibility report §"SignalR is a notification channel").
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
@@ -393,12 +394,62 @@ class WodBusterClient:
         return response.status_code, elapsed_ms, payload
 
 
+class GymAccountLike(Protocol):
+    """Structural view of a gym account the factory keys clients on.
+
+    Declared here (rather than importing :class:`GymAccount`) so the
+    client layer stays free of persistence imports.
+    """
+
+    gym_slug: str
+    idu: str
+
+
+class WodBusterClientFactory:
+    """Per-gym-account :class:`WodBusterClient` cache (ADR-0007, T009).
+
+    Each WodBuster subdomain + ``idu`` pair maps to exactly one client.
+    The factory memoises on ``(gym_slug, idu)`` so a keep-alive pool is
+    reused across bookings for the same gym account, while distinct
+    accounts get isolated clients — cookies never cross gym boundaries.
+
+    The builder is injectable so component tests can hand back a client
+    backed by ``httpx.MockTransport`` without reaching the network.
+    """
+
+    __slots__ = ("_builder", "_cache")
+
+    def __init__(
+        self,
+        builder: Callable[[str, str], WodBusterClient] | None = None,
+    ) -> None:
+        self._builder = builder or (lambda gym, idu: WodBusterClient(gym=gym, idu=idu))
+        self._cache: dict[tuple[str, str], WodBusterClient] = {}
+
+    def get(self, gym_account: GymAccountLike) -> WodBusterClient:
+        """Return the cached client for ``gym_account``, building on miss."""
+        key = (gym_account.gym_slug, gym_account.idu)
+        client = self._cache.get(key)
+        if client is None:
+            client = self._builder(gym_account.gym_slug, gym_account.idu)
+            self._cache[key] = client
+        return client
+
+    def close(self) -> None:
+        """Release every cached client's connection pool."""
+        for client in self._cache.values():
+            client.close()
+        self._cache.clear()
+
+
 __all__ = [
     "BookingActionResponse",
     "BookingOutcomeKind",
+    "GymAccountLike",
     "LoadClassResponse",
     "WodBusterAuthError",
     "WodBusterClient",
+    "WodBusterClientFactory",
     "WodBusterClientProtocol",
     "WodBusterProtocolError",
     "WodBusterTransportError",

@@ -63,7 +63,7 @@ class VacationNotFoundError(Exception):
 def enable(
     session: Session,
     *,
-    operator_id: int,
+    gym_account_id: int,
     start_date: datetime,
     end_date: datetime,
     client: CancelClientProtocol,
@@ -92,7 +92,7 @@ def enable(
         raise VacationRangeError("start_date must be on or before end_date")
 
     window = VacationWindow(
-        operator_id=operator_id,
+        gym_account_id=gym_account_id,
         start_date=normalized_start,
         end_date=normalized_end,
         created_at=_now,
@@ -102,7 +102,7 @@ def enable(
 
     granted = _load_granted_bookings_in_range(
         session,
-        operator_id=operator_id,
+        gym_account_id=gym_account_id,
         start=normalized_start,
         end=normalized_end,
         now=_now,
@@ -112,7 +112,7 @@ def enable(
             with session.begin_nested():
                 cancel_booking(
                     session,
-                    operator_id=operator_id,
+                    gym_account_id=gym_account_id,
                     booking_id=int(booking.id),
                     client=client,
                     cookie_store=cookie_store,
@@ -129,7 +129,7 @@ def enable(
             # (WodBuster couldn't process the cancel right now).
             _log.warning(
                 "vacation.bulk_cancel.upstream_error",
-                operator_id=operator_id,
+                gym_account_id=gym_account_id,
                 booking_id=int(booking.id),
                 window_id=int(window.id),
                 error=str(exc),
@@ -137,7 +137,7 @@ def enable(
 
     _log.info(
         "vacation.enabled",
-        operator_id=operator_id,
+        gym_account_id=gym_account_id,
         window_id=int(window.id),
         start=normalized_start.isoformat(),
         end=normalized_end.isoformat(),
@@ -149,7 +149,7 @@ def enable(
 def close_early(
     session: Session,
     *,
-    operator_id: int,
+    gym_account_id: int,
     window_id: int,
     now: datetime | None = None,
 ) -> VacationWindow:
@@ -162,14 +162,14 @@ def close_early(
     """
     _now = now or datetime.now(tz=UTC)
     window = session.get(VacationWindow, window_id)
-    if window is None or window.operator_id != operator_id:
+    if window is None or window.gym_account_id != gym_account_id:
         raise VacationNotFoundError(f"vacation window {window_id} not found")
     if window.closed_at is not None:
         return window
     window.closed_at = _now
     _log.info(
         "vacation.closed_early",
-        operator_id=operator_id,
+        gym_account_id=gym_account_id,
         window_id=window_id,
     )
     return window
@@ -177,7 +177,7 @@ def close_early(
 
 def list_open(
     session: Session,
-    operator_id: int,
+    gym_account_id: int,
     *,
     now: datetime | None = None,
 ) -> list[VacationWindow]:
@@ -192,7 +192,7 @@ def list_open(
         session.execute(
             select(VacationWindow)
             .where(
-                VacationWindow.operator_id == operator_id,
+                VacationWindow.gym_account_id == gym_account_id,
                 VacationWindow.closed_at.is_(None),
                 VacationWindow.end_date >= _now,
             )
@@ -206,7 +206,7 @@ def list_open(
 def find_covering_window(
     session: Session,
     *,
-    operator_id: int,
+    gym_account_id: int,
     target_slot: datetime,
     now: datetime | None = None,
 ) -> VacationWindow | None:
@@ -228,7 +228,7 @@ def find_covering_window(
     return session.execute(
         select(VacationWindow)
         .where(
-            VacationWindow.operator_id == operator_id,
+            VacationWindow.gym_account_id == gym_account_id,
             VacationWindow.closed_at.is_(None),
             VacationWindow.end_date >= _now,
             VacationWindow.start_date <= target_slot,
@@ -267,7 +267,7 @@ def _ceil_day(dt: datetime) -> datetime:
 def _load_granted_bookings_in_range(
     session: Session,
     *,
-    operator_id: int,
+    gym_account_id: int,
     start: datetime,
     end: datetime,
     now: datetime,
@@ -282,7 +282,7 @@ def _load_granted_bookings_in_range(
         session.execute(
             select(BookingOutcome)
             .where(
-                BookingOutcome.operator_id == operator_id,
+                BookingOutcome.gym_account_id == gym_account_id,
                 BookingOutcome.terminal_status == "granted",
                 BookingOutcome.target_slot >= start,
                 BookingOutcome.target_slot <= end,

@@ -47,6 +47,7 @@ from ..booking.manual import (
 from ..booking.upcoming import UpcomingSlot, list_upcoming_slots
 from ..i18n import lang_url, t
 from ..persistence.engine import get_session
+from ..persistence.gym_accounts import resolve_sole_gym_account_id
 from ..persistence.models import BookingOutcome
 from ..scheduler.rule_jobs import operator_timezone
 
@@ -96,8 +97,12 @@ def history_list(
     now = _utcnow()
     week_start = _current_week_start(now)
     with get_session() as session:
-        upcoming = list_upcoming_slots(session, operator_id, now=now)
-        outcomes = list_recent_bookings(session, operator_id, since=week_start)
+        upcoming: list[UpcomingSlot] = []
+        outcomes: list[BookingOutcome] = []
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+        if gym_account_id is not None:
+            upcoming = list_upcoming_slots(session, gym_account_id, now=now)
+            outcomes = list_recent_bookings(session, gym_account_id, since=week_start)
         upcoming_days = _group_upcoming_by_day(upcoming)
         rows = [_outcome_to_row(o) for o in outcomes]
     return templates.TemplateResponse(
@@ -137,10 +142,13 @@ def booking_cancel(
         )
 
     with get_session() as session:
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+        if gym_account_id is None:
+            raise HTTPException(status_code=404)
         try:
             cancel_booking(
                 session,
-                operator_id=operator_id,
+                gym_account_id=gym_account_id,
                 booking_id=booking_id,
                 client=client,
                 cookie_store=store,
@@ -241,6 +249,11 @@ def book_now_submit(
     if service is None:
         return _redirect_book_now(t("flash.booking.service_unavailable"), kind="error")
 
+    with get_session() as session:
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+    if gym_account_id is None:
+        return _redirect_book_now(t("flash.booking.service_unavailable"), kind="error")
+
     try:
         target_date = date.fromisoformat(book_date.strip())
     except ValueError:
@@ -248,7 +261,7 @@ def book_now_submit(
 
     try:
         result = service.book(
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             target_date=target_date,
             target_time=book_time,
             class_type=book_class.strip() or None,

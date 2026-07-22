@@ -25,12 +25,12 @@ from sqlalchemy.orm import Session
 from ..persistence.models import SchedulerRule
 
 
-def list_rules_for_operator(session: Session, operator_id: int) -> Sequence[SchedulerRule]:
-    """Return every rule the operator owns, ordered by day of week."""
+def list_rules_for_operator(session: Session, gym_account_id: int) -> Sequence[SchedulerRule]:
+    """Return every rule the gym account owns, ordered by day of week."""
     return (
         session.execute(
             select(SchedulerRule)
-            .where(SchedulerRule.operator_id == operator_id)
+            .where(SchedulerRule.gym_account_id == gym_account_id)
             .order_by(SchedulerRule.day_of_week, SchedulerRule.created_at)
         )
         .scalars()
@@ -38,12 +38,14 @@ def list_rules_for_operator(session: Session, operator_id: int) -> Sequence[Sche
     )
 
 
-def get_rule_for_operator(session: Session, operator_id: int, rule_id: int) -> SchedulerRule | None:
-    """Return the rule if it exists AND belongs to the operator."""
+def get_rule_for_operator(
+    session: Session, gym_account_id: int, rule_id: int
+) -> SchedulerRule | None:
+    """Return the rule if it exists AND belongs to the gym account."""
     return session.scalar(
         select(SchedulerRule).where(
             SchedulerRule.id == rule_id,
-            SchedulerRule.operator_id == operator_id,
+            SchedulerRule.gym_account_id == gym_account_id,
         )
     )
 
@@ -51,7 +53,7 @@ def get_rule_for_operator(session: Session, operator_id: int, rule_id: int) -> S
 def create_rules_for_days(
     session: Session,
     *,
-    operator_id: int,
+    gym_account_id: int,
     days_of_week: Sequence[int],
     class_type: str,
     class_time: str,
@@ -67,7 +69,7 @@ def create_rules_for_days(
     rules: list[SchedulerRule] = []
     for day in days_of_week:
         rule = SchedulerRule(
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             day_of_week=day,
             class_type=class_type,
             class_time=class_time,

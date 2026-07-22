@@ -42,7 +42,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..persistence.cookie_store import CookieStore
-from ..persistence.models import BookingOutcome, NotificationOutbox, OperatorProfile
+from ..persistence.models import BookingOutcome, GymAccount, NotificationOutbox, OperatorProfile
 from ..wodbuster_client.client import (
     BookingActionResponse,
     LoadClassResponse,
@@ -90,7 +90,7 @@ class CancelClientProtocol(Protocol):
 def cancel_booking(
     session: Session,
     *,
-    operator_id: int,
+    gym_account_id: int,
     booking_id: int,
     client: CancelClientProtocol,
     cookie_store: CookieStore,
@@ -105,7 +105,7 @@ def cancel_booking(
     _now = now or datetime.now(tz=UTC)
 
     booking = session.get(BookingOutcome, booking_id)
-    if booking is None or booking.operator_id != operator_id:
+    if booking is None or booking.gym_account_id != gym_account_id:
         # Never confirm existence to non-owners (CC-012).
         raise BookingNotFoundError(f"booking {booking_id} not found")
 
@@ -113,7 +113,7 @@ def cancel_booking(
         # Idempotent short-circuit — no WodBuster call, no state change.
         _log.info(
             "booking.cancel.idempotent",
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             booking_id=booking_id,
         )
         raise BookingAlreadyCancelledError(f"booking {booking_id} already cancelled")
@@ -126,7 +126,7 @@ def cancel_booking(
             f"booking {booking_id} is {booking.terminal_status!r}, not granted"
         )
 
-    cookie = cookie_store.load(session, operator_id)
+    cookie = cookie_store.load(session, gym_account_id)
     if cookie is None:
         raise CancellationUpstreamError("no cookie on file")
 
@@ -164,13 +164,13 @@ def cancel_booking(
 
     _enqueue_cancel_outbox(
         session,
-        operator_id=operator_id,
+        gym_account_id=gym_account_id,
         booking=booking,
         now=_now,
     )
     _log.info(
         "booking.cancel.persisted",
-        operator_id=operator_id,
+        gym_account_id=gym_account_id,
         booking_id=booking_id,
         raw_res=response.raw_res,
     )
@@ -206,11 +206,19 @@ def _resolve_class_id(
 def _enqueue_cancel_outbox(
     session: Session,
     *,
-    operator_id: int,
+    gym_account_id: int,
     booking: BookingOutcome,
     now: datetime,
 ) -> None:
-    """Add the banner + Telegram rows for the cancellation."""
+    """Add the banner + Telegram rows for the cancellation.
+
+    Outbox delivery is user-scoped (ADR-0007): resolve the owning
+    ``user_id`` from the gym account before enqueuing.
+    """
+    gym_account = session.get(GymAccount, gym_account_id)
+    if gym_account is None:  # pragma: no cover - FK guarantees presence
+        return
+    user_id = gym_account.user_id
     text = f"Cancelled {booking.target_class} for {_format_slot(booking.target_slot)}."
     payload: dict[str, Any] = {
         "kind": "booking_result",
@@ -220,19 +228,21 @@ def _enqueue_cancel_outbox(
     }
     session.add(
         NotificationOutbox(
-            operator_id=operator_id,
+            user_id=user_id,
+            gym_account_id=gym_account_id,
             kind="banner",
-            target=str(operator_id),
+            target=str(user_id),
             payload=payload,
             enqueued_at=now,
         )
     )
-    operator = session.get(OperatorProfile, operator_id)
+    operator = session.get(OperatorProfile, user_id)
     if operator is None or not operator.telegram_chat_id:
         return
     session.add(
         NotificationOutbox(
-            operator_id=operator_id,
+            user_id=user_id,
+            gym_account_id=gym_account_id,
             kind="telegram",
             target=operator.telegram_chat_id,
             payload=payload,
@@ -261,7 +271,7 @@ def _format_slot(target_slot: datetime) -> str:
 
 def list_recent_bookings(
     session: Session,
-    operator_id: int,
+    gym_account_id: int,
     *,
     since: datetime | None = None,
     limit: int = 50,
@@ -275,7 +285,7 @@ def list_recent_bookings(
     long-lived operator doesn't ship megabytes of rows to the browser
     on every visit.
     """
-    stmt = select(BookingOutcome).where(BookingOutcome.operator_id == operator_id)
+    stmt = select(BookingOutcome).where(BookingOutcome.gym_account_id == gym_account_id)
     if since is not None:
         stmt = stmt.where(BookingOutcome.attempted_at >= since)
     stmt = stmt.order_by(BookingOutcome.attempted_at.desc()).limit(limit)
@@ -284,7 +294,7 @@ def list_recent_bookings(
 
 def list_upcoming_bookings(
     session: Session,
-    operator_id: int,
+    gym_account_id: int,
     *,
     now: datetime | None = None,
     horizon_days: int = 14,
@@ -303,7 +313,7 @@ def list_upcoming_bookings(
         session.execute(
             select(BookingOutcome)
             .where(
-                BookingOutcome.operator_id == operator_id,
+                BookingOutcome.gym_account_id == gym_account_id,
                 BookingOutcome.terminal_status == "granted",
                 BookingOutcome.target_slot >= _now,
                 BookingOutcome.target_slot <= horizon,
