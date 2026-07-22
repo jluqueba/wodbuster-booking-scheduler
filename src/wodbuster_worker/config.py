@@ -18,6 +18,7 @@ failures rather than masquerading as configuration parse errors.
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from typing import Literal
 
@@ -25,6 +26,22 @@ from pydantic import AnyHttpUrl, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 WodBusterEnv = Literal["local", "prod"]
+
+# A WodBuster gym subdomain is a single DNS label: lowercase alphanumerics
+# and hyphens, 1..63 characters. ``fullmatch`` anchors both ends and (unlike
+# a trailing ``$``) rejects an embedded trailing newline, so values such as
+# ``"evil.com#"``, ``"x.wodbuster.com.attacker.com"``, or a slug carrying
+# ``@`` / ``/`` / ``:`` / a leading dot never pass. This is the syntactic half
+# of the SEC-001 defence; exact allow-list membership is the other half.
+_GYM_SLUG_RE = re.compile(r"[a-z0-9-]{1,63}")
+
+
+def is_valid_gym_slug_syntax(slug: str) -> bool:
+    """Return ``True`` when ``slug`` is a syntactically valid gym subdomain.
+
+    Syntactic validation only; it does not check allow-list membership.
+    """
+    return _GYM_SLUG_RE.fullmatch(slug) is not None
 
 
 class Settings(BaseSettings):
@@ -104,6 +121,16 @@ class Settings(BaseSettings):
     wodbuster_gym: str | None = None
     wodbuster_idu: str | None = None
 
+    # Curated allow-list of known WodBuster gym subdomains a user may add
+    # (FR-012, SEC-001). Comma-separated; defaults to the single gym the
+    # original single-tenant deployment used. Admin-maintained: extend this
+    # env var to permit additional gyms. The allow-list is a SECURITY
+    # CONTROL, not a convenience filter: the add-gym flow constructs the
+    # outbound ``https://{slug}.wodbuster.com`` base URL only from an entry
+    # that exactly matches this set, never from raw user input, so a crafted
+    # slug cannot redirect the pasted third-party cookie to another host.
+    gym_allowlist: str = "antworktrainingcenter"
+
     # US-004 heartbeat knobs. ``ceiling`` bounds the pessimistic TTL
     # projection: on a successful probe the projected expiry cannot be
     # further than ``now + ceiling`` in the future. Between probes the
@@ -142,6 +169,25 @@ class Settings(BaseSettings):
             if self.postgres_password is None:
                 self.postgres_password = "wodbuster"
         return self
+
+    def known_gym_slugs(self) -> frozenset[str]:
+        """Return the configured allow-list as a set of trimmed slugs."""
+        return frozenset(part.strip() for part in self.gym_allowlist.split(",") if part.strip())
+
+    def validate_gym_slug(self, slug: str) -> str:
+        """Return ``slug`` when it is safe to use, else raise ``ValueError``.
+
+        A slug is safe only when it is both syntactically valid
+        (:func:`is_valid_gym_slug_syntax`) and an EXACT member of the
+        configured allow-list (:meth:`known_gym_slugs`). Both checks run
+        server-side before any URL is built from the value (SEC-001,
+        FR-012).
+        """
+        if not is_valid_gym_slug_syntax(slug):
+            raise ValueError(f"invalid gym slug syntax: {slug!r}")
+        if slug not in self.known_gym_slugs():
+            raise ValueError(f"gym slug not in the allow-list: {slug!r}")
+        return slug
 
     def require_app_base_url(self) -> AnyHttpUrl:
         """Return the public base URL or fail loudly.
