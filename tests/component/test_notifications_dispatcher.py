@@ -107,7 +107,7 @@ def _seed_outbox(
             conn.execute(
                 text(
                     "INSERT INTO notification_outbox "
-                    "(operator_id, kind, target, payload) "
+                    "(user_id, kind, target, payload) "
                     "VALUES (:op, :k, :t, CAST(:p AS jsonb)) RETURNING id"
                 ),
                 {

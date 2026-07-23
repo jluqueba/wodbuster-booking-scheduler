@@ -79,7 +79,7 @@ class _FakeCookieStore:
     def __init__(self, cookie: str | None) -> None:
         self._cookie = cookie
 
-    def load(self, session: Any, operator_id: int) -> str | None:
+    def load(self, session: Any, gym_account_id: int) -> str | None:
         return self._cookie
 
 
@@ -150,7 +150,7 @@ def test_window_closed_rejects_without_booking() -> None:
     service = _service(client=client)
 
     with pytest.raises(BookingWindowClosedError) as excinfo:
-        service.book(operator_id=1, target_date=_TARGET_DATE, target_time="18:30")
+        service.book(gym_account_id=1, target_date=_TARGET_DATE, target_time="18:30")
 
     assert excinfo.value.seconds_until_open == 3600.0
     # The read-only probe is allowed; the mutating call must NOT fire.
@@ -167,7 +167,7 @@ def test_no_cookie_rejects_without_any_upstream_call() -> None:
     service = _service(client=client, cookie=None)
 
     with pytest.raises(NoCookieError):
-        service.book(operator_id=1, target_date=_TARGET_DATE, target_time="18:30")
+        service.book(gym_account_id=1, target_date=_TARGET_DATE, target_time="18:30")
 
     assert client.load_class_calls == []
     assert client.inscribir_calls == []
@@ -182,7 +182,7 @@ def test_no_class_at_time_rejects_without_booking() -> None:
     service = _service(client=client)
 
     with pytest.raises(ClassNotVisibleError):
-        service.book(operator_id=1, target_date=_TARGET_DATE, target_time="18:30")
+        service.book(gym_account_id=1, target_date=_TARGET_DATE, target_time="18:30")
 
     assert client.inscribir_calls == []
 
@@ -193,7 +193,7 @@ def test_invalid_time_raises_value_error() -> None:
     service = _service(client=client)
 
     with pytest.raises(ValueError):
-        service.book(operator_id=1, target_date=_TARGET_DATE, target_time="notatime")
+        service.book(gym_account_id=1, target_date=_TARGET_DATE, target_time="notatime")
 
     assert client.load_class_calls == []
 
@@ -221,7 +221,7 @@ def test_granted_delegates_and_returns_result(monkeypatch: pytest.MonkeyPatch) -
     )
     service = _service(client=client)
 
-    result = service.book(operator_id=1, target_date=_TARGET_DATE, target_time="18:30")
+    result = service.book(gym_account_id=1, target_date=_TARGET_DATE, target_time="18:30")
 
     assert isinstance(result, ManualBookingResult)
     assert result.terminal_status == "granted"
@@ -276,7 +276,7 @@ def test_class_type_disambiguates_collision(monkeypatch: pytest.MonkeyPatch) -> 
     service = _service(client=client)
 
     result = service.book(
-        operator_id=1,
+        gym_account_id=1,
         target_date=_TARGET_DATE,
         target_time="08:30",
         class_type="Open Endurance",
@@ -301,7 +301,7 @@ def test_class_type_match_is_case_insensitive(monkeypatch: pytest.MonkeyPatch) -
     service = _service(client=client)
 
     result = service.book(
-        operator_id=1,
+        gym_account_id=1,
         target_date=_TARGET_DATE,
         target_time="08:30",
         class_type="cross training",
@@ -321,7 +321,7 @@ def test_unknown_class_type_rejects_without_booking() -> None:
 
     with pytest.raises(ClassNotVisibleError):
         service.book(
-            operator_id=1,
+            gym_account_id=1,
             target_date=_TARGET_DATE,
             target_time="08:30",
             class_type="Yoga",

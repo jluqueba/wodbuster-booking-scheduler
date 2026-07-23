@@ -29,6 +29,8 @@ from wodbuster_worker.persistence.models import BookingOutcome, VacationWindow
 from wodbuster_worker.security.cipher import Cipher
 from wodbuster_worker.wodbuster_client.client import BookingActionResponse
 
+from .conftest import gym_account_id_for
+
 
 @pytest.fixture
 def session_factory(postgres_engine: Engine) -> sessionmaker[Session]:
@@ -112,12 +114,20 @@ class _StubLoadClass:
 
 def _make_operator(engine: Engine, name: str = "Op") -> int:
     with engine.begin() as conn:
-        return int(
+        op_id = int(
             conn.execute(
                 text("INSERT INTO operator_profile (display_name) VALUES (:n) RETURNING id"),
                 {"n": name},
             ).scalar_one()
         )
+        conn.execute(
+            text(
+                "INSERT INTO gym_account (user_id, gym_slug, display_name, idu) "
+                "VALUES (:op, 'antworktrainingcenter', :n, :idu)"
+            ),
+            {"op": op_id, "n": name, "idu": f"idu{op_id:032d}"[:32]},
+        )
+        return op_id
 
 
 def _seed_cookie(engine: Engine, operator_id: int, cookie: str = ".WBAuth-abc") -> CookieStore:
@@ -128,7 +138,8 @@ def _seed_cookie(engine: Engine, operator_id: int, cookie: str = ".WBAuth-abc") 
     store = CookieStore(cipher)
     sm = sessionmaker(bind=engine)
     with sm() as session:
-        store.save(session, operator_id, cookie, validated_at=datetime.now(tz=UTC))
+        gym_account_id = gym_account_id_for(session, operator_id)
+        store.save(session, gym_account_id, cookie, validated_at=datetime.now(tz=UTC))
         session.commit()
     return store
 
@@ -141,18 +152,19 @@ def _seed_granted_booking(
     class_type: str = "WOD",
 ) -> int:
     with engine.begin() as conn:
+        gym_account_id = gym_account_id_for(conn, operator_id)
         return int(
             conn.execute(
                 text(
                     "INSERT INTO booking_outcome ("
-                    " operator_id, rule_id, target_class, target_slot, "
+                    " gym_account_id, rule_id, target_class, target_slot, "
                     " attempted_at, terminal_status"
                     ") VALUES ("
-                    " :op, NULL, :cls, :slot, :attempted, 'granted'"
+                    " :ga, NULL, :cls, :slot, :attempted, 'granted'"
                     ") RETURNING id"
                 ),
                 {
-                    "op": operator_id,
+                    "ga": gym_account_id,
                     "cls": class_type,
                     "slot": target_slot,
                     "attempted": target_slot - timedelta(days=2),
@@ -183,9 +195,10 @@ def test_enable_bulk_cancels_only_bookings_inside_range(
     b3 = _seed_granted_booking(postgres_engine, op_id, target_slot=day_three)
 
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
         vacation_service.enable(
             session,
-            operator_id=op_id,
+            gym_account_id=gym_account_id,
             start_date=day_one,
             end_date=day_two,
             client=client,
@@ -218,9 +231,10 @@ def test_enable_persists_window_with_normalized_boundaries(
     end = datetime(2026, 8, 5, 6, 45, tzinfo=UTC)  # early morning
 
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
         window = vacation_service.enable(
             session,
-            operator_id=op_id,
+            gym_account_id=gym_account_id,
             start_date=start,
             end_date=end,
             client=client,
@@ -252,9 +266,10 @@ def test_find_covering_window_inclusive_start_boundary(
     client = _StubClient()
 
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
         vacation_service.enable(
             session,
-            operator_id=op_id,
+            gym_account_id=gym_account_id,
             start_date=datetime(2026, 8, 3, 0, 0, tzinfo=UTC),
             end_date=datetime(2026, 8, 5, 0, 0, tzinfo=UTC),
             client=client,
@@ -264,9 +279,10 @@ def test_find_covering_window_inclusive_start_boundary(
 
     # Target sits at midnight of the start day → covered.
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
         result = find_covering_window(
             session,
-            operator_id=op_id,
+            gym_account_id=gym_account_id,
             target_slot=datetime(2026, 8, 3, 0, 0, tzinfo=UTC),
             now=datetime(2026, 8, 2, 12, 0, tzinfo=UTC),
         )
@@ -281,9 +297,10 @@ def test_find_covering_window_inclusive_end_boundary(
     client = _StubClient()
 
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
         vacation_service.enable(
             session,
-            operator_id=op_id,
+            gym_account_id=gym_account_id,
             start_date=datetime(2026, 8, 3, 0, 0, tzinfo=UTC),
             end_date=datetime(2026, 8, 5, 0, 0, tzinfo=UTC),
             client=client,
@@ -294,9 +311,10 @@ def test_find_covering_window_inclusive_end_boundary(
     # A class at 21:30 on the end day still lands inside the window
     # because end_date extends to 23:59:59.999999.
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
         result = find_covering_window(
             session,
-            operator_id=op_id,
+            gym_account_id=gym_account_id,
             target_slot=datetime(2026, 8, 5, 21, 30, tzinfo=UTC),
             now=datetime(2026, 8, 4, 12, 0, tzinfo=UTC),
         )
@@ -311,9 +329,10 @@ def test_find_covering_window_exclusive_outside_range(
     client = _StubClient()
 
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
         vacation_service.enable(
             session,
-            operator_id=op_id,
+            gym_account_id=gym_account_id,
             start_date=datetime(2026, 8, 3, 0, 0, tzinfo=UTC),
             end_date=datetime(2026, 8, 5, 0, 0, tzinfo=UTC),
             client=client,
@@ -324,9 +343,10 @@ def test_find_covering_window_exclusive_outside_range(
     # A class the day *after* the end date is not covered — the
     # scheduler resumes normal operation.
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
         result = find_covering_window(
             session,
-            operator_id=op_id,
+            gym_account_id=gym_account_id,
             target_slot=datetime(2026, 8, 6, 21, 30, tzinfo=UTC),
             now=datetime(2026, 8, 5, 12, 0, tzinfo=UTC),
         )
@@ -341,9 +361,10 @@ def test_find_covering_window_ignores_closed_windows(
     client = _StubClient()
 
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
         window = vacation_service.enable(
             session,
-            operator_id=op_id,
+            gym_account_id=gym_account_id,
             start_date=datetime(2026, 8, 3, 0, 0, tzinfo=UTC),
             end_date=datetime(2026, 8, 5, 0, 0, tzinfo=UTC),
             client=client,
@@ -353,18 +374,20 @@ def test_find_covering_window_ignores_closed_windows(
         window_id = int(window.id)
 
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
         vacation_service.close_early(
             session,
-            operator_id=op_id,
+            gym_account_id=gym_account_id,
             window_id=window_id,
             now=datetime(2026, 8, 3, 15, 0, tzinfo=UTC),
         )
         session.commit()
 
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
         result = find_covering_window(
             session,
-            operator_id=op_id,
+            gym_account_id=gym_account_id,
             target_slot=datetime(2026, 8, 4, 21, 30, tzinfo=UTC),
             now=datetime(2026, 8, 3, 16, 0, tzinfo=UTC),
         )
@@ -381,9 +404,10 @@ def test_find_covering_window_scoped_to_operator(
     client = _StubClient()
 
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_a)
         vacation_service.enable(
             session,
-            operator_id=op_a,
+            gym_account_id=gym_account_id,
             start_date=datetime(2026, 8, 3, 0, 0, tzinfo=UTC),
             end_date=datetime(2026, 8, 5, 0, 0, tzinfo=UTC),
             client=client,
@@ -392,9 +416,10 @@ def test_find_covering_window_scoped_to_operator(
         session.commit()
 
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_b)
         result = find_covering_window(
             session,
-            operator_id=op_b,
+            gym_account_id=gym_account_id,
             target_slot=datetime(2026, 8, 4, 21, 30, tzinfo=UTC),
             now=datetime(2026, 8, 3, 12, 0, tzinfo=UTC),
         )
@@ -416,9 +441,10 @@ def test_expired_window_does_not_shield_future_bookings(
     client = _StubClient()
 
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
         vacation_service.enable(
             session,
-            operator_id=op_id,
+            gym_account_id=gym_account_id,
             start_date=datetime(2026, 8, 3, 0, 0, tzinfo=UTC),
             end_date=datetime(2026, 8, 5, 0, 0, tzinfo=UTC),
             client=client,
@@ -430,7 +456,7 @@ def test_expired_window_does_not_shield_future_bookings(
         # ``now`` is Aug 6 -> the (Aug 3-5) window is expired.
         result = find_covering_window(
             session,
-            operator_id=op_id,
+            gym_account_id=gym_account_id_for(session, op_id),
             target_slot=datetime(2026, 8, 6, 21, 30, tzinfo=UTC),
             now=datetime(2026, 8, 6, 12, 0, tzinfo=UTC),
         )

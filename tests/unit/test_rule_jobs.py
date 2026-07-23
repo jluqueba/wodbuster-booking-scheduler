@@ -56,7 +56,7 @@ def _rule(
     booking_opens_at: str = "21:30",
 ) -> SchedulerRule:
     rule = SchedulerRule(
-        operator_id=1,
+        gym_account_id=1,
         day_of_week=day_of_week,
         class_type="WOD",
         class_time=class_time,

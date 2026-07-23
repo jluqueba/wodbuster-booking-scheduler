@@ -56,18 +56,27 @@ def session_factory(postgres_engine: Engine) -> sessionmaker[Session]:
 
 
 def _make_operator(engine: Engine, name: str = "Alice") -> int:
-    """Insert an operator_profile row and return its id.
+    """Insert an operator_profile + one gym_account and return the gym id.
 
-    Component tests need the FK target to exist before the store can
-    write a cookie row. This helper is intentionally tiny; adding it
-    to conftest as a shared fixture would couple the auth tests to
-    this file.
+    Multi-gym (ADR-0007): :class:`CookieStore` keys off ``gym_account_id``,
+    so component tests need a gym account (and its FK operator) to exist
+    before the store can write a cookie row. The returned id is the
+    ``gym_account_id`` the store save/load path expects.
     """
     with engine.begin() as conn:
-        return int(
+        op_id = int(
             conn.execute(
                 text("INSERT INTO operator_profile (display_name) VALUES (:n) RETURNING id"),
                 {"n": name},
+            ).scalar_one()
+        )
+        return int(
+            conn.execute(
+                text(
+                    "INSERT INTO gym_account (user_id, gym_slug, display_name, idu) "
+                    "VALUES (:op, 'antworktrainingcenter', :n, :idu) RETURNING id"
+                ),
+                {"op": op_id, "n": name, "idu": f"idu{op_id:032d}"[:32]},
             ).scalar_one()
         )
 
@@ -99,6 +108,36 @@ def test_load_returns_none_when_no_row_exists(
         assert store.load(session, op_id) is None
 
 
+def test_cookie_ciphertext_is_bound_to_its_gym_account(
+    postgres_engine: Engine,
+    session_factory: sessionmaker[Session],
+    store: CookieStore,
+) -> None:
+    """SEC-005: a ciphertext row moved to a different gym account fails to
+    decrypt, because the GCM associated data binds it to its owning gym
+    account. Cross-gym cookie confusion becomes a cryptographic failure,
+    not merely an application-layer convention (ADR-0007 hardening).
+    """
+    ga_a = _make_operator(postgres_engine, name="Alice")
+    ga_b = _make_operator(postgres_engine, name="Bob")  # no cookie of its own
+
+    with session_factory() as session:
+        store.save(session, ga_a, ".WBAuth-secret", validated_at=datetime.now(tz=UTC))
+        session.commit()
+
+    # Simulate a bug or malicious write re-pointing A's ciphertext at B.
+    with session_factory() as session:
+        session.execute(
+            text("UPDATE cookie_credential SET gym_account_id = :b WHERE gym_account_id = :a"),
+            {"a": ga_a, "b": ga_b},
+        )
+        session.commit()
+
+    # Loading under B must fail authentication, not silently decrypt A's cookie.
+    with session_factory() as session, pytest.raises(CookieDecryptError):
+        store.load(session, ga_b)
+
+
 def test_repeat_save_keeps_exactly_one_row_per_operator(
     postgres_engine: Engine,
     session_factory: sessionmaker[Session],
@@ -115,7 +154,7 @@ def test_repeat_save_keeps_exactly_one_row_per_operator(
         session.commit()
 
     with session_factory() as session:
-        rows = session.query(CookieCredential).filter_by(operator_id=op_id).all()
+        rows = session.query(CookieCredential).filter_by(gym_account_id=op_id).all()
         assert len(rows) == 1
         assert store.load(session, op_id) == ".WBAuth-second"
 
@@ -136,7 +175,7 @@ def test_repeat_save_refreshes_timestamps_and_clears_projected_ttl(
         store.save(session, op_id, ".WBAuth-1", validated_at=first_validated)
         session.commit()
     with session_factory() as session:
-        row = session.query(CookieCredential).filter_by(operator_id=op_id).one()
+        row = session.query(CookieCredential).filter_by(gym_account_id=op_id).one()
         row.projected_ttl_at = datetime(2027, 12, 31, tzinfo=UTC)
         session.commit()
 
@@ -145,7 +184,7 @@ def test_repeat_save_refreshes_timestamps_and_clears_projected_ttl(
         session.commit()
 
     with session_factory() as session:
-        row = session.query(CookieCredential).filter_by(operator_id=op_id).one()
+        row = session.query(CookieCredential).filter_by(gym_account_id=op_id).one()
         assert row.last_validated_at == second_validated
         # ``pasted_at`` is refreshed on every save (server_default fires
         # only on INSERT); after two saves it must reflect the second.
@@ -169,7 +208,7 @@ def test_plaintext_is_never_persisted(
         session.commit()
 
     with session_factory() as session:
-        row = session.query(CookieCredential).filter_by(operator_id=op_id).one()
+        row = session.query(CookieCredential).filter_by(gym_account_id=op_id).one()
         assert plaintext.encode() not in bytes(row.cookie_ciphertext)
         assert plaintext.encode() not in bytes(row.cookie_nonce)
         # Nonces are 96 bits per NIST; assert we did not accidentally
@@ -224,3 +263,38 @@ def test_save_rejects_empty_cookie(
 
     with session_factory() as session, pytest.raises(ValueError, match="non-empty"):
         store.save(session, op_id, "", validated_at=datetime.now(tz=UTC))
+
+
+def test_ciphertext_is_bound_to_gym_account(
+    postgres_engine: Engine,
+    session_factory: sessionmaker[Session],
+    store: CookieStore,
+) -> None:
+    """SEC-005: a ciphertext row re-pointed to another gym account fails
+    to decrypt.
+
+    :class:`CookieStore` binds ``gym_account_id`` into the AEAD
+    associated data, so a persisted ciphertext is cryptographically
+    tied to the gym account it was written for. Swapping the row's
+    ``gym_account_id`` (a row-swap / replay against a sibling gym
+    account, even one owned by the same operator) invalidates the auth
+    tag and surfaces as :class:`CookieDecryptError` rather than
+    leaking the other account's cookie.
+    """
+    gym_a = _make_operator(postgres_engine, name="GymA")
+    gym_b = _make_operator(postgres_engine, name="GymB")
+    validated_at = datetime.now(tz=UTC)
+
+    with session_factory() as session:
+        store.save(session, gym_a, ".WBAuth-secret", validated_at=validated_at)
+        session.commit()
+
+    # Re-point the persisted row at a different gym account, leaving the
+    # ciphertext + nonce untouched (simulates a row-swap / replay).
+    with session_factory() as session:
+        row = session.query(CookieCredential).filter_by(gym_account_id=gym_a).one()
+        row.gym_account_id = gym_b
+        session.commit()
+
+    with session_factory() as session, pytest.raises(CookieDecryptError, match=str(gym_b)):
+        store.load(session, gym_b)

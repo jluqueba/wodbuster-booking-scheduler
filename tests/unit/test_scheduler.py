@@ -30,7 +30,7 @@ from wodbuster_worker.scheduler.scheduler import (
 class _NullProbe:
     """Duck-typed :class:`HeartbeatProbe` — the scheduler never invokes it here."""
 
-    def run(self, session, operator_id):  # pragma: no cover - unused
+    def run(self, session, gym_account_id):  # pragma: no cover - unused
         raise AssertionError("probe should not run in a stopped scheduler")
 
 

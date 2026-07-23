@@ -30,6 +30,8 @@ from wodbuster_worker.persistence.cookie_store import CookieStore
 from wodbuster_worker.security.cipher import Cipher
 from wodbuster_worker.wodbuster_client.client import BookingActionResponse, LoadClassResponse
 
+from .conftest import gym_account_id_for
+
 
 def _sign_in(
     app: FastAPI,
@@ -62,7 +64,8 @@ def _seed_cookie(engine: Engine, operator_id: int) -> CookieStore:
     store = CookieStore(Cipher(os.urandom(32)))
     factory = sessionmaker(bind=engine)
     with factory() as session:
-        store.save(session, operator_id, ".WBAuth-tok", validated_at=datetime.now(tz=UTC))
+        ga = gym_account_id_for(session, operator_id)
+        store.save(session, ga, ".WBAuth-tok", validated_at=datetime.now(tz=UTC))
         session.commit()
     return store
 
@@ -225,12 +228,13 @@ def test_book_now_grants_within_window(
     assert "flash_kind=info" in location
     assert len(fake.inscribir_calls) == 1
     with postgres_engine.connect() as conn:
+        ga = gym_account_id_for(conn, op_id)
         row = conn.execute(
             text(
                 "SELECT terminal_status, rule_id FROM booking_outcome "
-                "WHERE operator_id = :op ORDER BY id DESC LIMIT 1"
+                "WHERE gym_account_id = :ga ORDER BY id DESC LIMIT 1"
             ),
-            {"op": op_id},
+            {"ga": ga},
         ).one()
     assert row.terminal_status == "granted"
     assert row.rule_id is None
@@ -263,9 +267,10 @@ def test_book_now_window_closed_rejects_without_booking(
     assert "flash_kind=warning" in location
     assert fake.inscribir_calls == []
     with postgres_engine.connect() as conn:
+        ga = gym_account_id_for(conn, op_id)
         count = conn.execute(
-            text("SELECT count(*) FROM booking_outcome WHERE operator_id = :op"),
-            {"op": op_id},
+            text("SELECT count(*) FROM booking_outcome WHERE gym_account_id = :ga"),
+            {"ga": ga},
         ).scalar_one()
     assert count == 0
 
@@ -301,12 +306,13 @@ def test_book_now_books_chosen_class_type_on_collision(
     # first (Cross Training) class at 08:30.
     assert fake.inscribir_calls[0]["class_id"] == 222
     with postgres_engine.connect() as conn:
+        ga = gym_account_id_for(conn, op_id)
         target_class = conn.execute(
             text(
                 "SELECT target_class FROM booking_outcome "
-                "WHERE operator_id = :op ORDER BY id DESC LIMIT 1"
+                "WHERE gym_account_id = :ga ORDER BY id DESC LIMIT 1"
             ),
-            {"op": op_id},
+            {"ga": ga},
         ).scalar_one()
     assert target_class == "Open Endurance"
 

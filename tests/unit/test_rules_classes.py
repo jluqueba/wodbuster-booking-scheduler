@@ -212,7 +212,7 @@ class _FakeStore:
     def __init__(self, cookie: str | None) -> None:
         self._cookie = cookie
 
-    def load(self, _session: Any, _operator_id: int) -> str | None:
+    def load(self, _session: Any, _gym_account_id: int) -> str | None:
         return self._cookie
 
 
@@ -251,7 +251,7 @@ def test_fetch_unions_day_specific_classes_across_the_week(
     client = _FakeClient(per_day)
     monkeypatch.setattr(classes_module, "get_session", _null_session)
 
-    result = fetch_available_classes(_FakeStore("cookie"), client, operator_id=1)
+    result = fetch_available_classes(_FakeStore("cookie"), client, gym_account_id=1)
 
     assert result is not None
     assert result.class_types == ["Endurance", "WOD"]
@@ -265,7 +265,7 @@ def test_fetch_returns_none_when_no_cookie(monkeypatch: pytest.MonkeyPatch) -> N
     client = _FakeClient([])
     monkeypatch.setattr(classes_module, "get_session", _null_session)
 
-    result = fetch_available_classes(_FakeStore(None), client, operator_id=1)
+    result = fetch_available_classes(_FakeStore(None), client, gym_account_id=1)
 
     assert result is None
     assert client.calls == []

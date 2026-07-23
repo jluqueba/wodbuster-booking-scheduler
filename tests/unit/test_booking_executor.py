@@ -56,7 +56,7 @@ def _no_vacation_window(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.setattr(
         "wodbuster_worker.booking.executor.find_covering_window",
-        lambda session, *, operator_id, target_slot: None,
+        lambda session, *, gym_account_id, target_slot: None,
     )
 
 
@@ -144,7 +144,7 @@ class _FakeCookieStore:
     def __init__(self, cookie: str | None) -> None:
         self._cookie = cookie
 
-    def load(self, session: Any, operator_id: int) -> str | None:
+    def load(self, session: Any, gym_account_id: int) -> str | None:
         return self._cookie
 
 
@@ -210,7 +210,7 @@ def _rule(
 ) -> SchedulerRule:
     """Build a rule without touching Postgres (uses SQLAlchemy transient state)."""
     rule = SchedulerRule(
-        operator_id=1,
+        gym_account_id=1,
         day_of_week=2,
         class_type=class_type,
         class_time=class_time,
@@ -509,7 +509,7 @@ def test_vacation_skip_guard_short_circuits_before_wodbuster(
     fake_window.id = 77
     monkeypatch.setattr(
         "wodbuster_worker.booking.executor.find_covering_window",
-        lambda session, *, operator_id, target_slot: fake_window,
+        lambda session, *, gym_account_id, target_slot: fake_window,
     )
 
     result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
@@ -532,7 +532,7 @@ def test_vacation_skip_guard_absent_lets_booking_proceed(
     )
     monkeypatch.setattr(
         "wodbuster_worker.booking.executor.find_covering_window",
-        lambda session, *, operator_id, target_slot: None,
+        lambda session, *, gym_account_id, target_slot: None,
     )
 
     result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))

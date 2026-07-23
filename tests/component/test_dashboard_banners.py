@@ -18,6 +18,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from .conftest import gym_account_id_for
+
 
 def _sign_in(
     app: FastAPI,
@@ -54,16 +56,17 @@ def _open_alert(
 
     now = datetime.now(tz=UTC)
     with engine.begin() as conn:
+        ga = gym_account_id_for(conn, operator_id)
         return int(
             conn.execute(
                 text(
                     "INSERT INTO alert "
-                    "(operator_id, kind, payload, first_emitted_at, last_emitted_at) "
-                    "VALUES (:op, :k, CAST(:p AS jsonb), :now, :now) "
+                    "(gym_account_id, kind, payload, first_emitted_at, last_emitted_at) "
+                    "VALUES (:ga, :k, CAST(:p AS jsonb), :now, :now) "
                     "RETURNING id"
                 ),
                 {
-                    "op": operator_id,
+                    "ga": ga,
                     "k": kind,
                     "p": json.dumps(payload or {}),
                     "now": now,

@@ -38,6 +38,8 @@ from wodbuster_worker.persistence.models import (
 from wodbuster_worker.security.cipher import Cipher
 from wodbuster_worker.security.cookie import Valid, ValidationResult
 
+from .conftest import gym_account_id_for
+
 _CEILING = timedelta(days=30)
 
 # Rule anchor: Wednesday 21:30 UTC class, 48h before-window offset.
@@ -83,7 +85,7 @@ def _pin_utc_timezone(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _make_operator(engine: Engine, *, telegram_chat_id: str | None = None) -> int:
     with engine.begin() as conn:
-        return int(
+        op_id = int(
             conn.execute(
                 text(
                     "INSERT INTO operator_profile "
@@ -93,6 +95,14 @@ def _make_operator(engine: Engine, *, telegram_chat_id: str | None = None) -> in
                 {"n": "Op", "tg": telegram_chat_id},
             ).scalar_one()
         )
+        conn.execute(
+            text(
+                "INSERT INTO gym_account (user_id, gym_slug, display_name, idu) "
+                "VALUES (:op, 'antworktrainingcenter', :n, :idu)"
+            ),
+            {"op": op_id, "n": "Op", "idu": f"idu{op_id:032d}"[:32]},
+        )
+        return op_id
 
 
 def _make_wednesday_rule(engine: Engine, operator_id: int) -> None:
@@ -103,14 +113,15 @@ def _make_wednesday_rule(engine: Engine, operator_id: int) -> None:
     relative to the projected cookie TTL.
     """
     with engine.begin() as conn:
+        gym_account_id = gym_account_id_for(conn, operator_id)
         conn.execute(
             text(
                 "INSERT INTO scheduler_rule "
-                "(operator_id, day_of_week, class_type, class_time, "
+                "(gym_account_id, day_of_week, class_type, class_time, "
                 "booking_opens_days_before, booking_opens_at, active) "
-                "VALUES (:op, 2, 'WOD', '21:30', 2, '21:30', true)"
+                "VALUES (:ga, 2, 'WOD', '21:30', 2, '21:30', true)"
             ),
-            {"op": operator_id},
+            {"ga": gym_account_id},
         )
 
 
@@ -118,9 +129,10 @@ def _seed_cookie(session_factory: sessionmaker[Session], operator_id: int) -> Ci
     cipher = Cipher(os.urandom(32))
     store = CookieStore(cipher)
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, operator_id)
         store.save(
             session,
-            operator_id,
+            gym_account_id,
             ".WBAuth-x",
             validated_at=datetime.now(tz=UTC),
         )
@@ -134,9 +146,10 @@ def _pin_projection(
     projected_ttl_at: datetime,
 ) -> None:
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, operator_id)
         session.execute(
-            text("UPDATE cookie_credential SET projected_ttl_at = :ttl WHERE operator_id = :op"),
-            {"ttl": projected_ttl_at, "op": operator_id},
+            text("UPDATE cookie_credential SET projected_ttl_at = :ttl WHERE gym_account_id = :ga"),
+            {"ttl": projected_ttl_at, "ga": gym_account_id},
         )
         session.commit()
 
@@ -154,16 +167,17 @@ def _run_one_cycle(
     now: datetime,
 ) -> int | None:
     with session_factory() as session:
-        outcome = probe.run(session, operator_id, now=now)
-        prev_at = previous_heartbeat_at(session, operator_id, outcome.probed_at)
+        gym_account_id = gym_account_id_for(session, operator_id)
+        outcome = probe.run(session, gym_account_id, now=now)
+        prev_at = previous_heartbeat_at(session, gym_account_id, outcome.probed_at)
         action = evaluate_cookie_expiring(
             session=session,
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             projected_ttl_at=outcome.projected_ttl_at,
             now=outcome.probed_at,
             previous_heartbeat_at=prev_at,
         )
-        alert_id = apply_alert_action(session, operator_id, action, now=outcome.probed_at)
+        alert_id = apply_alert_action(session, gym_account_id, action, now=outcome.probed_at)
         session.commit()
         return alert_id
 
@@ -208,7 +222,7 @@ def test_first_emission_creates_alert_and_two_outbox_rows(
         assert alert.payload["kind"] == "cookie_expiring"
         assert alert.payload["next_window_at"] == _NEXT_WINDOW.isoformat()
 
-        outbox = session.query(NotificationOutbox).filter_by(operator_id=op_id).all()
+        outbox = session.query(NotificationOutbox).filter_by(user_id=op_id).all()
         # Postgres enums sort by declaration order (telegram, banner),
         # not alphabetically. Assert on the *set* of kinds instead.
         by_kind = {row.kind: row for row in outbox}
@@ -227,7 +241,7 @@ def test_no_telegram_binding_writes_only_banner_row(
 
     with session_factory() as session:
         kinds = [
-            row.kind for row in session.query(NotificationOutbox).filter_by(operator_id=op_id).all()
+            row.kind for row in session.query(NotificationOutbox).filter_by(user_id=op_id).all()
         ]
         assert kinds == ["banner"]
 
@@ -251,7 +265,7 @@ def test_re_emission_updates_last_emitted_and_appends_outbox_rows(
         assert alert.first_emitted_at == _NOW
         assert alert.last_emitted_at == now_2
         # Two cycles x two outbox rows (banner + telegram) = 4 total.
-        outbox_count = session.query(NotificationOutbox).filter_by(operator_id=op_id).count()
+        outbox_count = session.query(NotificationOutbox).filter_by(user_id=op_id).count()
         assert outbox_count == 4
 
 
@@ -272,7 +286,7 @@ def test_recent_ack_suppresses_the_next_cycle(
     _run_one_cycle(session_factory, probe, op_id, now_2)
 
     with session_factory() as session:
-        outbox_count = session.query(NotificationOutbox).filter_by(operator_id=op_id).count()
+        outbox_count = session.query(NotificationOutbox).filter_by(user_id=op_id).count()
         # Cycle 1 wrote 2 outbox rows; cycle 2 Suppresses.
         assert outbox_count == 2
         alert = session.get(Alert, alert_id)
@@ -294,8 +308,11 @@ def test_projection_recovers_and_open_alert_is_cleared(
     _run_one_cycle(session_factory, probe, op_id, now_2)
 
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
         alert = session.execute(
-            select(Alert).where(Alert.operator_id == op_id, Alert.kind == "cookie_expiring")
+            select(Alert).where(
+                Alert.gym_account_id == gym_account_id, Alert.kind == "cookie_expiring"
+            )
         ).scalar_one()
         assert alert.closed_at == now_2
 
@@ -310,13 +327,17 @@ def test_close_open_cookie_expiring_on_paste_clears_alert(
 
     paste_time = _NOW + timedelta(minutes=5)
     with session_factory() as session:
-        closed_id = close_open_cookie_expiring(session, op_id, now=paste_time)
+        gym_account_id = gym_account_id_for(session, op_id)
+        closed_id = close_open_cookie_expiring(session, gym_account_id, now=paste_time)
         session.commit()
 
     assert closed_id is not None
     with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
         alert = session.execute(
-            select(Alert).where(Alert.operator_id == op_id, Alert.kind == "cookie_expiring")
+            select(Alert).where(
+                Alert.gym_account_id == gym_account_id, Alert.kind == "cookie_expiring"
+            )
         ).scalar_one()
         assert alert.closed_at == paste_time
 
@@ -327,7 +348,8 @@ def test_close_open_cookie_expiring_is_noop_when_none_open(
     op_id = _make_operator(postgres_engine)
 
     with session_factory() as session:
-        result = close_open_cookie_expiring(session, op_id, now=datetime.now(tz=UTC))
+        gym_account_id = gym_account_id_for(session, op_id)
+        result = close_open_cookie_expiring(session, gym_account_id, now=datetime.now(tz=UTC))
         session.commit()
 
     assert result is None
@@ -345,8 +367,9 @@ def test_no_rule_produces_no_alert(
 
     assert alert_id is None
     with session_factory() as session:
-        assert session.query(Alert).filter_by(operator_id=op_id).count() == 0
-        assert session.query(NotificationOutbox).filter_by(operator_id=op_id).count() == 0
+        gym_account_id = gym_account_id_for(session, op_id)
+        assert session.query(Alert).filter_by(gym_account_id=gym_account_id).count() == 0
+        assert session.query(NotificationOutbox).filter_by(user_id=op_id).count() == 0
 
 
 def test_heartbeat_reading_row_is_written_alongside_alert(
@@ -356,7 +379,8 @@ def test_heartbeat_reading_row_is_written_alongside_alert(
     _run_one_cycle(session_factory, probe, op_id, _NOW)
 
     with session_factory() as session:
-        readings = session.query(HeartbeatReading).filter_by(operator_id=op_id).all()
+        gym_account_id = gym_account_id_for(session, op_id)
+        readings = session.query(HeartbeatReading).filter_by(gym_account_id=gym_account_id).all()
         assert len(readings) == 1
         # ``alert_id`` on the reading stays null in this slice; a later
         # refactor may backfill it when a "readings that produced
