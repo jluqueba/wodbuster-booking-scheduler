@@ -45,6 +45,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "booking_outcome",
         "cookie_credential",
         "federated_identity",
+        "gym_account",
         "heartbeat_reading",
         "notification_outbox",
         "operator_profile",
@@ -155,7 +156,7 @@ def test_alert_partial_unique_index_present(migrated_engine: Engine) -> None:
         schema = schema.split(",")[0].strip().strip('"')
     names = {ix["name"] for ix in insp.get_indexes("alert", schema=schema)}
 
-    assert "uq_alert_open_operator_kind" in names
+    assert "uq_alert_open_gym_account_kind" in names
 
 
 def test_minimal_rows_round_trip_through_every_table(
@@ -176,22 +177,31 @@ def test_minimal_rows_round_trip_through_every_table(
             {"name": "Alice"},
         ).scalar_one()
 
-        rule_id = conn.execute(
+        gym_account_id = conn.execute(
             text(
-                "INSERT INTO scheduler_rule "
-                "(operator_id, day_of_week, class_type, class_time, "
-                "booking_opens_days_before, booking_opens_at, active) "
-                "VALUES (:op, 1, 'WOD', '18:30', 2, '21:30', TRUE) "
-                "RETURNING id"
+                "INSERT INTO gym_account (user_id, gym_slug, display_name, idu) "
+                "VALUES (:op, 'antworktrainingcenter', 'Adwork', 'idu-1') RETURNING id"
             ),
             {"op": op_id},
         ).scalar_one()
 
+        rule_id = conn.execute(
+            text(
+                "INSERT INTO scheduler_rule "
+                "(gym_account_id, day_of_week, class_type, class_time, "
+                "booking_opens_days_before, booking_opens_at, active) "
+                "VALUES (:ga, 1, 'WOD', '18:30', 2, '21:30', TRUE) "
+                "RETURNING id"
+            ),
+            {"ga": gym_account_id},
+        ).scalar_one()
+
         alert_id = conn.execute(
             text(
-                "INSERT INTO alert (operator_id, kind) VALUES (:op, 'cookie_expiring') RETURNING id"
+                "INSERT INTO alert (gym_account_id, kind) "
+                "VALUES (:ga, 'cookie_expiring') RETURNING id"
             ),
-            {"op": op_id},
+            {"ga": gym_account_id},
         ).scalar_one()
 
         conn.execute(
@@ -205,40 +215,40 @@ def test_minimal_rows_round_trip_through_every_table(
         conn.execute(
             text(
                 "INSERT INTO cookie_credential "
-                "(operator_id, cookie_ciphertext, cookie_nonce) "
-                "VALUES (:op, :ct, :n)"
+                "(gym_account_id, cookie_ciphertext, cookie_nonce) "
+                "VALUES (:ga, :ct, :n)"
             ),
-            {"op": op_id, "ct": b"\x00\x01", "n": b"\x02\x03\x04"},
+            {"ga": gym_account_id, "ct": b"\x00\x01", "n": b"\x02\x03\x04"},
         )
         conn.execute(
             text(
                 "INSERT INTO booking_outcome "
-                "(operator_id, rule_id, target_class, target_slot, "
+                "(gym_account_id, rule_id, target_class, target_slot, "
                 " terminal_status) "
-                "VALUES (:op, :r, 'WOD', :slot, 'granted')"
+                "VALUES (:ga, :r, 'WOD', :slot, 'granted')"
             ),
-            {"op": op_id, "r": rule_id, "slot": now},
+            {"ga": gym_account_id, "r": rule_id, "slot": now},
         )
         conn.execute(
             text(
                 "INSERT INTO vacation_window "
-                "(operator_id, start_date, end_date) "
-                "VALUES (:op, :s, :e)"
+                "(gym_account_id, start_date, end_date) "
+                "VALUES (:ga, :s, :e)"
             ),
-            {"op": op_id, "s": now.date(), "e": now.date()},
+            {"ga": gym_account_id, "s": now.date(), "e": now.date()},
         )
         conn.execute(
             text(
                 "INSERT INTO heartbeat_reading "
-                "(operator_id, result, alert_id) "
-                "VALUES (:op, 'valid', :a)"
+                "(gym_account_id, result, alert_id) "
+                "VALUES (:ga, 'valid', :a)"
             ),
-            {"op": op_id, "a": alert_id},
+            {"ga": gym_account_id, "a": alert_id},
         )
         conn.execute(
             text(
                 "INSERT INTO notification_outbox "
-                "(operator_id, kind, target, payload) "
+                "(user_id, kind, target, payload) "
                 "VALUES (:op, 'telegram', 'chat-1', '{}'::jsonb)"
             ),
             {"op": op_id},
