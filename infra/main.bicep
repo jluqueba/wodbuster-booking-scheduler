@@ -59,6 +59,12 @@ param wodbusterIdu string = ''
 @description('Container image reference for the worker Container App (registry/image:tag). Bound to `SERVICE_WORKER_IMAGE_NAME` (set by `azd deploy` and, in CI, discovered from the running Container App before `azd provision`). Empty on the very first bootstrap; the child module falls back to the public hello-world image so the resource can be created before anything is pushed. Preserving the tag across provisions is why F3.15 exists (previously each `azd provision` reverted the app to hello-world).')
 param containerImage string = ''
 
+@description('Custom domain (FQDN) to bind to the app ingress, e.g. `wodbuster-booking-scheduler.jluqueba.es`. Non-secret; bound to `AZURE_CUSTOM_DOMAIN_NAME` with an empty fallback. Empty leaves the app reachable only on its default `*.azurecontainerapps.io` FQDN. Requires operator-managed DNS records (A + `asuid` TXT) at the domain registrar; see docs.')
+param customDomainName string = ''
+
+@description('Resource ID of the managed certificate to SNI-bind to `customDomainName`. Non-secret; bound to `AZURE_CUSTOM_DOMAIN_CERTIFICATE_ID` with an empty fallback. Empty registers the hostname with bindingType `Disabled` (no TLS) so the managed certificate can be issued against it; set to the issued certificate id on the second provision to enable SNI. Two-run flow mirrors `acaOutboundIps`.')
+param customDomainCertificateId string = ''
+
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = {
   'azd-env-name': environmentName
@@ -90,6 +96,8 @@ module resources 'resources.bicep' = {
     wodbusterGym: wodbusterGym
     wodbusterIdu: wodbusterIdu
     containerImage: containerImage
+    customDomainName: customDomainName
+    customDomainCertificateId: customDomainCertificateId
   }
 }
 

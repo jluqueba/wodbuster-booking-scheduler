@@ -75,6 +75,12 @@ param wodbusterGym string = ''
 @description('WodBuster operator identifier (Phase 0 `idu`). Non-secret; injected as the `WODBUSTER_IDU` env var. Empty string leaves the client unwired.')
 param wodbusterIdu string = ''
 
+@description('Custom domain (FQDN) to bind to the app ingress, e.g. `wodbuster-booking-scheduler.jluqueba.es`. Empty leaves the app reachable only on its default `*.azurecontainerapps.io` FQDN. Binding requires two external prerequisites the operator sets up once in the DNS provider (see docs): an A record pointing the FQDN to the managed environment static IP, and a TXT record `asuid.<subdomain>` holding the app`s customDomainVerificationId.')
+param customDomainName string = ''
+
+@description('Resource ID of the managed certificate to bind to `customDomainName` with SNI. Empty registers the hostname with bindingType `Disabled` (no TLS) so the managed certificate can then be issued against it. This two-step flow is intentional: Azure cannot HTTP-validate a managed certificate for a hostname that is not yet a custom domain on the app, and the app cannot reference a certificate that does not yet exist — a circular dependency that a single-pass template cannot express. Mirrors the two-run `acaOutboundIps` convention. On run 1 leave this empty (hostname registered), issue the cert with `az containerapp hostname bind --validation-method HTTP`, read its id, then set it here for run 2 (SNI-enabled).')
+param customDomainCertificateId string = ''
+
 @description('Target port the container listens on.')
 @minValue(1)
 @maxValue(65535)
@@ -120,6 +126,22 @@ resource containerApp 'Microsoft.App/containerApps@2024-10-02-preview' = {
         targetPort: targetPort
         transport: 'auto'
         allowInsecure: false
+        // Custom domain binding (opt-in). Null when no domain is configured so
+        // the app keeps only its default FQDN. When a domain is set, the
+        // bindingType flips from `Disabled` (hostname registered, no cert) to
+        // `SniEnabled` once a certificate id is supplied — see the
+        // `customDomainCertificateId` param note for why this is two-phase.
+        customDomains: empty(customDomainName) ? null : [
+          union(
+            {
+              name: customDomainName
+              bindingType: empty(customDomainCertificateId) ? 'Disabled' : 'SniEnabled'
+            },
+            empty(customDomainCertificateId) ? {} : {
+              certificateId: customDomainCertificateId
+            }
+          )
+        ]
         traffic: [
           {
             latestRevision: true
@@ -238,10 +260,12 @@ resource containerApp 'Microsoft.App/containerApps@2024-10-02-preview' = {
               value: wodbusterIdu
             }
             {
-              // Predictable Container Apps FQDN pattern: <appName>.<env defaultDomain>.
-              // Avoids the self-reference cycle of properties.configuration.ingress.fqdn.
+              // Prefer the branded custom domain when configured; otherwise
+              // fall back to the predictable Container Apps FQDN pattern
+              // <appName>.<env defaultDomain>. Both avoid the self-reference
+              // cycle of properties.configuration.ingress.fqdn.
               name: 'APP_BASE_URL'
-              value: 'https://ca-${resourceToken}.${managedEnvironment.properties.defaultDomain}'
+              value: empty(customDomainName) ? 'https://ca-${resourceToken}.${managedEnvironment.properties.defaultDomain}' : 'https://${customDomainName}'
             }
           ]
         }

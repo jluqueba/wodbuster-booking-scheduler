@@ -54,6 +54,12 @@ param wodbusterIdu string = ''
 @description('Container image reference for the worker (registry/image:tag). Forwarded from `main.bicep` (which reads `SERVICE_WORKER_IMAGE_NAME`). Empty on first bootstrap; the child module substitutes a public hello-world image so the Container App can be created before anything is pushed to ACR.')
 param containerImage string = ''
 
+@description('Custom domain (FQDN) to bind to the app ingress. Empty leaves only the default `*.azurecontainerapps.io` FQDN. Forwarded to the container app module.')
+param customDomainName string = ''
+
+@description('Resource ID of the managed certificate to bind to `customDomainName`. Empty registers the hostname without TLS so the certificate can be issued against it (two-run flow). Forwarded to the container app module.')
+param customDomainCertificateId string = ''
+
 module observability 'modules/observability.bicep' = {
   name: 'observability'
   params: {
@@ -134,6 +140,8 @@ module containerApp 'modules/containerapp.bicep' = {
     wodbusterGym: wodbusterGym
     wodbusterIdu: wodbusterIdu
     containerImage: containerImage
+    customDomainName: customDomainName
+    customDomainCertificateId: customDomainCertificateId
   }
 }
 
