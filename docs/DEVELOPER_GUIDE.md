@@ -145,31 +145,36 @@ sequenceDiagram
 
 Every state-mutating write that produces an operator-visible signal writes a `notification_outbox` row in the same transaction. A dispatcher job drains the outbox, so a delivery failure never loses the underlying record.
 
+For a multi-gym user, the scheduler resolves each rule's gym account first and books against that gym's own subdomain, athlete `idu`, and encrypted cookie through a per-gym client factory (`src/wodbuster_worker/wodbuster_client/client.py`, `booking/executor.py`). A deactivated gym account books nothing; the booking job skips it.
+
 ### 1.6 Data model
 
 ```mermaid
 erDiagram
     operator_profile ||--o{ federated_identity : "allow-listed logins"
-    operator_profile ||--o{ scheduler_rule : "weekly intents"
-    operator_profile ||--|| cookie_credential : "active .WBAuth"
-    operator_profile ||--o{ booking_outcome : "attempts"
-    operator_profile ||--o{ vacation_window : "skip ranges"
-    operator_profile ||--o{ heartbeat_reading : "probes"
-    operator_profile ||--o{ alert : "conditions"
+    operator_profile ||--o{ gym_account : "one per WodBuster gym"
     operator_profile ||--o{ notification_outbox : "pending signals"
+    gym_account ||--|| cookie_credential : "active .WBAuth"
+    gym_account ||--o{ scheduler_rule : "weekly intents"
+    gym_account ||--o{ booking_outcome : "attempts"
+    gym_account ||--o{ vacation_window : "skip ranges"
+    gym_account ||--o{ heartbeat_reading : "probes"
+    gym_account ||--o{ alert : "conditions"
     scheduler_rule ||--o{ booking_outcome : "produced by"
     heartbeat_reading }o--o| alert : "raised"
 ```
 
 Key tables (`src/wodbuster_worker/persistence/models.py`):
 
-- `operator_profile`: the single human user; every other row carries an `operator_id`.
+- `operator_profile`: the human user. Owns login identities, gym accounts, and the notification stream.
 - `federated_identity`: OAuth identities allow-listed for the operator; unique on `(provider, subject_id)`.
-- `scheduler_rule`: recurring weekly booking intent with a primary target and an optional second shot; the window opens `booking_opens_days_before` days before the class at `booking_opens_at`.
-- `cookie_credential`: one encrypted `.WBAuth` blob per operator (ciphertext + nonce, no plaintext column).
+- `gym_account`: one row per WodBuster gym the user books at, carrying the gym subdomain slug, the discovered athlete `idu`, a display name, and an `active` flag. Unique on `(user_id, gym_slug)`. Every booking-scoped table keys off `gym_account_id`, so each gym books, probes, and raises alerts independently.
+- `scheduler_rule`: recurring weekly booking intent (scoped to a gym account) with a primary target and an optional second shot; the window opens `booking_opens_days_before` days before the class at `booking_opens_at`.
+- `cookie_credential`: one encrypted `.WBAuth` blob per gym account (ciphertext + nonce, no plaintext column). The ciphertext is AES-256-GCM bound to the gym account, so a stored row cannot be replayed against another gym.
 - `booking_outcome`: one row per attempt with a terminal status (`granted`, `full`, `cookie_invalid`, `class_not_visible`, `upstream_unavailable`, `cancelled`, `skipped`).
-- `vacation_window`: date ranges with skip-and-cancel semantics.
-- `heartbeat_reading`, `alert`, `notification_outbox`: the observability and notification pipeline. At most one open alert exists per `(operator_id, kind)`, enforced by a partial unique index.
+- `vacation_window`: date ranges (per gym account) with skip-and-cancel semantics.
+- `heartbeat_reading`, `alert`: the per-gym observability pipeline. At most one open alert exists per `(gym_account_id, kind)`, enforced by a partial unique index.
+- `notification_outbox`: pending operator-visible signals scoped to `user_id` for delivery, with an optional `gym_account_id` for gym context.
 
 ### 1.7 Deployment and CI/CD
 
@@ -298,7 +303,8 @@ After bootstrap, all infrastructure changes go through pull requests and the `in
 | Feature | Summary |
 |---------|---------|
 | Recurring scheduler rules | Weekly booking intents with a primary target class and an optional second shot; the worker fires a single request at window open. |
-| Cookie paste-and-validate | The operator pastes the `.WBAuth` cookie once; it is validated against WodBuster and stored encrypted. |
+| Multiple gyms | The user adds more than one WodBuster gym; each gym account carries its own subdomain, athlete `idu`, and encrypted cookie, and books, probes, and alerts independently. Accounts can be deactivated (stops bookings, keeps history) and reactivated. |
+| Cookie paste-and-validate | The operator pastes the `.WBAuth` cookie per gym account; it is validated against that gym and stored encrypted, bound to the gym account. |
 | Manual booking | One-off booking for a specific date and time, from the web UI or Telegram. |
 | Cancellation | Single-booking cancel (idempotent) from the web UI or Telegram, plus bulk cancel by date range (vacation mode). |
 | Heartbeat and alerts | Hourly cookie probe projects time-to-expiry and alerts the operator with lead time before the next booking window. |
@@ -335,7 +341,8 @@ Every page except the landing hero and `/health` is gated by an authenticated se
 |------|----------|----------|
 | `/` | `landing.html` / `dashboard.html` | Landing hero for anonymous visitors; for a signed-in operator, a dashboard showing next booking, cookie health, and banners. |
 | `/auth/{provider}/login`, `/auth/{provider}/callback`, `/auth/logout` | (redirects) | OAuth sign-in and sign-out for Microsoft, GitHub, and Google. |
-| `/cookie` | `cookie/` | Paste-and-validate the `.WBAuth` cookie; shows the projected time-to-expiry countdown. |
+| `/gyms`, `/gyms/{id}/cookie`, `/gyms/{id}/deactivate`, `/gyms/{id}/reactivate` | `gyms/list.html` | List and add gym accounts (allow-list validated, athlete `idu` auto-discovered); refresh one gym's cookie in isolation; deactivate or reactivate an account. Every gym-scoped POST asserts account ownership (404 otherwise). |
+| `/cookie` | `cookie/` | Paste-and-validate the `.WBAuth` cookie for the gym account; shows the projected time-to-expiry countdown. |
 | `/rules`, `/rules/new`, `/rules/{id}` | `rules/` | List, create, edit, and delete scheduler rules; a class-picker helper reads available class types from WodBuster. |
 | `/history` | `history.html` | Booking attempt history with terminal statuses. |
 | `/book-now` | `book_now.html` | Manual one-off booking form. |

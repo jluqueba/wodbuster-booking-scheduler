@@ -300,6 +300,12 @@ EN: dict[str, str] = {
         "Every outcome shows up as a banner in-app and a message on "
         "Telegram. Never surprise-fail on a Monday."
     ),
+    "landing.cards.gyms.title": "🏢 Multiple gyms",
+    "landing.cards.gyms.body": (
+        "Book at more than one WodBuster gym from a single account. Each "
+        "gym has its own login and books independently, so a cookie "
+        "problem at one never affects the others."
+    ),
     # -- auth --------------------------------------------------------
     "auth.landing.title": "WodBuster Booking Scheduler",
     "auth.denied.title": "🚫 Access denied",
@@ -790,6 +796,13 @@ ES: dict[str, str] = {
     "landing.cards.notifications.body": (
         "Cada resultado aparece como aviso en la app y como mensaje en "
         "Telegram. Sin sustos de última hora un lunes."
+    ),
+    "landing.cards.gyms.title": "🏢 Varios gimnasios",
+    "landing.cards.gyms.body": (
+        "Reserva en más de un gimnasio de WodBuster desde una sola cuenta. "
+        "Cada gimnasio tiene su propio acceso y reserva de forma "
+        "independiente, así que un problema con la cookie de uno nunca "
+        "afecta a los demás."
     ),
     # -- auth --------------------------------------------------------
     "auth.landing.title": "WodBuster Booking Scheduler",
