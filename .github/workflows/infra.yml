@@ -52,6 +52,14 @@ jobs:
       # is empty the /cookie route returns 503; the container still boots.
       WODBUSTER_GYM: ${{ vars.WODBUSTER_GYM }}
       WODBUSTER_IDU: ${{ vars.WODBUSTER_IDU }}
+      # Custom domain binding (opt-in, non-secret). Consumed by
+      # main.parameters.json. IMPORTANT: leaving these empty removes the
+      # custom domain from the running app on the next provision, so keep
+      # both repo variables populated whenever a custom domain is bound.
+      # AZURE_CUSTOM_DOMAIN_CERTIFICATE_ID is the resource id of the managed
+      # certificate issued for the hostname (see docs, two-run flow).
+      AZURE_CUSTOM_DOMAIN_NAME: ${{ vars.AZURE_CUSTOM_DOMAIN_NAME }}
+      AZURE_CUSTOM_DOMAIN_CERTIFICATE_ID: ${{ vars.AZURE_CUSTOM_DOMAIN_CERTIFICATE_ID }}
 
     steps:
       - name: Checkout
