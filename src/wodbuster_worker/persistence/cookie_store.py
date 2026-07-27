@@ -39,11 +39,14 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..security.cipher import Cipher, InvalidCipherText
 from .models import CookieCredential, GymAccount
+
+_log = structlog.get_logger(__name__)
 
 
 class CookieDecryptError(Exception):
@@ -167,16 +170,38 @@ class CookieStore:
         if row is None:
             return None
         associated_data = self._associated_data(session, gym_account_id)
+        ciphertext = bytes(row.cookie_ciphertext)
+        nonce = bytes(row.cookie_nonce)
         try:
             plaintext = self._cipher.decrypt(
-                bytes(row.cookie_ciphertext),
-                bytes(row.cookie_nonce),
+                ciphertext,
+                nonce,
                 associated_data=associated_data,
             )
-        except InvalidCipherText as exc:
-            raise CookieDecryptError(
-                f"cookie for gym account {gym_account_id} failed authentication"
-            ) from exc
+        except InvalidCipherText:
+            # Backward compatibility (multi-gym migration): cookies stored
+            # in the single-gym era were encrypted WITHOUT associated data
+            # (SEC-005 AAD binding did not exist yet), and the migration
+            # moves that ciphertext onto the seeded gym account without
+            # re-encrypting it. Fall back to a no-AAD decrypt so an
+            # existing production cookie keeps booking; the next re-paste
+            # (or refresh) upgrades it to the bound form via ``save``.
+            #
+            # This does NOT reopen the SEC-005 replay hole: a ciphertext
+            # written WITH AAD for another gym account fails both the
+            # bound decrypt above and this no-AAD retry, so only a
+            # genuinely legacy blob is ever accepted here.
+            try:
+                plaintext = self._cipher.decrypt(ciphertext, nonce, associated_data=None)
+            except InvalidCipherText as exc:
+                raise CookieDecryptError(
+                    f"cookie for gym account {gym_account_id} failed authentication"
+                ) from exc
+            _log.warning(
+                "cookie.decrypt.legacy_no_aad",
+                gym_account_id=gym_account_id,
+                detail="decrypted a pre-migration cookie without AAD; re-paste to upgrade",
+            )
         return plaintext.decode("utf-8")
 
 

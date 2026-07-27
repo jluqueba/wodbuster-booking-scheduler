@@ -138,6 +138,40 @@ def test_cookie_ciphertext_is_bound_to_its_gym_account(
         store.load(session, ga_b)
 
 
+def test_load_accepts_legacy_cookie_encrypted_without_aad(
+    postgres_engine: Engine,
+    session_factory: sessionmaker[Session],
+    store: CookieStore,
+    cipher: Cipher,
+) -> None:
+    """Migration compatibility: a cookie encrypted before the SEC-005 AAD
+    binding (single-gym era) is still decryptable through ``load``.
+
+    The multi-gym migration moves the existing production ciphertext onto
+    the seeded gym account WITHOUT re-encrypting it, so it carries no
+    associated data. ``load`` must fall back to a no-AAD decrypt or the
+    scheduler could not read the cookie and bookings would break.
+    """
+    ga = _make_operator(postgres_engine, name="Legacy")
+    # Encrypt exactly like the single-gym CookieStore did: no AAD.
+    ciphertext, nonce = cipher.encrypt(b".WBAuth-legacy")
+
+    with session_factory() as session:
+        session.add(
+            CookieCredential(
+                gym_account_id=ga,
+                cookie_ciphertext=ciphertext,
+                cookie_nonce=nonce,
+                last_validated_at=datetime.now(tz=UTC),
+                last_probe_status="valid",
+            )
+        )
+        session.commit()
+
+    with session_factory() as session:
+        assert store.load(session, ga) == ".WBAuth-legacy"
+
+
 def test_repeat_save_keeps_exactly_one_row_per_operator(
     postgres_engine: Engine,
     session_factory: sessionmaker[Session],
