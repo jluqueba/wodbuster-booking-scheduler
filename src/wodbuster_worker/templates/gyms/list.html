@@ -20,7 +20,7 @@
     {% if gyms %}
       <table class="wb-table">
         <thead>
-          <tr><th>Gym</th><th>Slug</th><th>Status</th></tr>
+          <tr><th>Gym</th><th>Slug</th><th>Status</th><th>Actions</th></tr>
         </thead>
         <tbody>
           {% for gym in gyms %}
@@ -28,6 +28,49 @@
               <td>{{ gym.display_name }}</td>
               <td><code>{{ gym.gym_slug }}</code></td>
               <td>{{ "Active" if gym.active else "Inactive" }}</td>
+              <td>
+                <div class="wb-gym-actions">
+                  {% if gym.active %}
+                    <form
+                      method="post"
+                      action="{{ lang_url('/gyms/' ~ gym.id ~ '/deactivate') }}"
+                    >
+                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                      <button type="submit" class="wb-btn--secondary">Deactivate</button>
+                    </form>
+                  {% else %}
+                    <form
+                      method="post"
+                      action="{{ lang_url('/gyms/' ~ gym.id ~ '/reactivate') }}"
+                    >
+                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                      <button type="submit" class="wb-btn--secondary">Reactivate</button>
+                    </form>
+                  {% endif %}
+
+                  <details class="wb-gym-refresh">
+                    <summary>Refresh cookie</summary>
+                    <form
+                      method="post"
+                      action="{{ lang_url('/gyms/' ~ gym.id ~ '/cookie') }}"
+                    >
+                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                      <label for="cookie_value_{{ gym.id }}">
+                        New .WBAuth cookie for {{ gym.display_name }}
+                      </label>
+                      <textarea
+                        id="cookie_value_{{ gym.id }}"
+                        name="cookie_value"
+                        rows="3"
+                        spellcheck="false"
+                        autocomplete="off"
+                        required
+                      ></textarea>
+                      <button type="submit" class="wb-btn--primary">Refresh cookie</button>
+                    </form>
+                  </details>
+                </div>
+              </td>
             </tr>
           {% endfor %}
         </tbody>

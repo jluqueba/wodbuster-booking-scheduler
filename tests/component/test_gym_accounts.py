@@ -230,3 +230,135 @@ def test_gyms_list_shows_owned_and_offers_addable(
     body = resp.text
     assert "antworktrainingcenter" in body  # owned gym listed
     assert "adwork" in body  # addable option in the form
+
+
+def _active(engine: Engine, gym_account_id: int) -> bool:
+    with engine.connect() as conn:
+        return bool(
+            conn.execute(
+                text("SELECT active FROM gym_account WHERE id = :i"), {"i": gym_account_id}
+            ).scalar_one()
+        )
+
+
+def _gym_id(engine: Engine, user_id: int, slug: str) -> int:
+    with engine.connect() as conn:
+        return int(
+            conn.execute(
+                text("SELECT id FROM gym_account WHERE user_id = :u AND gym_slug = :s"),
+                {"u": user_id, "s": slug},
+            ).scalar_one()
+        )
+
+
+def _cookie_ciphertext(engine: Engine, gym_account_id: int) -> bytes | None:
+    with engine.connect() as conn:
+        return conn.execute(
+            text("SELECT cookie_ciphertext FROM cookie_credential WHERE gym_account_id = :g"),
+            {"g": gym_account_id},
+        ).scalar_one_or_none()
+
+
+def test_deactivate_then_reactivate_toggles_active_flag(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-006: the owner can deactivate a gym account and reactivate it."""
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory(gym_allowlist=_ALLOWLIST)
+    _install_factory(app)
+    with postgres_engine.connect() as conn:
+        gid = gym_account_id_for(conn, op_id)
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        assert _active(postgres_engine, gid) is True
+
+        resp = client.post(f"/gyms/{gid}/deactivate", data={"_csrf": _csrf(client)})
+        assert resp.status_code == 303
+        assert "flash_kind=info" in resp.headers["location"]
+        assert _active(postgres_engine, gid) is False
+
+        resp2 = client.post(f"/gyms/{gid}/reactivate", data={"_csrf": _csrf(client)})
+        assert resp2.status_code == 303
+        assert _active(postgres_engine, gid) is True
+
+
+def test_refresh_cookie_is_isolated_to_one_gym(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-005: refreshing gym A's cookie leaves gym B's cookie untouched."""
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory(gym_allowlist=_ALLOWLIST)
+    _install_factory(app)
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        # Add a second gym (adwork) — this stores a cookie for it.
+        add = client.post(
+            "/gyms",
+            data={
+                "gym_slug": "adwork",
+                "cookie_value": ".WBAuth-adwork",
+                "_csrf": _csrf(client),
+            },
+        )
+        assert add.status_code == 303
+        adwork_id = _gym_id(postgres_engine, op_id, "adwork")
+        antwork_id = _gym_id(postgres_engine, op_id, "antworktrainingcenter")
+
+        # Seed an initial cookie for the first gym via refresh.
+        r0 = client.post(
+            f"/gyms/{antwork_id}/cookie",
+            data={"cookie_value": ".WBAuth-antwork", "_csrf": _csrf(client)},
+        )
+        assert r0.status_code == 303
+
+        # Snapshot gym B (adwork) before refreshing gym A again.
+        before = _cookie_ciphertext(postgres_engine, adwork_id)
+        assert before is not None
+
+        r1 = client.post(
+            f"/gyms/{antwork_id}/cookie",
+            data={"cookie_value": ".WBAuth-antwork-rotated", "_csrf": _csrf(client)},
+        )
+        assert r1.status_code == 303
+        assert "flash_kind=info" in r1.headers["location"]
+
+    # Gym B's stored cookie is byte-identical: the refresh touched only gym A.
+    assert _cookie_ciphertext(postgres_engine, adwork_id) == before
+    assert _cookie_ciphertext(postgres_engine, antwork_id) is not None
+
+
+def test_gym_scoped_routes_reject_another_users_account_with_404(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SEC-002 / CC-003: a user cannot deactivate or refresh another
+    user's gym account; the probe returns 404 with no state change."""
+    op_a, _subject_a = seed_operator(provider="microsoft", display_name="Alice")
+    _op_b, subject_b = seed_operator(provider="microsoft", display_name="Bob")
+    app = app_factory(gym_allowlist=_ALLOWLIST)
+    _install_factory(app)
+    a_gid = _gym_id(postgres_engine, op_a, "antworktrainingcenter")
+    assert _active(postgres_engine, a_gid) is True
+
+    # Signed in as B, attempt to act on A's gym account.
+    with _sign_in(app, subject_b, "Bob", monkeypatch) as client:
+        deny = client.post(f"/gyms/{a_gid}/deactivate", data={"_csrf": _csrf(client)})
+        assert deny.status_code == 404
+
+        deny2 = client.post(
+            f"/gyms/{a_gid}/cookie",
+            data={"cookie_value": ".WBAuth-evil", "_csrf": _csrf(client)},
+        )
+        assert deny2.status_code == 404
+
+    # A's account is untouched and never grew a cookie.
+    assert _active(postgres_engine, a_gid) is True
+    assert _cookie_ciphertext(postgres_engine, a_gid) is None

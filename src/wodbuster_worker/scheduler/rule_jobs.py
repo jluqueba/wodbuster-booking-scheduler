@@ -189,6 +189,15 @@ def book_rule(
                 gym_account_id=rule.gym_account_id,
             )
             return
+        if not gym_account.active:
+            # FR-006: a deactivated gym account runs no bookings. Its
+            # rules may still be active, but the account gates them.
+            _log.info(
+                "scheduler.booking.gym_account_inactive",
+                rule_id=rule_id,
+                gym_account_id=rule.gym_account_id,
+            )
+            return
         gym_ref = _GymRef(gym_slug=gym_account.gym_slug, idu=gym_account.idu)
 
         now = datetime.now(tz=UTC)

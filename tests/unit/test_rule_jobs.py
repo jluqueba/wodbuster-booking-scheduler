@@ -382,6 +382,35 @@ def test_book_rule_skips_when_rule_inactive() -> None:
     executor.book.assert_not_called()
 
 
+def test_book_rule_skips_when_gym_account_inactive() -> None:
+    """FR-006: a deactivated gym account runs no bookings even if its
+    rule is still active."""
+    rule = _rule()
+
+    @contextmanager
+    def factory() -> Iterator[Any]:
+        session = MagicMock()
+
+        def _get(model: Any, key: Any) -> Any:
+            if model is SchedulerRule and key == rule.id:
+                return rule
+            if model is GymAccount:
+                gym_account = MagicMock()
+                gym_account.active = False
+                return gym_account
+            return None
+
+        session.get.side_effect = _get
+        yield session
+
+    executor = MagicMock()
+    executor.for_gym_account.return_value = executor
+
+    book_rule(rule.id, executor_provider=executor, session_factory=factory, scheduler=None)
+
+    executor.book.assert_not_called()
+
+
 def test_book_rule_reschedules_when_scheduler_provided() -> None:
     rule = _rule()
     factory = _session_factory_returning(rule)

@@ -25,7 +25,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
 from ..auth.csrf import get_csrf_token, verify_csrf
-from ..auth.deps import require_session
+from ..auth.deps import require_owned_gym_account, require_session
 from ..i18n import lang_url
 from ..persistence.engine import get_session
 from ..persistence.models import GymAccount
@@ -34,7 +34,12 @@ from ..wodbuster_client.client import (
     WodBusterProtocolError,
     WodBusterTransportError,
 )
-from .service import GymAlreadyExistsError, add_gym_account
+from .service import (
+    GymAlreadyExistsError,
+    add_gym_account,
+    refresh_gym_cookie,
+    set_gym_account_active,
+)
 
 router = APIRouter(prefix="/gyms", tags=["gyms"])
 _log = structlog.get_logger(__name__)
@@ -151,6 +156,100 @@ def gyms_add(
         session.commit()
 
     return _redirect_with_flash(f"Added gym '{slug}'.", kind="info")
+
+
+@router.post(
+    "/{gym_account_id}/cookie",
+    name="gyms_refresh_cookie",
+    dependencies=[Depends(verify_csrf)],
+)
+def gyms_refresh_cookie(
+    request: Request,
+    cookie_value: str = Form(...),
+    gym_account_id: int = Depends(require_owned_gym_account),
+) -> Response:
+    """Re-validate and store a fresh cookie for one gym account (FR-005).
+
+    Scoped to the single ``gym_account_id`` in the path (ownership
+    enforced by :func:`require_owned_gym_account`, SEC-002), so
+    refreshing one gym's cookie never touches another's.
+    """
+    settings = request.app.state.settings
+    cookie_store = getattr(request.app.state, "cookie_store", None)
+    factory = getattr(request.app.state, "gym_discovery_factory", None)
+    if cookie_store is None or factory is None:
+        return _redirect_with_flash(
+            "Gym management is temporarily unavailable. Try again shortly.", kind="error"
+        )
+
+    del settings  # not needed here; slug comes from the stored account
+    with get_session() as session:
+        account = session.get(GymAccount, gym_account_id)
+        if account is None:  # pragma: no cover - authz guarantees existence
+            return _redirect_with_flash("That gym no longer exists.", kind="error")
+        client = factory(account.gym_slug)
+        try:
+            refresh_gym_cookie(
+                session,
+                gym_account_id=gym_account_id,
+                cookie_value=cookie_value,
+                cookie_store=cookie_store,
+                client=client,
+            )
+        except ValueError:
+            return _redirect_with_flash(
+                "Paste the .WBAuth cookie value before submitting.", kind="error"
+            )
+        except WodBusterAuthError:
+            return _redirect_with_flash(
+                "That cookie was rejected. Re-copy the .WBAuth value from a signed-in "
+                "browser session and try again.",
+                kind="error",
+            )
+        except (WodBusterProtocolError, WodBusterTransportError):
+            _log.warning("gyms.refresh.discovery_failed", gym_account_id=gym_account_id)
+            return _redirect_with_flash(
+                "Could not reach that gym right now. Try again in a minute.", kind="error"
+            )
+        session.commit()
+
+    return _redirect_with_flash("Cookie refreshed.", kind="info")
+
+
+@router.post(
+    "/{gym_account_id}/deactivate",
+    name="gyms_deactivate",
+    dependencies=[Depends(verify_csrf)],
+)
+def gyms_deactivate(
+    request: Request,
+    gym_account_id: int = Depends(require_owned_gym_account),
+) -> Response:
+    """Deactivate a gym account (FR-006): stops future bookings/heartbeats."""
+    del request  # only the authz dependency is needed
+    with get_session() as session:
+        set_gym_account_active(session, gym_account_id, active=False)
+        session.commit()
+    return _redirect_with_flash(
+        "Gym deactivated. It will not book or probe until you reactivate it.", kind="info"
+    )
+
+
+@router.post(
+    "/{gym_account_id}/reactivate",
+    name="gyms_reactivate",
+    dependencies=[Depends(verify_csrf)],
+)
+def gyms_reactivate(
+    request: Request,
+    gym_account_id: int = Depends(require_owned_gym_account),
+) -> Response:
+    """Reactivate a gym account (FR-006): restores bookings and heartbeats."""
+    del request  # only the authz dependency is needed
+    with get_session() as session:
+        set_gym_account_active(session, gym_account_id, active=True)
+        session.commit()
+    return _redirect_with_flash("Gym reactivated.", kind="info")
 
 
 __all__ = ["router"]

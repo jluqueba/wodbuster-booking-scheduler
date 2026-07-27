@@ -18,9 +18,12 @@ empty dict, so a missing ``operator_id`` is the sole check needed.
 
 from __future__ import annotations
 
-from fastapi import Request
+from fastapi import Depends, HTTPException, Request
+from sqlalchemy import select
 
 from ..i18n import lang_url
+from ..persistence.engine import get_session
+from ..persistence.models import GymAccount
 
 # Default provider used for the "not signed in" redirect. Hardcoded
 # per the conductor plan; a later story can make it configurable.
@@ -56,4 +59,38 @@ def require_session(request: Request) -> int:
     return operator_id
 
 
-__all__ = ["DEFAULT_LOGIN_PATH", "AuthRedirectRequired", "require_session"]
+def require_owned_gym_account(
+    gym_account_id: int,
+    operator_id: int = Depends(require_session),
+) -> int:
+    """Resolve a path ``gym_account_id`` and assert the caller owns it.
+
+    The shared authorization seam for every gym-account-scoped route
+    (cookie refresh, deactivate/reactivate). It reads the account id
+    from the request path, then confirms a row exists whose
+    ``user_id`` equals the session operator. Any mismatch — a
+    non-existent id or another user's account — raises a 404 with no
+    data returned and no state changed (SEC-002 / CC-003: an IDOR
+    probe is indistinguishable from a missing resource).
+
+    Returns the validated ``gym_account_id`` so the route can load
+    whatever columns it needs inside its own transaction.
+    """
+    with get_session() as session:
+        owned = session.scalars(
+            select(GymAccount.id).where(
+                GymAccount.id == gym_account_id,
+                GymAccount.user_id == operator_id,
+            )
+        ).first()
+    if owned is None:
+        raise HTTPException(status_code=404, detail="gym account not found")
+    return gym_account_id
+
+
+__all__ = [
+    "DEFAULT_LOGIN_PATH",
+    "AuthRedirectRequired",
+    "require_owned_gym_account",
+    "require_session",
+]

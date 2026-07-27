@@ -24,6 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import Settings
+from ..heartbeat.alerts import close_open_cookie_expiring
 from ..persistence.cookie_store import CookieStore
 from ..persistence.models import GymAccount
 from ..wodbuster_client.client import WodBusterClient, WodBusterClientFactory
@@ -143,10 +144,72 @@ def add_gym_account(
     return int(account.id)
 
 
+def refresh_gym_cookie(
+    session: Session,
+    *,
+    gym_account_id: int,
+    cookie_value: str,
+    cookie_store: CookieStore,
+    client: DiscoveryClientProtocol,
+    now: datetime | None = None,
+) -> None:
+    """Re-validate and store a fresh cookie for one gym account (FR-005).
+
+    Scoped to a single ``gym_account_id`` so refreshing gym A's cookie
+    never touches gym B's row (refresh isolation). ``client`` must be a
+    discovery-only client already built for this account's subdomain,
+    so the pasted cookie is validated against the correct gym before it
+    is stored. The operator's idu is re-read and updated if it changed.
+
+    On success the cookie row is replaced and any open
+    ``cookie_expiring`` alert for the account is closed so the dashboard
+    banner clears immediately (US4.4 clear-on-refresh) rather than at
+    the next heartbeat.
+
+    Raises:
+      - ``ValueError``: blank cookie.
+      - ``WodBusterAuthError`` / ``WodBusterProtocolError`` /
+        ``WodBusterTransportError``: the cookie was rejected or the gym
+        could not be reached. The stored cookie is left untouched.
+
+    The caller owns the transaction (commit / rollback).
+    """
+    if not cookie_value.strip():
+        raise ValueError("cookie value must not be blank")
+    account = session.get(GymAccount, gym_account_id)
+    if account is None:  # pragma: no cover - authz guarantees existence
+        raise ValueError(f"gym account {gym_account_id} not found")
+
+    when = now or datetime.now(tz=UTC)
+    # Validates the cookie AND re-reads the operator's own idu (SEC-003).
+    idu = client.discover_idu(cookie_value)
+    if idu != account.idu:
+        account.idu = idu
+    cookie_store.save(session, gym_account_id, cookie_value, validated_at=when)
+    close_open_cookie_expiring(session, gym_account_id, now=when)
+
+
+def set_gym_account_active(session: Session, gym_account_id: int, *, active: bool) -> None:
+    """Toggle a gym account's ``active`` flag (FR-006).
+
+    A deactivated account keeps its history but runs no future bookings
+    and no heartbeat probes: :func:`scheduler.rule_jobs.book_rule` skips
+    inactive accounts and the heartbeat sweep only iterates
+    :func:`persistence.gym_accounts.list_active_gym_account_ids`.
+    Reactivating restores both. The caller owns the transaction.
+    """
+    account = session.get(GymAccount, gym_account_id)
+    if account is None:  # pragma: no cover - authz guarantees existence
+        raise ValueError(f"gym account {gym_account_id} not found")
+    account.active = active
+
+
 __all__ = [
     "DiscoveryClientProtocol",
     "GymAlreadyExistsError",
     "add_gym_account",
     "gym_client_factory",
+    "refresh_gym_cookie",
     "resolve_gym_client",
+    "set_gym_account_active",
 ]
