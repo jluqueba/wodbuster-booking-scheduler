@@ -46,6 +46,7 @@ from sqlalchemy.orm import Session
 from ..persistence.models import (
     Alert,
     BookingOutcome,
+    GymAccount,
     NotificationOutbox,
     OperatorProfile,
     SchedulerRule,
@@ -68,7 +69,7 @@ class MissedWindow:
     """One rule/window pair that fired without producing an outcome."""
 
     rule_id: int
-    operator_id: int
+    gym_account_id: int
     target_class: str
     window_open: datetime
     target_slot: datetime
@@ -146,7 +147,7 @@ def detect_missed_windows(
         missed.append(
             MissedWindow(
                 rule_id=int(rule.id),
-                operator_id=int(rule.operator_id),
+                gym_account_id=int(rule.gym_account_id),
                 target_class=str(rule.class_type),
                 window_open=last_open,
                 target_slot=target_slot,
@@ -162,9 +163,9 @@ def emit_anomaly_alerts(
     *,
     now: datetime,
 ) -> list[int]:
-    """Get-or-create one ``heartbeat_anomaly`` alert per operator.
+    """Get-or-create one ``heartbeat_anomaly`` alert per gym account.
 
-    Groups ``missed`` by ``operator_id``. For each group, upserts the
+    Groups ``missed`` by ``gym_account_id``. For each group, upserts the
     open alert row, refreshes ``last_emitted_at``, replaces
     ``payload`` with the current set of missed windows, and enqueues
     banner + Telegram outbox rows. Returns the alert ids that were
@@ -172,15 +173,15 @@ def emit_anomaly_alerts(
     """
     grouped: dict[int, list[MissedWindow]] = {}
     for m in missed:
-        grouped.setdefault(m.operator_id, []).append(m)
+        grouped.setdefault(m.gym_account_id, []).append(m)
 
     touched: list[int] = []
-    for operator_id, windows in grouped.items():
+    for gym_account_id, windows in grouped.items():
         payload = _build_payload(windows)
-        alert = _open_alert(session, operator_id)
+        alert = _open_alert(session, gym_account_id)
         if alert is None:
             alert = Alert(
-                operator_id=operator_id,
+                gym_account_id=gym_account_id,
                 kind=_ALERT_KIND,
                 payload=payload,
                 first_emitted_at=now,
@@ -194,7 +195,7 @@ def emit_anomaly_alerts(
 
         _enqueue_outbox_rows(
             session,
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             alert_id=int(alert.id),
             payload=payload,
             now=now,
@@ -222,11 +223,11 @@ def _outcome_exists(session: Session, *, rule_id: int, target_slot: datetime) ->
     return hit is not None
 
 
-def _open_alert(session: Session, operator_id: int) -> Alert | None:
+def _open_alert(session: Session, gym_account_id: int) -> Alert | None:
     return session.scalar(
         select(Alert)
         .where(
-            Alert.operator_id == operator_id,
+            Alert.gym_account_id == gym_account_id,
             Alert.kind == _ALERT_KIND,
             Alert.closed_at.is_(None),
         )
@@ -269,29 +270,36 @@ def _render_text(windows: list[MissedWindow]) -> str:
 def _enqueue_outbox_rows(
     session: Session,
     *,
-    operator_id: int,
+    gym_account_id: int,
     alert_id: int,
     payload: dict[str, object],
     now: datetime,
 ) -> None:
     outbox_payload = {**payload, "alert_id": alert_id}
 
+    gym_account = session.get(GymAccount, gym_account_id)
+    if gym_account is None:  # pragma: no cover - FK guarantees presence
+        return
+    user_id = gym_account.user_id
+
     session.add(
         NotificationOutbox(
-            operator_id=operator_id,
+            user_id=user_id,
+            gym_account_id=gym_account_id,
             kind="banner",
-            target=str(operator_id),
+            target=str(user_id),
             payload=outbox_payload,
             enqueued_at=now,
         )
     )
 
-    operator = session.get(OperatorProfile, operator_id)
+    operator = session.get(OperatorProfile, user_id)
     if operator is None or not operator.telegram_chat_id:
         return
     session.add(
         NotificationOutbox(
-            operator_id=operator_id,
+            user_id=user_id,
+            gym_account_id=gym_account_id,
             kind="telegram",
             target=operator.telegram_chat_id,
             payload=outbox_payload,

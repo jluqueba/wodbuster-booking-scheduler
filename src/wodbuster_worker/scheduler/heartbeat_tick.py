@@ -27,7 +27,6 @@ from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager
 
 import structlog
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..heartbeat.alerts import (
@@ -36,80 +35,82 @@ from ..heartbeat.alerts import (
     previous_heartbeat_at,
 )
 from ..heartbeat.probe import HeartbeatOutcome, HeartbeatProbe, NoCookieOnFile
-from ..persistence.models import OperatorProfile
+from ..persistence.gym_accounts import list_active_gym_account_ids
 
 _log = structlog.get_logger(__name__)
 
 # Type aliases for the two injectables. The session factory follows
 # ``persistence.engine.get_session``'s shape (context-manager yielding
 # a Session that commits on success / rolls back on exception). The
-# operator-id source is broken out so tests can inject a fixed list.
+# gym-account-id source is broken out so tests can inject a fixed list.
 SessionFactory = Callable[[], AbstractContextManager[Session]]
-OperatorIdSource = Callable[[Session], Iterable[int]]
+GymAccountIdSource = Callable[[Session], Iterable[int]]
 
 
-def default_operator_ids(session: Session) -> Iterable[int]:
-    """Yield every operator id present in ``operator_profile``.
+def default_gym_account_ids(session: Session) -> Iterable[int]:
+    """Yield every active gym-account id.
 
     Split from the tick body so it can be swapped in tests (and, later,
-    filtered to "operators with a cookie on file" once the extra query
+    filtered to "accounts with a cookie on file" once the extra query
     proves useful).
     """
-    yield from session.scalars(select(OperatorProfile.id)).all()
+    yield from list_active_gym_account_ids(session)
 
 
 def run_heartbeat_tick(
     probe: HeartbeatProbe,
     session_factory: SessionFactory,
     *,
-    operator_ids: OperatorIdSource = default_operator_ids,
+    gym_account_ids: GymAccountIdSource = default_gym_account_ids,
 ) -> list[HeartbeatOutcome]:
-    """Run one heartbeat probe for every operator; return the outcomes.
+    """Run one heartbeat probe for every gym account; return the outcomes.
 
     Each probe uses its own session so failures are isolated. The
-    outer session that enumerates operator ids is separate too, and
+    outer session that enumerates gym-account ids is separate too, and
     closes before probes start — this keeps the iteration set stable
-    even if a probe were to somehow mutate ``operator_profile``.
+    even if a probe were to somehow mutate ``gym_account``.
     """
     with session_factory() as session:
         # Materialise the id list before releasing the session so we
         # never iterate a closed cursor.
-        ids = list(operator_ids(session))
+        ids = list(gym_account_ids(session))
 
     outcomes: list[HeartbeatOutcome] = []
-    for operator_id in ids:
+    for gym_account_id in ids:
         try:
             with session_factory() as session:
                 # Compute the previous heartbeat's timestamp BEFORE the
                 # probe writes the new row. The alert evaluator uses it
                 # to decide whether a fresh acknowledgment counts as
                 # "since the last heartbeat" (US4.3 suppression rule).
-                outcome = probe.run(session, operator_id)
-                prev_at = previous_heartbeat_at(session, operator_id, outcome.probed_at)
+                outcome = probe.run(session, gym_account_id)
+                prev_at = previous_heartbeat_at(session, gym_account_id, outcome.probed_at)
                 action = evaluate_cookie_expiring(
                     session=session,
-                    operator_id=operator_id,
+                    gym_account_id=gym_account_id,
                     projected_ttl_at=outcome.projected_ttl_at,
                     now=outcome.probed_at,
                     previous_heartbeat_at=prev_at,
                 )
-                alert_id = apply_alert_action(session, operator_id, action, now=outcome.probed_at)
+                alert_id = apply_alert_action(
+                    session, gym_account_id, action, now=outcome.probed_at
+                )
         except NoCookieOnFile:
-            # Normal state for a freshly seeded operator; skip quietly.
-            _log.info("heartbeat.tick.skipped_no_cookie", operator_id=operator_id)
+            # Normal state for a freshly seeded gym account; skip quietly.
+            _log.info("heartbeat.tick.skipped_no_cookie", gym_account_id=gym_account_id)
             continue
         except Exception as exc:
-            # Never let one operator's failure abort the whole tick.
+            # Never let one account's failure abort the whole tick.
             _log.exception(
                 "heartbeat.tick.probe_failed",
-                operator_id=operator_id,
+                gym_account_id=gym_account_id,
                 error=str(exc),
             )
             continue
 
         _log.info(
             "heartbeat.tick.probe_completed",
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             reading_id=outcome.reading_id,
             result=outcome.result,
             projected_ttl_at=(
@@ -124,8 +125,8 @@ def run_heartbeat_tick(
 
 
 __all__ = [
-    "OperatorIdSource",
+    "GymAccountIdSource",
     "SessionFactory",
-    "default_operator_ids",
+    "default_gym_account_ids",
     "run_heartbeat_tick",
 ]

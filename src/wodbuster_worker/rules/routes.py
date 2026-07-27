@@ -29,10 +29,12 @@ from fastapi.templating import Jinja2Templates
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
-from ..booking.executor import BookingExecutor
+from ..booking.executor import BookingExecutorProvider
+from ..gyms.service import gym_client_factory, resolve_gym_client
 from ..i18n import lang_url
 from ..persistence.cookie_store import CookieStore
 from ..persistence.engine import get_session
+from ..persistence.gym_accounts import resolve_sole_gym_account_id
 from ..persistence.models import SchedulerRule
 from ..scheduler.rule_jobs import (
     next_window_open_for_rule,
@@ -42,7 +44,6 @@ from ..scheduler.rule_jobs import (
 )
 from ..wodbuster_client.client import (
     WodBusterAuthError,
-    WodBusterClient,
     WodBusterProtocolError,
     WodBusterTransportError,
 )
@@ -114,18 +115,26 @@ def _templates(request: Request) -> Jinja2Templates:
     return templates
 
 
-def _picker_or_none(request: Request, operator_id: int) -> AvailableClasses | None:
+def _picker_or_none(request: Request, gym_account_id: int | None) -> AvailableClasses | None:
     """Best-effort fetch of the class-type / time-slot picker.
 
-    Returns ``None`` when any dependency is missing (cookie stack not
-    wired, no cookie on file, WodBuster unreachable). The form
-    template renders free-text inputs in that state.
+    Returns ``None`` when any dependency is missing (no gym account
+    resolved, cookie stack not wired, no cookie on file, WodBuster
+    unreachable). The form template renders free-text inputs in that
+    state.
     """
-    store = getattr(request.app.state, "cookie_store", None)
-    client = getattr(request.app.state, "wodbuster_client", None)
-    if not isinstance(store, CookieStore) or not isinstance(client, WodBusterClient):
+    if gym_account_id is None:
         return None
-    return fetch_available_classes(store, client, operator_id)
+    store = getattr(request.app.state, "cookie_store", None)
+    factory = gym_client_factory(request.app.state)
+    if not isinstance(store, CookieStore) or factory is None:
+        return None
+    with get_session() as session:
+        resolved = resolve_gym_client(factory, session, gym_account_id)
+    if resolved is None:
+        return None
+    client, _idu = resolved
+    return fetch_available_classes(store, client, gym_account_id)
 
 
 def _render_form(
@@ -166,7 +175,8 @@ def rules_list(request: Request, operator_id: int = Depends(require_session)) ->
     templates = _templates(request)
     now = datetime.now(tz=UTC)
     with get_session() as session:
-        rules = list_rules_for_operator(session, operator_id)
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+        rules = list_rules_for_operator(session, gym_account_id) if gym_account_id else []
         rows = [
             {
                 "id": rule.id,
@@ -197,7 +207,9 @@ def rules_list(request: Request, operator_id: int = Depends(require_session)) ->
 @router.get("/new", name="rules_new")
 def rules_new(request: Request, operator_id: int = Depends(require_session)) -> Response:
     """Render an empty create form pre-seeded with the picker options."""
-    picker = _picker_or_none(request, operator_id)
+    with get_session() as session:
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+    picker = _picker_or_none(request, gym_account_id)
     return _render_form(
         request,
         template="rules/create.html",
@@ -215,8 +227,16 @@ async def rules_create(request: Request, operator_id: int = Depends(require_sess
     form_data = _str_only(dict(await request.form()))
     parsed = parse_create_rule_form(form_data)
 
+    with get_session() as session:
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+
+    if gym_account_id is None:
+        # No gym account configured yet; nothing can be scheduled.
+        # Route back to the list, which renders the onboarding state.
+        return RedirectResponse(url=lang_url("/rules"), status_code=303)
+
     if not parsed.is_valid:
-        picker = _picker_or_none(request, operator_id)
+        picker = _picker_or_none(request, gym_account_id)
         return _render_form(
             request,
             template="rules/create.html",
@@ -235,7 +255,7 @@ async def rules_create(request: Request, operator_id: int = Depends(require_sess
     with get_session() as session:
         created_rules = create_rules_for_days(
             session,
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             days_of_week=parsed.days_of_week,
             class_type=parsed.class_type,
             class_time=parsed.class_time,
@@ -257,7 +277,9 @@ def rules_api_classes(request: Request, operator_id: int = Depends(require_sessi
     and available for future HTMX refreshes. Failure modes collapse
     to an empty payload so the client can render its fallback.
     """
-    picker = _picker_or_none(request, operator_id)
+    with get_session() as session:
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+    picker = _picker_or_none(request, gym_account_id)
     if picker is None:
         return JSONResponse({"class_types": [], "time_slots": [], "available": False})
     return JSONResponse(
@@ -289,8 +311,8 @@ def rules_api_classes_debug(
     names — PII).
     """
     store = getattr(request.app.state, "cookie_store", None)
-    client = getattr(request.app.state, "wodbuster_client", None)
-    if not isinstance(store, CookieStore) or not isinstance(client, WodBusterClient):
+    factory = gym_client_factory(request.app.state)
+    if not isinstance(store, CookieStore) or factory is None:
         return JSONResponse(
             {
                 "stage": "no_cookie_stack",
@@ -300,9 +322,14 @@ def rules_api_classes_debug(
         )
 
     with get_session() as session:
-        cookie_value = store.load(session, operator_id)
-    if cookie_value is None:
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+        if gym_account_id is None:
+            return JSONResponse({"stage": "no_cookie", "sources": {}, "result": None})
+        cookie_value = store.load(session, gym_account_id)
+        resolved = resolve_gym_client(factory, session, gym_account_id)
+    if cookie_value is None or resolved is None:
         return JSONResponse({"stage": "no_cookie", "sources": {}, "result": None})
+    client, _idu = resolved
 
     try:
         loaded = client.load_class(cookie_value, _today_ticks_utc())
@@ -400,12 +427,13 @@ def rules_edit(
 ) -> Response:
     """Render the edit form for an owned rule; 404 for anyone else's."""
     with get_session() as session:
-        rule = get_rule_for_operator(session, operator_id, rule_id)
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+        rule = get_rule_for_operator(session, gym_account_id, rule_id) if gym_account_id else None
         if rule is None:
             raise HTTPException(status_code=404)
         form_values = _rule_to_form_values(rule)
 
-    picker = _picker_or_none(request, operator_id)
+    picker = _picker_or_none(request, gym_account_id)
     return _render_form(
         request,
         template="rules/edit.html",
@@ -429,12 +457,13 @@ async def rules_update(
     parsed = parse_edit_rule_form(form_data)
 
     with get_session() as session:
-        rule = get_rule_for_operator(session, operator_id, rule_id)
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+        rule = get_rule_for_operator(session, gym_account_id, rule_id) if gym_account_id else None
         if rule is None:
             raise HTTPException(status_code=404)
 
         if not parsed.is_valid:
-            picker = _picker_or_none(request, operator_id)
+            picker = _picker_or_none(request, gym_account_id)
             return _render_form(
                 request,
                 template="rules/edit.html",
@@ -481,7 +510,8 @@ def rules_delete(
     """Delete a rule owned by the operator."""
     _ = request  # signature parity with the other routes
     with get_session() as session:
-        rule = get_rule_for_operator(session, operator_id, rule_id)
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+        rule = get_rule_for_operator(session, gym_account_id, rule_id) if gym_account_id else None
         if rule is None:
             raise HTTPException(status_code=404)
         delete_rule(session, rule)
@@ -515,8 +545,8 @@ def _str_only(form_data: Mapping[str, object]) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def _scheduler_bits(request: Request) -> tuple[Any, BookingExecutor] | None:
-    """Return (scheduler, executor) from app.state if booking is wired.
+def _scheduler_bits(request: Request) -> tuple[Any, BookingExecutorProvider] | None:
+    """Return (scheduler, executor_provider) from app.state if booking is wired.
 
     Missing when the operator has not seeded ``wodbuster_gym`` /
     ``wodbuster_idu`` / cookie encryption key. In that state the app
@@ -524,10 +554,10 @@ def _scheduler_bits(request: Request) -> tuple[Any, BookingExecutor] | None:
     are no-ops from the scheduler's perspective.
     """
     scheduler = getattr(request.app.state, "booking_scheduler", None)
-    executor = getattr(request.app.state, "booking_executor", None)
-    if scheduler is None or executor is None:
+    executor_provider = getattr(request.app.state, "booking_executor_provider", None)
+    if scheduler is None or executor_provider is None:
         return None
-    return scheduler, executor
+    return scheduler, executor_provider
 
 
 def _sync_after_create(request: Request, rules: list[SchedulerRule]) -> None:
@@ -535,13 +565,13 @@ def _sync_after_create(request: Request, rules: list[SchedulerRule]) -> None:
     bits = _scheduler_bits(request)
     if bits is None:
         return
-    scheduler, executor = bits
+    scheduler, executor_provider = bits
     for rule in rules:
         try:
             register_rule_job(
                 scheduler,
                 rule,
-                executor=executor,
+                executor_provider=executor_provider,
                 session_factory=get_session,
             )
         except ValueError:
@@ -557,12 +587,12 @@ def _sync_after_update(request: Request, rule: SchedulerRule) -> None:
     bits = _scheduler_bits(request)
     if bits is None:
         return
-    scheduler, executor = bits
+    scheduler, executor_provider = bits
     with contextlib.suppress(ValueError):
         register_rule_job(
             scheduler,
             rule,
-            executor=executor,
+            executor_provider=executor_provider,
             session_factory=get_session,
         )
 
@@ -572,7 +602,7 @@ def _sync_after_delete(request: Request, rule_id: int) -> None:
     bits = _scheduler_bits(request)
     if bits is None:
         return
-    scheduler, _executor = bits
+    scheduler, _executor_provider = bits
     unregister_rule_job(scheduler, rule_id)
 
 

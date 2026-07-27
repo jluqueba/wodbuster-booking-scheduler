@@ -23,7 +23,7 @@ import pytest
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 
-from wodbuster_worker.persistence.models import SchedulerRule
+from wodbuster_worker.persistence.models import GymAccount, SchedulerRule
 from wodbuster_worker.scheduler.rule_jobs import (
     BOOKING_JOB_ID_PREFIX,
     book_rule,
@@ -56,7 +56,7 @@ def _rule(
     booking_opens_at: str = "21:30",
 ) -> SchedulerRule:
     rule = SchedulerRule(
-        operator_id=1,
+        gym_account_id=1,
         day_of_week=day_of_week,
         class_type="WOD",
         class_time=class_time,
@@ -199,7 +199,7 @@ def test_register_rule_job_creates_date_trigger_at_window_open() -> None:
     job_id = register_rule_job(
         scheduler,
         rule,
-        executor=executor,
+        executor_provider=executor,
         session_factory=_null_session_factory,
         now=now,
         prewarm_lead_s=0,
@@ -224,7 +224,7 @@ def test_register_rule_job_applies_prewarm_lead() -> None:
     register_rule_job(
         scheduler,
         rule,
-        executor=executor,
+        executor_provider=executor,
         session_factory=_null_session_factory,
         now=now,
         prewarm_lead_s=30,
@@ -244,7 +244,7 @@ def test_register_rule_job_replaces_existing() -> None:
     register_rule_job(
         scheduler,
         rule,
-        executor=executor,
+        executor_provider=executor,
         session_factory=_null_session_factory,
         now=now,
         prewarm_lead_s=0,
@@ -255,7 +255,7 @@ def test_register_rule_job_replaces_existing() -> None:
     register_rule_job(
         scheduler,
         rule,
-        executor=executor,
+        executor_provider=executor,
         session_factory=_null_session_factory,
         now=later,
         prewarm_lead_s=0,
@@ -276,7 +276,7 @@ def test_unregister_rule_job_removes_existing() -> None:
     register_rule_job(
         scheduler,
         rule,
-        executor=executor,
+        executor_provider=executor,
         session_factory=_null_session_factory,
         now=now,
     )
@@ -300,7 +300,7 @@ def test_register_rule_job_malformed_hhmm_raises() -> None:
         register_rule_job(
             scheduler,
             rule,
-            executor=executor,
+            executor_provider=executor,
             session_factory=_null_session_factory,
             now=datetime(2026, 7, 13, 12, 0, tzinfo=UTC),
         )
@@ -322,6 +322,11 @@ def _session_factory_returning(rule: SchedulerRule | None) -> Any:
         def _get(model: Any, key: Any) -> Any:
             if model is SchedulerRule and rule is not None and key == rule.id:
                 return rule
+            if model is GymAccount:
+                gym_account = MagicMock()
+                gym_account.gym_slug = "antworktrainingcenter"
+                gym_account.idu = "idu-abc"
+                return gym_account
             return None
 
         session.get.side_effect = _get
@@ -334,10 +339,11 @@ def test_book_rule_fires_executor_with_derived_target_slot() -> None:
     rule = _rule()
     factory = _session_factory_returning(rule)
     executor = MagicMock()
+    executor.for_gym_account.return_value = executor
 
     book_rule(
         rule.id,
-        executor=executor,
+        executor_provider=executor,
         session_factory=factory,
         scheduler=None,  # skip reschedule to keep this test focused
     )
@@ -357,8 +363,9 @@ def test_book_rule_fires_executor_with_derived_target_slot() -> None:
 def test_book_rule_skips_when_rule_deleted() -> None:
     factory = _session_factory_returning(None)
     executor = MagicMock()
+    executor.for_gym_account.return_value = executor
 
-    book_rule(999, executor=executor, session_factory=factory, scheduler=None)
+    book_rule(999, executor_provider=executor, session_factory=factory, scheduler=None)
 
     executor.book.assert_not_called()
 
@@ -368,8 +375,38 @@ def test_book_rule_skips_when_rule_inactive() -> None:
     rule.active = False
     factory = _session_factory_returning(rule)
     executor = MagicMock()
+    executor.for_gym_account.return_value = executor
 
-    book_rule(rule.id, executor=executor, session_factory=factory, scheduler=None)
+    book_rule(rule.id, executor_provider=executor, session_factory=factory, scheduler=None)
+
+    executor.book.assert_not_called()
+
+
+def test_book_rule_skips_when_gym_account_inactive() -> None:
+    """FR-006: a deactivated gym account runs no bookings even if its
+    rule is still active."""
+    rule = _rule()
+
+    @contextmanager
+    def factory() -> Iterator[Any]:
+        session = MagicMock()
+
+        def _get(model: Any, key: Any) -> Any:
+            if model is SchedulerRule and key == rule.id:
+                return rule
+            if model is GymAccount:
+                gym_account = MagicMock()
+                gym_account.active = False
+                return gym_account
+            return None
+
+        session.get.side_effect = _get
+        yield session
+
+    executor = MagicMock()
+    executor.for_gym_account.return_value = executor
+
+    book_rule(rule.id, executor_provider=executor, session_factory=factory, scheduler=None)
 
     executor.book.assert_not_called()
 
@@ -378,9 +415,10 @@ def test_book_rule_reschedules_when_scheduler_provided() -> None:
     rule = _rule()
     factory = _session_factory_returning(rule)
     executor = MagicMock()
+    executor.for_gym_account.return_value = executor
     scheduler = _fresh_scheduler()
 
-    book_rule(rule.id, executor=executor, session_factory=factory, scheduler=scheduler)
+    book_rule(rule.id, executor_provider=executor, session_factory=factory, scheduler=scheduler)
 
     job = scheduler.get_job(f"{BOOKING_JOB_ID_PREFIX}{rule.id}")
     assert job is not None
@@ -394,11 +432,12 @@ def test_book_rule_swallows_executor_exception_and_still_reschedules() -> None:
     rule = _rule()
     factory = _session_factory_returning(rule)
     executor = MagicMock()
+    executor.for_gym_account.return_value = executor
     executor.book.side_effect = RuntimeError("boom")
     scheduler = _fresh_scheduler()
 
     # Must not raise even when the executor blows up.
-    book_rule(rule.id, executor=executor, session_factory=factory, scheduler=scheduler)
+    book_rule(rule.id, executor_provider=executor, session_factory=factory, scheduler=scheduler)
 
     # Reschedule still happened.
     job = scheduler.get_job(f"{BOOKING_JOB_ID_PREFIX}{rule.id}")

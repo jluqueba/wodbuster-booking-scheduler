@@ -30,6 +30,8 @@ from sqlalchemy.orm import sessionmaker
 from wodbuster_worker.persistence.models import BookingOutcome, NotificationOutbox
 from wodbuster_worker.wodbuster_client.client import BookingActionResponse, LoadClassResponse
 
+from .conftest import gym_account_id_for
+
 
 def _sign_in(
     app: FastAPI,
@@ -70,10 +72,9 @@ def _seed_booking(
     """Insert a booking outcome directly. Returns the row id."""
     if target_slot is None:
         target_slot = datetime.now(tz=UTC) + timedelta(days=3)
-    columns = "(operator_id, target_class, target_slot, terminal_status"
-    values = "(:op, :cls, :slot, :status"
+    columns = "(gym_account_id, target_class, target_slot, terminal_status"
+    values = "(:ga, :cls, :slot, :status"
     params: dict[str, Any] = {
-        "op": operator_id,
         "cls": target_class,
         "slot": target_slot,
         "status": terminal_status,
@@ -85,6 +86,7 @@ def _seed_booking(
     columns += ")"
     values += ")"
     with engine.begin() as conn:
+        params["ga"] = gym_account_id_for(conn, operator_id)
         return int(
             conn.execute(
                 text(f"INSERT INTO booking_outcome {columns} VALUES {values} RETURNING id"),
@@ -432,14 +434,15 @@ def test_history_upcoming_section_projects_pending_rule_attempts(
     now = datetime.now(tz=UTC)
     attend_dow = (now.weekday() + 1) % 7
     with postgres_engine.begin() as conn:
+        gym_account_id = gym_account_id_for(conn, op_id)
         conn.execute(
             text(
                 "INSERT INTO scheduler_rule ("
-                " operator_id, day_of_week, class_type, class_time, "
+                " gym_account_id, day_of_week, class_type, class_time, "
                 " booking_opens_days_before, booking_opens_at, active"
-                ") VALUES (:op, :dow, 'ScheduledWOD', '21:30', 0, '21:30', true)"
+                ") VALUES (:ga, :dow, 'ScheduledWOD', '21:30', 0, '21:30', true)"
             ),
-            {"op": op_id, "dow": attend_dow},
+            {"ga": gym_account_id, "dow": attend_dow},
         )
 
     app = app_factory()
@@ -527,7 +530,7 @@ def test_cancel_granted_booking_flips_row_and_enqueues_outbox(
         row = session.get(BookingOutcome, booking_id)
         assert row is not None
         assert row.terminal_status == "cancelled"
-        outbox = session.query(NotificationOutbox).filter_by(operator_id=op_id).all()
+        outbox = session.query(NotificationOutbox).filter_by(user_id=op_id).all()
         # At least one banner row; the cancel path enqueues one banner
         # (Telegram only when chat_id is set — Alice has none in this test).
         kinds = [row.kind for row in outbox]

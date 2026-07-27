@@ -26,6 +26,8 @@ from sqlalchemy.engine import Engine
 from wodbuster_worker.persistence.models import SchedulerRule
 from wodbuster_worker.scheduler.rule_jobs import BOOKING_JOB_ID_PREFIX
 
+from .conftest import gym_account_id_for
+
 
 def _sign_in(
     app: FastAPI,
@@ -77,7 +79,7 @@ def _seed_scheduler_on_app(app: FastAPI) -> BackgroundScheduler:
     """
     scheduler = BackgroundScheduler(timezone="UTC")
     app.state.booking_scheduler = scheduler
-    app.state.booking_executor = MagicMock()
+    app.state.booking_executor_provider = MagicMock()
     return scheduler
 
 
@@ -131,7 +133,8 @@ def test_update_replaces_the_existing_job_with_fresh_trigger(
 
         factory = sessionmaker(bind=postgres_engine)
         with factory() as session:
-            rule_id = session.query(SchedulerRule).filter_by(operator_id=op_id).one().id
+            ga = gym_account_id_for(session, op_id)
+            rule_id = session.query(SchedulerRule).filter_by(gym_account_id=ga).one().id
 
         original_trigger = scheduler.get_job(f"{BOOKING_JOB_ID_PREFIX}{rule_id}").trigger  # type: ignore[union-attr]
 
@@ -174,7 +177,8 @@ def test_delete_removes_the_job(
 
         factory = sessionmaker(bind=postgres_engine)
         with factory() as session:
-            rule_id = session.query(SchedulerRule).filter_by(operator_id=op_id).one().id
+            ga = gym_account_id_for(session, op_id)
+            rule_id = session.query(SchedulerRule).filter_by(gym_account_id=ga).one().id
 
         assert _booking_jobs(scheduler) == [f"{BOOKING_JOB_ID_PREFIX}{rule_id}"]
 

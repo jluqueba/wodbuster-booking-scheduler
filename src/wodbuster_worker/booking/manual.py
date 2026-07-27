@@ -165,7 +165,7 @@ class ManualBookingService:
     def book(
         self,
         *,
-        operator_id: int,
+        gym_account_id: int,
         target_date: date,
         target_time: str,
         class_type: str | None = None,
@@ -192,9 +192,9 @@ class ManualBookingService:
         # Precondition step 1 — cookie. A missing cookie rejects before
         # any WodBuster call (FR-019 spirit: no upstream traffic for a
         # request we already know we cannot fulfil).
-        cookie = self._load_cookie(operator_id)
+        cookie = self._load_cookie(gym_account_id)
         if cookie is None:
-            _log.info("booking.manual.no_cookie", operator_id=operator_id)
+            _log.info("booking.manual.no_cookie", gym_account_id=gym_account_id)
             raise NoCookieError("no cookie on file")
 
         # Precondition step 2 — a single read-only LoadClass probe. This
@@ -210,7 +210,7 @@ class ManualBookingService:
             # treated as "open" and falls through.
             _log.info(
                 "booking.manual.window_closed",
-                operator_id=operator_id,
+                gym_account_id=gym_account_id,
                 seconds_until_open=seconds,
             )
             raise BookingWindowClosedError(seconds)
@@ -223,14 +223,14 @@ class ManualBookingService:
         if slot is None:
             _log.info(
                 "booking.manual.no_class",
-                operator_id=operator_id,
+                gym_account_id=gym_account_id,
                 target_time=hhmm,
                 class_type=class_type,
             )
             raise ClassNotVisibleError(f"no class at {hhmm} on {target_date.isoformat()}")
 
         result: BookingResult = self._executor.book_single_attempt(
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             class_type=slot.nombre,
             class_time=hhmm,
             target_slot=target_slot,
@@ -238,7 +238,7 @@ class ManualBookingService:
         )
         _log.info(
             "booking.manual.delegated",
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             class_type=slot.nombre,
             terminal_status=result.terminal_status,
             outcome_id=result.outcome_id,
@@ -254,7 +254,7 @@ class ManualBookingService:
     def list_class_types_at(
         self,
         *,
-        operator_id: int,
+        gym_account_id: int,
         target_date: date,
         target_time: str,
     ) -> list[str]:
@@ -275,7 +275,7 @@ class ManualBookingService:
         target_slot = self._target_slot(target_date, hhmm)
         ticks = _midnight_utc_ticks(target_slot)
 
-        cookie = self._load_cookie(operator_id)
+        cookie = self._load_cookie(gym_account_id)
         if cookie is None:
             return []
         try:
@@ -308,9 +308,9 @@ class ManualBookingService:
         )
         return local.astimezone(UTC)
 
-    def _load_cookie(self, operator_id: int) -> str | None:
+    def _load_cookie(self, gym_account_id: int) -> str | None:
         with self._session_factory() as session:
-            return self._cookie_store.load(session, operator_id)
+            return self._cookie_store.load(session, gym_account_id)
 
     def _load_once(self, cookie: str, ticks: int) -> dict[str, Any]:
         try:

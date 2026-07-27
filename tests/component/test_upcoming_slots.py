@@ -21,6 +21,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from wodbuster_worker.booking.upcoming import list_upcoming_slots
 
+from .conftest import gym_account_id_for
+
 
 @pytest.fixture
 def session_factory(postgres_engine: Engine) -> sessionmaker[Session]:
@@ -60,17 +62,18 @@ def _make_rule(
     active: bool = True,
 ) -> int:
     with engine.begin() as conn:
+        ga = gym_account_id_for(conn, operator_id)
         return int(
             conn.execute(
                 text(
                     "INSERT INTO scheduler_rule ("
-                    " operator_id, day_of_week, class_type, class_time, "
+                    " gym_account_id, day_of_week, class_type, class_time, "
                     " booking_opens_days_before, booking_opens_at, active"
-                    ") VALUES (:op, :dow, :ct, :ctime, :dbefore, :oat, :act) "
+                    ") VALUES (:ga, :dow, :ct, :ctime, :dbefore, :oat, :act) "
                     "RETURNING id"
                 ),
                 {
-                    "op": operator_id,
+                    "ga": ga,
                     "dow": day_of_week,
                     "ct": class_type,
                     "ctime": class_time,
@@ -92,18 +95,19 @@ def _make_outcome(
     terminal_status: str = "granted",
 ) -> int:
     with engine.begin() as conn:
+        ga = gym_account_id_for(conn, operator_id)
         return int(
             conn.execute(
                 text(
                     "INSERT INTO booking_outcome ("
-                    " operator_id, rule_id, target_class, target_slot, "
+                    " gym_account_id, rule_id, target_class, target_slot, "
                     " attempted_at, terminal_status"
                     ") VALUES ("
-                    " :op, :rule, :cls, :slot, :attempted, :status"
+                    " :ga, :rule, :cls, :slot, :attempted, :status"
                     ") RETURNING id"
                 ),
                 {
-                    "op": operator_id,
+                    "ga": ga,
                     "rule": rule_id,
                     "cls": target_class,
                     "slot": target_slot,
@@ -284,8 +288,10 @@ def test_operator_scope_isolation(
     now = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
 
     with session_factory() as session:
-        slots_a = list_upcoming_slots(session, op_a, now=now, horizon_days=14)
-        slots_b = list_upcoming_slots(session, op_b, now=now, horizon_days=14)
+        ga_a = gym_account_id_for(session, op_a)
+        ga_b = gym_account_id_for(session, op_b)
+        slots_a = list_upcoming_slots(session, ga_a, now=now, horizon_days=14)
+        slots_b = list_upcoming_slots(session, ga_b, now=now, horizon_days=14)
 
     assert slots_a == []
     assert len(slots_b) >= 1

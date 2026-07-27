@@ -39,6 +39,8 @@ from wodbuster_worker.persistence.cookie_store import CookieStore
 from wodbuster_worker.security.cipher import Cipher
 from wodbuster_worker.wodbuster_client.client import BookingActionResponse, LoadClassResponse
 
+from .conftest import gym_account_id_for
+
 _WEBHOOK_SECRET = "test-secret-abc"
 
 
@@ -112,15 +114,16 @@ def _seed_booking(
     if target_slot is None:
         target_slot = datetime.now(tz=UTC) + timedelta(days=3)
     with engine.begin() as conn:
+        gym_account_id = gym_account_id_for(conn, operator_id)
         return int(
             conn.execute(
                 text(
                     "INSERT INTO booking_outcome "
-                    "(operator_id, target_class, target_slot, terminal_status) "
-                    "VALUES (:op, :cls, :slot, :status) RETURNING id"
+                    "(gym_account_id, target_class, target_slot, terminal_status) "
+                    "VALUES (:ga, :cls, :slot, :status) RETURNING id"
                 ),
                 {
-                    "op": operator_id,
+                    "ga": gym_account_id,
                     "cls": target_class,
                     "slot": target_slot,
                     "status": terminal_status,
@@ -133,15 +136,16 @@ def _seed_open_cookie_alert(engine: Engine, operator_id: int) -> int:
     """Insert an open (unacknowledged) cookie-expiring alert. Returns id."""
     now = datetime.now(tz=UTC)
     with engine.begin() as conn:
+        gym_account_id = gym_account_id_for(conn, operator_id)
         return int(
             conn.execute(
                 text(
                     "INSERT INTO alert "
-                    "(operator_id, kind, payload, first_emitted_at, last_emitted_at) "
-                    "VALUES (:op, 'cookie_expiring', CAST(:p AS jsonb), :now, :now) "
+                    "(gym_account_id, kind, payload, first_emitted_at, last_emitted_at) "
+                    "VALUES (:ga, 'cookie_expiring', CAST(:p AS jsonb), :now, :now) "
                     "RETURNING id"
                 ),
-                {"op": operator_id, "p": json.dumps({"kind": "cookie_expiring"}), "now": now},
+                {"ga": gym_account_id, "p": json.dumps({"kind": "cookie_expiring"}), "now": now},
             ).scalar_one()
         )
 
@@ -192,9 +196,33 @@ class _FakeWodBusterClient:
         return self._inscribir_response
 
 
+def _idu(op_id: int) -> str:
+    """The per-gym idu the conftest assigns to ``op_id``'s gym account."""
+    return f"idu{op_id:032d}"[:32]
+
+
+def _enrolled(operator_idu: str) -> list[dict[str, str]]:
+    """An ``AtletasEntrenando`` list confirming the operator is enrolled."""
+    return [{"Url": f"/athlete/perfil.aspx?gid={operator_idu}"}]
+
+
 def _load_response_with(
-    class_type: str, class_time: str, *, seconds_until_publication: float = -100.0
+    class_type: str,
+    class_time: str,
+    *,
+    seconds_until_publication: float = -100.0,
+    enrolled_idu: str | None = None,
 ) -> LoadClassResponse:
+    valor: dict[str, Any] = {
+        "Id": 45654,
+        "Nombre": class_type,
+        "HoraComienzo": f"{class_time}:00",
+        "TipoEstado": "Borrable",
+        "Plazas": 16,
+        "AtletasEnListaDeEspera": 0,
+    }
+    if enrolled_idu is not None:
+        valor["AtletasEntrenando"] = _enrolled(enrolled_idu)
     return LoadClassResponse(
         status_code=200,
         latency_ms=10.0,
@@ -202,18 +230,7 @@ def _load_response_with(
             "Data": [
                 {
                     "Hora": f"{class_time}:00",
-                    "Valores": [
-                        {
-                            "Valor": {
-                                "Id": 45654,
-                                "Nombre": class_type,
-                                "HoraComienzo": f"{class_time}:00",
-                                "TipoEstado": "Borrable",
-                                "Plazas": 16,
-                                "AtletasEnListaDeEspera": 0,
-                            }
-                        }
-                    ],
+                    "Valores": [{"Valor": valor}],
                 }
             ],
             "SegundosHastaPublicacion": seconds_until_publication,
@@ -236,21 +253,22 @@ def _load_response_multi(
     slots: list[tuple[str, int]],
     *,
     seconds_until_publication: float = -100.0,
+    enrolled_idu: str | None = None,
 ) -> LoadClassResponse:
     """LoadClass payload with several classes at the same start time."""
-    valores = [
-        {
-            "Valor": {
-                "Id": slot_id,
-                "Nombre": name,
-                "HoraComienzo": f"{class_time}:00",
-                "TipoEstado": "Inscribible",
-                "Plazas": 16,
-                "AtletasEnListaDeEspera": 0,
-            }
+    valores = []
+    for name, slot_id in slots:
+        valor: dict[str, Any] = {
+            "Id": slot_id,
+            "Nombre": name,
+            "HoraComienzo": f"{class_time}:00",
+            "TipoEstado": "Inscribible",
+            "Plazas": 16,
+            "AtletasEnListaDeEspera": 0,
         }
-        for name, slot_id in slots
-    ]
+        if enrolled_idu is not None:
+            valor["AtletasEntrenando"] = _enrolled(enrolled_idu)
+        valores.append({"Valor": valor})
     return LoadClassResponse(
         status_code=200,
         latency_ms=10.0,
@@ -276,7 +294,8 @@ def _seed_cookie(engine: Engine, operator_id: int) -> CookieStore:
     store = CookieStore(Cipher(os.urandom(32)))
     factory = sessionmaker(bind=engine)
     with factory() as session:
-        store.save(session, operator_id, ".WBAuth-tok", validated_at=datetime.now(tz=UTC))
+        gym_account_id = gym_account_id_for(session, operator_id)
+        store.save(session, gym_account_id, ".WBAuth-tok", validated_at=datetime.now(tz=UTC))
         session.commit()
     return store
 
@@ -505,9 +524,10 @@ def test_rule_mutation_command_is_refused_with_explanation(
     assert "web ui" in replies[-1]["text"].lower()
     # No rule was created by the attempt.
     with postgres_engine.connect() as conn:
+        gym_account_id = gym_account_id_for(conn, op_id)
         count = conn.execute(
-            text("SELECT count(*) FROM scheduler_rule WHERE operator_id = :op"),
-            {"op": op_id},
+            text("SELECT count(*) FROM scheduler_rule WHERE gym_account_id = :ga"),
+            {"ga": gym_account_id},
         ).scalar_one()
     assert count == 0
 
@@ -746,7 +766,7 @@ def test_bookclass_books_within_window(
     _bind_chat(postgres_engine, op_id, "424242")
     store = _seed_cookie(postgres_engine, op_id)
     fake = _FakeWodBusterClient(
-        load_response=_load_response_with("WOD", "18:30"),
+        load_response=_load_response_with("WOD", "18:30", enrolled_idu=_idu(op_id)),
         inscribir_response=_inscribir_ok(),
     )
     replies = _capture_replies(monkeypatch)
@@ -764,12 +784,13 @@ def test_bookclass_books_within_window(
     assert "wod" in body
     assert len(fake.inscribir_calls) == 1
     with postgres_engine.connect() as conn:
+        gym_account_id = gym_account_id_for(conn, op_id)
         row = conn.execute(
             text(
                 "SELECT terminal_status, rule_id FROM booking_outcome "
-                "WHERE operator_id = :op ORDER BY id DESC LIMIT 1"
+                "WHERE gym_account_id = :ga ORDER BY id DESC LIMIT 1"
             ),
-            {"op": op_id},
+            {"ga": gym_account_id},
         ).one()
     assert row.terminal_status == "granted"
     assert row.rule_id is None
@@ -787,7 +808,7 @@ def test_bookclass_books_chosen_class_type_on_collision(
     store = _seed_cookie(postgres_engine, op_id)
     fake = _FakeWodBusterClient(
         load_response=_load_response_multi(
-            "08:30", [("Cross Training", 111), ("Open Endurance", 222)]
+            "08:30", [("Cross Training", 111), ("Open Endurance", 222)], enrolled_idu=_idu(op_id)
         ),
         inscribir_response=_inscribir_ok(),
     )
@@ -807,12 +828,13 @@ def test_bookclass_books_chosen_class_type_on_collision(
     assert len(fake.inscribir_calls) == 1
     assert fake.inscribir_calls[0]["class_id"] == 222
     with postgres_engine.connect() as conn:
+        gym_account_id = gym_account_id_for(conn, op_id)
         target_class = conn.execute(
             text(
                 "SELECT target_class FROM booking_outcome "
-                "WHERE operator_id = :op ORDER BY id DESC LIMIT 1"
+                "WHERE gym_account_id = :ga ORDER BY id DESC LIMIT 1"
             ),
-            {"op": op_id},
+            {"ga": gym_account_id},
         ).scalar_one()
     assert target_class == "Open Endurance"
 
@@ -846,9 +868,10 @@ def test_bookclass_window_closed_rejects_without_booking(
     # The mutating booking call must NOT fire while the window is closed.
     assert fake.inscribir_calls == []
     with postgres_engine.connect() as conn:
+        gym_account_id = gym_account_id_for(conn, op_id)
         count = conn.execute(
-            text("SELECT count(*) FROM booking_outcome WHERE operator_id = :op"),
-            {"op": op_id},
+            text("SELECT count(*) FROM booking_outcome WHERE gym_account_id = :ga"),
+            {"ga": gym_account_id},
         ).scalar_one()
     assert count == 0
 

@@ -46,6 +46,8 @@ from wodbuster_worker.security.cookie import (
     ValidationResult,
 )
 
+from .conftest import gym_account_id_for
+
 
 class _ScriptedValidator:
     """Fake :class:`CookieValidator` — hands out a scripted verdict.
@@ -182,12 +184,13 @@ def test_post_valid_cookie_persists_and_returns_success_banner(
     with postgres_engine.connect() as conn:
         from sqlalchemy import text
 
+        ga = gym_account_id_for(conn, op_id)
         row = conn.execute(
             text(
                 "SELECT cookie_ciphertext, last_validated_at, last_probe_status "
-                "FROM cookie_credential WHERE operator_id = :op"
+                "FROM cookie_credential WHERE gym_account_id = :ga"
             ),
-            {"op": op_id},
+            {"ga": ga},
         ).one()
     assert b".WBAuth-golden" not in bytes(row.cookie_ciphertext)
     assert row.last_validated_at == probed_at
@@ -240,8 +243,9 @@ def test_post_denied_verdicts_do_not_persist(
 
     session_local = sessionmaker(bind=postgres_engine)
     with session_local() as session:
+        ga = gym_account_id_for(session, op_id)
         rows = session.execute(
-            select(CookieCredential).where(CookieCredential.operator_id == op_id)
+            select(CookieCredential).where(CookieCredential.gym_account_id == ga)
         ).all()
     assert rows == []
 
@@ -270,13 +274,13 @@ def test_post_valid_re_paste_upserts_the_row(
 
     session_local = sessionmaker(bind=postgres_engine)
     with session_local() as session:
-        rows = session.query(CookieCredential).filter_by(operator_id=op_id).all()
-    assert len(rows) == 1  # upsert, not insert-twice
-    # The second paste's ciphertext must decrypt to ".WBAuth-2"; use the
-    # store directly via the app state (same key as the routes).
-    cipher: Cipher = app.state.cipher
-    plaintext = cipher.decrypt(bytes(rows[0].cookie_ciphertext), bytes(rows[0].cookie_nonce))
-    assert plaintext == b".WBAuth-2"
+        ga = gym_account_id_for(session, op_id)
+        rows = session.query(CookieCredential).filter_by(gym_account_id=ga).all()
+        assert len(rows) == 1  # upsert, not insert-twice
+        # The second paste's plaintext must be ".WBAuth-2"; load via the
+        # store so the gym-account AAD binding (SEC-005) is applied on decrypt.
+        loaded = app.state.cookie_store.load(session, ga)
+    assert loaded == ".WBAuth-2"
 
 
 def test_post_without_csrf_is_forbidden(

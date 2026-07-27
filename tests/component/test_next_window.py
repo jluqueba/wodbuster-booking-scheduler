@@ -23,6 +23,8 @@ from wodbuster_worker.heartbeat.next_window import (
     compute_next_window,
 )
 
+from .conftest import gym_account_id_for
+
 
 @pytest.fixture(autouse=True)
 def _pin_utc_timezone(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -48,12 +50,20 @@ def session_factory(postgres_engine: Engine) -> sessionmaker[Session]:
 
 def _make_operator(engine: Engine, name: str = "Op") -> int:
     with engine.begin() as conn:
-        return int(
+        op_id = int(
             conn.execute(
                 text("INSERT INTO operator_profile (display_name) VALUES (:n) RETURNING id"),
                 {"n": name},
             ).scalar_one()
         )
+        conn.execute(
+            text(
+                "INSERT INTO gym_account (user_id, gym_slug, display_name, idu) "
+                "VALUES (:op, 'antworktrainingcenter', :n, :idu)"
+            ),
+            {"op": op_id, "n": name, "idu": f"idu{op_id:032d}"[:32]},
+        )
+        return op_id
 
 
 def _make_rule(
@@ -69,17 +79,18 @@ def _make_rule(
 ) -> int:
     """Insert a scheduler_rule row; return the id."""
     with engine.begin() as conn:
+        gym_account_id = gym_account_id_for(conn, operator_id)
         return int(
             conn.execute(
                 text(
                     "INSERT INTO scheduler_rule "
-                    "(operator_id, day_of_week, class_type, class_time, "
+                    "(gym_account_id, day_of_week, class_type, class_time, "
                     "booking_opens_days_before, booking_opens_at, active) "
-                    "VALUES (:op, :dow, :ct, :ctime, :dbefore, :oat, :act) "
+                    "VALUES (:ga, :dow, :ct, :ctime, :dbefore, :oat, :act) "
                     "RETURNING id"
                 ),
                 {
-                    "op": operator_id,
+                    "ga": gym_account_id,
                     "dow": day_of_week,
                     "ct": class_type,
                     "ctime": class_time,
@@ -98,7 +109,8 @@ def test_no_rules_returns_none(
     now = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
 
     with session_factory() as session:
-        assert compute_next_window(session, op_id, now) is None
+        gym_account_id = gym_account_id_for(session, op_id)
+        assert compute_next_window(session, gym_account_id, now) is None
 
 
 def test_returns_earliest_window_across_active_rules(
@@ -130,7 +142,8 @@ def test_returns_earliest_window_across_active_rules(
     )
 
     with session_factory() as session:
-        result = compute_next_window(session, op_id, now)
+        gym_account_id = gym_account_id_for(session, op_id)
+        result = compute_next_window(session, gym_account_id, now)
 
     # Rule B (2026-07-09 07:30) is earlier than Rule A (2026-07-14
     # 21:30). Expect B.
@@ -164,7 +177,8 @@ def test_inactive_rules_are_ignored(
     )
 
     with session_factory() as session:
-        result = compute_next_window(session, op_id, now)
+        gym_account_id = gym_account_id_for(session, op_id)
+        result = compute_next_window(session, gym_account_id, now)
 
     assert result == datetime(2026, 7, 10, 10, 0, tzinfo=UTC)
 
@@ -185,7 +199,8 @@ def test_same_day_future_window_returns_today(
     )
 
     with session_factory() as session:
-        result = compute_next_window(session, op_id, now)
+        gym_account_id = gym_account_id_for(session, op_id)
+        result = compute_next_window(session, gym_account_id, now)
 
     assert result == datetime(2026, 7, 8, 15, 30, tzinfo=UTC)
 
@@ -215,8 +230,10 @@ def test_operator_scope_isolation(
     )
 
     with session_factory() as session:
-        assert compute_next_window(session, op_a, now) is None
-        assert compute_next_window(session, op_b, now) == datetime(2026, 7, 8, 20, 30, tzinfo=UTC)
+        ga_a = gym_account_id_for(session, op_a)
+        ga_b = gym_account_id_for(session, op_b)
+        assert compute_next_window(session, ga_a, now) is None
+        assert compute_next_window(session, ga_b, now) == datetime(2026, 7, 8, 20, 30, tzinfo=UTC)
 
 
 def test_zero_days_before_uses_same_day_as_attendance(
@@ -236,7 +253,8 @@ def test_zero_days_before_uses_same_day_as_attendance(
     )
 
     with session_factory() as session:
-        result = compute_next_window(session, op_id, now)
+        gym_account_id = gym_account_id_for(session, op_id)
+        result = compute_next_window(session, gym_account_id, now)
 
     assert result == datetime(2026, 7, 10, 18, 0, tzinfo=UTC)
 
@@ -258,7 +276,8 @@ def test_rolls_forward_when_first_occurrence_is_before_now(
     )
 
     with session_factory() as session:
-        result = compute_next_window(session, op_id, now)
+        gym_account_id = gym_account_id_for(session, op_id)
+        result = compute_next_window(session, gym_account_id, now)
 
     assert result == now.replace(hour=8) + timedelta(days=7)
 
@@ -283,7 +302,8 @@ def test_days_before_wraps_across_week_boundary(
     )
 
     with session_factory() as session:
-        result = compute_next_window(session, op_id, now)
+        gym_account_id = gym_account_id_for(session, op_id)
+        result = compute_next_window(session, gym_account_id, now)
 
     assert result == datetime(2026, 7, 10, 22, 40, tzinfo=UTC)
 
@@ -309,7 +329,8 @@ def test_compute_next_booking_returns_window_target_and_rule_id(
     )
 
     with session_factory() as session:
-        result = compute_next_booking(session, op_id, now)
+        gym_account_id = gym_account_id_for(session, op_id)
+        result = compute_next_booking(session, gym_account_id, now)
 
     assert result is not None
     assert result.window_open == datetime(2026, 7, 13, 21, 30, tzinfo=UTC)
@@ -324,4 +345,5 @@ def test_compute_next_booking_none_when_no_active_rules(
     now = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
 
     with session_factory() as session:
-        assert compute_next_booking(session, op_id, now) is None
+        gym_account_id = gym_account_id_for(session, op_id)
+        assert compute_next_booking(session, gym_account_id, now) is None

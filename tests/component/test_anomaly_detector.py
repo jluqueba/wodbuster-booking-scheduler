@@ -29,6 +29,8 @@ from wodbuster_worker.heartbeat.anomaly import (
 from wodbuster_worker.persistence.models import Alert, NotificationOutbox
 from wodbuster_worker.scheduler.anomaly_tick import run_anomaly_tick
 
+from .conftest import gym_account_id_for
+
 
 @pytest.fixture
 def session_factory(postgres_engine: Engine) -> sessionmaker[Session]:
@@ -53,12 +55,20 @@ def _pin_utc_timezone(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _make_operator(engine: Engine, name: str = "Op") -> int:
     with engine.begin() as conn:
-        return int(
+        op_id = int(
             conn.execute(
                 text("INSERT INTO operator_profile (display_name) VALUES (:n) RETURNING id"),
                 {"n": name},
             ).scalar_one()
         )
+        conn.execute(
+            text(
+                "INSERT INTO gym_account (user_id, gym_slug, display_name, idu) "
+                "VALUES (:op, 'antworktrainingcenter', :n, :idu)"
+            ),
+            {"op": op_id, "n": name, "idu": f"idu{op_id:032d}"[:32]},
+        )
+        return op_id
 
 
 def _make_rule(
@@ -74,18 +84,19 @@ def _make_rule(
     created_at: datetime | None = None,
 ) -> int:
     with engine.begin() as conn:
+        gym_account_id = gym_account_id_for(conn, operator_id)
         row_id = int(
             conn.execute(
                 text(
                     "INSERT INTO scheduler_rule ("
-                    " operator_id, day_of_week, class_type, class_time, "
+                    " gym_account_id, day_of_week, class_type, class_time, "
                     " booking_opens_days_before, booking_opens_at, active"
                     ") VALUES ("
                     " :op, :dow, :ct, :ctime, :dbefore, :oat, :act"
                     ") RETURNING id"
                 ),
                 {
-                    "op": operator_id,
+                    "op": gym_account_id,
                     "dow": day_of_week,
                     "ct": class_type,
                     "ctime": class_time,
@@ -114,18 +125,19 @@ def _make_outcome(
     terminal_status: str = "granted",
 ) -> int:
     with engine.begin() as conn:
+        gym_account_id = gym_account_id_for(conn, operator_id)
         return int(
             conn.execute(
                 text(
                     "INSERT INTO booking_outcome ("
-                    " operator_id, rule_id, target_class, target_slot, "
+                    " gym_account_id, rule_id, target_class, target_slot, "
                     " attempted_at, terminal_status"
                     ") VALUES ("
                     " :op, :rule, :cls, :slot, :attempted, :status"
                     ") RETURNING id"
                 ),
                 {
-                    "op": operator_id,
+                    "op": gym_account_id,
                     "rule": rule_id,
                     "cls": target_class,
                     "slot": target_slot,
@@ -195,10 +207,11 @@ def test_rule_without_outcome_is_missed(
 
     with session_factory() as session:
         missed = detect_missed_windows(session, now=now)
+        ga_id = gym_account_id_for(session, op_id)
 
     assert len(missed) == 1
     assert missed[0].rule_id == rule_id
-    assert missed[0].operator_id == op_id
+    assert missed[0].gym_account_id == ga_id
     assert missed[0].target_class == "WOD"
     assert missed[0].window_open == datetime(2026, 7, 6, 21, 30, tzinfo=UTC)
     assert missed[0].target_slot == datetime(2026, 7, 8, 21, 30, tzinfo=UTC)

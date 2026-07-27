@@ -159,10 +159,16 @@ def app_factory(
 
 @pytest.fixture
 def seed_operator(postgres_engine: Engine) -> Callable[..., tuple[int, str]]:
-    """Return a helper that inserts an operator + federated identity.
+    """Return a helper that inserts an operator + federated identity + gym account.
 
     Returns ``(operator_id, subject_id)`` so tests can drive the
     callback path with a subject they know is on the allow-list.
+
+    Multi-gym (ADR-0007): also seeds ONE ``gym_account`` for the
+    operator so route-level tests resolve a sole gym account through
+    :func:`resolve_sole_gym_account_id` without extra wiring. Tests that
+    directly insert booking-scoped rows resolve the id via
+    :func:`gym_account_id_for`.
     """
 
     def _insert(
@@ -185,6 +191,41 @@ def seed_operator(postgres_engine: Engine) -> Callable[..., tuple[int, str]]:
                 ),
                 {"op": op_id, "p": provider, "s": actual_subject, "n": display_name},
             )
+            conn.execute(
+                text(
+                    "INSERT INTO gym_account (user_id, gym_slug, display_name, idu) "
+                    "VALUES (:op, 'antworktrainingcenter', :n, :idu)"
+                ),
+                {"op": op_id, "n": display_name, "idu": f"idu{op_id:032d}"[:32]},
+            )
         return int(op_id), actual_subject
 
     return _insert
+
+
+def gym_account_id_for(conn: Any, operator_id: int) -> int:
+    """Return (creating if needed) the sole gym-account id for ``operator_id``.
+
+    Test helper for the multi-gym bridge (ADR-0007): booking-scoped rows
+    key off ``gym_account_id``, but tests seed and reason in terms of the
+    operator. ``seed_operator`` already creates one gym account per
+    operator; this is get-or-create so component helpers that build an
+    operator via their own local fixtures (not ``seed_operator``) also
+    resolve a gym account without extra wiring. ``conn`` is any object
+    exposing ``execute`` (a SQLAlchemy ``Connection`` or ``Session``).
+    """
+    existing = conn.execute(
+        text("SELECT id FROM gym_account WHERE user_id = :op ORDER BY id LIMIT 1"),
+        {"op": operator_id},
+    ).scalar()
+    if existing is not None:
+        return int(existing)
+    return int(
+        conn.execute(
+            text(
+                "INSERT INTO gym_account (user_id, gym_slug, display_name, idu) "
+                "VALUES (:op, 'antworktrainingcenter', 'Test Gym', :idu) RETURNING id"
+            ),
+            {"op": operator_id, "idu": f"idu{operator_id:032d}"[:32]},
+        ).scalar_one()
+    )

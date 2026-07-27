@@ -17,7 +17,7 @@ Design notes:
   Postgres). Plaintext columns for any secret material are forbidden
   by ADR-0002.
 - The ``alert`` table enforces at most one open row per
-  ``(operator_id, kind)`` via a partial unique index rendered through
+  ``(gym_account_id, kind)`` via a partial unique index rendered through
   ``postgresql_where``.
 - Foreign keys are enforced natively; no per-connection pragmas are
   needed (contrast the historical SQLite implementation).
@@ -102,6 +102,35 @@ class OperatorProfile(Base):
     )
 
 
+class GymAccount(Base):
+    """One WodBuster gym membership owned by a user (ADR-0007).
+
+    Multi-gym support (ADR-0007 Decision 1A): every booking-scoped row
+    references a ``gym_account`` rather than the user directly. The
+    account carries the gym subdomain (``gym_slug``), the per-gym
+    operator identifier (``idu``), and the display label. A user holds
+    at most one account per gym (``UNIQUE (user_id, gym_slug)``); the
+    ``user_id`` FK is the multi-user seam.
+    """
+
+    __tablename__ = "gym_account"
+    __table_args__ = (UniqueConstraint("user_id", "gym_slug", name="uq_gym_account_user_slug"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("operator_profile.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    gym_slug: Mapped[str] = mapped_column(String(100), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    idu: Mapped[str] = mapped_column(String(64), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.true())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class FederatedIdentity(Base):
     """OAuth identities allow-listed for a single operator (ADR-0005).
 
@@ -155,8 +184,8 @@ class SchedulerRule(Base):
     __tablename__ = "scheduler_rule"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    operator_id: Mapped[int] = mapped_column(
-        ForeignKey("operator_profile.id", ondelete="CASCADE"),
+    gym_account_id: Mapped[int] = mapped_column(
+        ForeignKey("gym_account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -196,17 +225,17 @@ class SchedulerRule(Base):
 class CookieCredential(Base):
     """Encrypted ``.WBAuth`` blob (ADR-0002, ADR-0005, FR-020).
 
-    One row per operator represents the active cookie. The paste-and-
-    validate flow (US-003) upserts on ``operator_id``; historic values
+    One row per gym account represents the active cookie. The paste-and-
+    validate flow (US-003) upserts on ``gym_account_id``; historic values
     are not retained because the plaintext must never survive rotation.
     """
 
     __tablename__ = "cookie_credential"
-    __table_args__ = (UniqueConstraint("operator_id", name="uq_cookie_credential_operator"),)
+    __table_args__ = (UniqueConstraint("gym_account_id", name="uq_cookie_credential_gym_account"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    operator_id: Mapped[int] = mapped_column(
-        ForeignKey("operator_profile.id", ondelete="CASCADE"), nullable=False
+    gym_account_id: Mapped[int] = mapped_column(
+        ForeignKey("gym_account.id", ondelete="CASCADE"), nullable=False
     )
     cookie_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     cookie_nonce: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
@@ -231,8 +260,8 @@ class BookingOutcome(Base):
     __tablename__ = "booking_outcome"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    operator_id: Mapped[int] = mapped_column(
-        ForeignKey("operator_profile.id", ondelete="CASCADE"),
+    gym_account_id: Mapped[int] = mapped_column(
+        ForeignKey("gym_account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -270,8 +299,8 @@ class VacationWindow(Base):
     __tablename__ = "vacation_window"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    operator_id: Mapped[int] = mapped_column(
-        ForeignKey("operator_profile.id", ondelete="CASCADE"),
+    gym_account_id: Mapped[int] = mapped_column(
+        ForeignKey("gym_account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -294,8 +323,8 @@ class HeartbeatReading(Base):
     __tablename__ = "heartbeat_reading"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    operator_id: Mapped[int] = mapped_column(
-        ForeignKey("operator_profile.id", ondelete="CASCADE"),
+    gym_account_id: Mapped[int] = mapped_column(
+        ForeignKey("gym_account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -321,15 +350,15 @@ class Alert(Base):
     """Operator-facing condition (spec Key Entities → Alert).
 
     Invariant: at most one *open* (``closed_at IS NULL``) row per
-    ``(operator_id, kind)``. Enforced with a partial unique index; the
+    ``(gym_account_id, kind)``. Enforced with a partial unique index; the
     ``postgresql_where`` argument produces valid Postgres DDL.
     """
 
     __tablename__ = "alert"
     __table_args__ = (
         Index(
-            "uq_alert_open_operator_kind",
-            "operator_id",
+            "uq_alert_open_gym_account_kind",
+            "gym_account_id",
             "kind",
             unique=True,
             postgresql_where=text("closed_at IS NULL"),
@@ -337,8 +366,8 @@ class Alert(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    operator_id: Mapped[int] = mapped_column(
-        ForeignKey("operator_profile.id", ondelete="CASCADE"),
+    gym_account_id: Mapped[int] = mapped_column(
+        ForeignKey("gym_account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -370,10 +399,16 @@ class NotificationOutbox(Base):
     __tablename__ = "notification_outbox"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    operator_id: Mapped[int] = mapped_column(
+    user_id: Mapped[int] = mapped_column(
         ForeignKey("operator_profile.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
+    )
+    # Optional gym context for the message (ADR-0007, FR-008). Null for
+    # user-level notifications; SET NULL on gym-account deletion so the
+    # delivery record survives even if the gym account is removed.
+    gym_account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("gym_account.id", ondelete="SET NULL"), nullable=True
     )
     kind: Mapped[str] = mapped_column(
         Enum(*_NOTIFICATION_KINDS, name="notification_kind_enum", native_enum=True),
@@ -400,6 +435,7 @@ __all__ = [
     "BookingOutcome",
     "CookieCredential",
     "FederatedIdentity",
+    "GymAccount",
     "HeartbeatReading",
     "NotificationOutbox",
     "OperatorProfile",

@@ -38,6 +38,7 @@ that walk so both the executor and the picker read it the same way.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -215,6 +216,35 @@ class SlotEnrollment:
         return self.capacity is not None and self.occupied >= self.capacity
 
 
+# The signed-in athlete's own identifier is not exposed by any JSON handler,
+# but every authenticated ``/athlete/*`` page renders the top nav with the
+# operator's avatar, whose CDN URL embeds their idu as a dashed GUID:
+# ``.../static/atletas/<c0>/<c1>/<c2>/<guid>.jpg``. The avatar carries an
+# ``inmenu`` class that distinguishes the logged-in operator from any other
+# athlete on the page. Verified against prod (T005 spike, 2026-07-27).
+_SELF_AVATAR_GUID_RE = re.compile(
+    r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.jpg"
+)
+
+
+def parse_self_idu(html: str) -> str | None:
+    """Return the signed-in athlete's own 32-hex idu, or ``None``.
+
+    Scans the authenticated page HTML for the top-nav avatar ``<img>``
+    (marked with the ``inmenu`` class) and extracts the operator's idu
+    from its CDN URL (``.../<guid>.jpg``), normalising the dashed GUID
+    back to the dashless 32-hex form the API uses. Returns ``None`` when
+    no menu avatar is present (for example an unauthenticated page).
+    """
+    for tag in re.findall(r"<img\b[^>]*>", html, flags=re.IGNORECASE):
+        if "inmenu" not in tag.lower():
+            continue
+        match = _SELF_AVATAR_GUID_RE.search(tag)
+        if match is not None:
+            return match.group(1).replace("-", "").lower()
+    return None
+
+
 def operator_idu_to_guid(idu: str) -> str:
     """Format a 32-hex WodBuster ``idu`` as a dashed lowercase GUID.
 
@@ -303,5 +333,6 @@ __all__ = [
     "find_slot_by_time",
     "operator_idu_to_guid",
     "parse_class_instance",
+    "parse_self_idu",
     "read_target_enrollment",
 ]

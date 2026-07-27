@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 from ..persistence.models import (
     Alert,
     BookingOutcome,
+    GymAccount,
     NotificationOutbox,
     OperatorProfile,
 )
@@ -45,7 +46,7 @@ _COOKIE_INVALID_ALERT_KIND = "cookie_invalid"
 def persist_outcome(
     session: Session,
     *,
-    operator_id: int,
+    gym_account_id: int,
     rule_id: int | None,
     target_class: str,
     target_slot: datetime,
@@ -79,7 +80,7 @@ def persist_outcome(
     _now = now or datetime.now(tz=UTC)
 
     outcome = BookingOutcome(
-        operator_id=operator_id,
+        gym_account_id=gym_account_id,
         rule_id=rule_id,
         target_class=target_class,
         target_slot=target_slot,
@@ -93,7 +94,7 @@ def persist_outcome(
 
     _enqueue_outbox_rows(
         session,
-        operator_id=operator_id,
+        gym_account_id=gym_account_id,
         outcome_id=int(outcome.id),
         terminal_status=terminal_status,
         text=telegram_text,
@@ -101,7 +102,7 @@ def persist_outcome(
     )
 
     if terminal_status == "cookie_invalid":
-        _open_or_refresh_cookie_invalid_alert(session, operator_id=operator_id, now=_now)
+        _open_or_refresh_cookie_invalid_alert(session, gym_account_id=gym_account_id, now=_now)
 
     return outcome
 
@@ -109,7 +110,7 @@ def persist_outcome(
 def _enqueue_outbox_rows(
     session: Session,
     *,
-    operator_id: int,
+    gym_account_id: int,
     outcome_id: int,
     terminal_status: str,
     text: str,
@@ -117,9 +118,11 @@ def _enqueue_outbox_rows(
 ) -> None:
     """Append one banner + one Telegram outbox row for the outcome.
 
-    Telegram row is skipped when the operator has not registered a
-    chat id (US-007 wires that later); a row with an empty target
-    would only churn the dispatcher until it exhausted retries.
+    Outbox delivery is user-scoped (ADR-0007): rows carry the owning
+    ``user_id`` plus the ``gym_account_id`` for context. The Telegram
+    row is skipped when the user has not registered a chat id (US-007
+    wires that later); a row with an empty target would only churn the
+    dispatcher until it exhausted retries.
     """
     payload: dict[str, Any] = {
         "kind": "booking_result",
@@ -128,22 +131,29 @@ def _enqueue_outbox_rows(
         "text": text,
     }
 
+    gym_account = session.get(GymAccount, gym_account_id)
+    if gym_account is None:  # pragma: no cover - FK guarantees presence
+        return
+    user_id = gym_account.user_id
+
     session.add(
         NotificationOutbox(
-            operator_id=operator_id,
+            user_id=user_id,
+            gym_account_id=gym_account_id,
             kind="banner",
-            target=str(operator_id),
+            target=str(user_id),
             payload=payload,
             enqueued_at=now,
         )
     )
 
-    operator = session.get(OperatorProfile, operator_id)
+    operator = session.get(OperatorProfile, user_id)
     if operator is None or not operator.telegram_chat_id:
         return
     session.add(
         NotificationOutbox(
-            operator_id=operator_id,
+            user_id=user_id,
+            gym_account_id=gym_account_id,
             kind="telegram",
             target=operator.telegram_chat_id,
             payload=payload,
@@ -153,16 +163,16 @@ def _enqueue_outbox_rows(
 
 
 def _open_or_refresh_cookie_invalid_alert(
-    session: Session, *, operator_id: int, now: datetime
+    session: Session, *, gym_account_id: int, now: datetime
 ) -> None:
-    """Insert or update the operator's open ``cookie_invalid`` alert.
+    """Insert or update the gym account's open ``cookie_invalid`` alert.
 
-    The partial unique index on ``alert`` (open per operator+kind)
+    The partial unique index on ``alert`` (open per gym_account+kind)
     means we cannot naively insert; look up the existing row first.
     """
     existing = session.scalar(
         select(Alert).where(
-            Alert.operator_id == operator_id,
+            Alert.gym_account_id == gym_account_id,
             Alert.kind == _COOKIE_INVALID_ALERT_KIND,
             Alert.closed_at.is_(None),
         )
@@ -172,7 +182,7 @@ def _open_or_refresh_cookie_invalid_alert(
         return
     session.add(
         Alert(
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             kind=_COOKIE_INVALID_ALERT_KIND,
             payload={"kind": _COOKIE_INVALID_ALERT_KIND},
             first_emitted_at=now,

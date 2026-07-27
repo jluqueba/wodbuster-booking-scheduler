@@ -27,6 +27,7 @@ import structlog
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
@@ -45,8 +46,10 @@ from ..booking.manual import (
     NoCookieError,
 )
 from ..booking.upcoming import UpcomingSlot, list_upcoming_slots
+from ..gyms.service import gym_client_factory, resolve_gym_client
 from ..i18n import lang_url, t
 from ..persistence.engine import get_session
+from ..persistence.gym_accounts import resolve_sole_gym_account_id
 from ..persistence.models import BookingOutcome
 from ..scheduler.rule_jobs import operator_timezone
 
@@ -96,8 +99,12 @@ def history_list(
     now = _utcnow()
     week_start = _current_week_start(now)
     with get_session() as session:
-        upcoming = list_upcoming_slots(session, operator_id, now=now)
-        outcomes = list_recent_bookings(session, operator_id, since=week_start)
+        upcoming: list[UpcomingSlot] = []
+        outcomes: list[BookingOutcome] = []
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+        if gym_account_id is not None:
+            upcoming = list_upcoming_slots(session, gym_account_id, now=now)
+            outcomes = list_recent_bookings(session, gym_account_id, since=week_start)
         upcoming_days = _group_upcoming_by_day(upcoming)
         rows = [_outcome_to_row(o) for o in outcomes]
     return templates.TemplateResponse(
@@ -126,9 +133,9 @@ def booking_cancel(
     """Cancel one booking and redirect back to /history with a flash message."""
     _ = request  # signature parity with other routes
 
-    client = getattr(request.app.state, "wodbuster_client", None)
+    factory = gym_client_factory(request.app.state)
     store = getattr(request.app.state, "cookie_store", None)
-    if client is None or store is None:
+    if factory is None or store is None:
         # Booking stack not wired (config missing). Fail loud so the
         # operator sees the actual reason rather than a silent noop.
         return _redirect_with_flash(
@@ -137,10 +144,17 @@ def booking_cancel(
         )
 
     with get_session() as session:
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+        if gym_account_id is None:
+            raise HTTPException(status_code=404)
+        resolved = resolve_gym_client(factory, session, gym_account_id)
+        if resolved is None:
+            raise HTTPException(status_code=404)
+        client, _idu = resolved
         try:
             cancel_booking(
                 session,
-                operator_id=operator_id,
+                gym_account_id=gym_account_id,
                 booking_id=booking_id,
                 client=client,
                 cookie_store=store,
@@ -199,8 +213,14 @@ def book_now_classes(
     disambiguated. Failure modes collapse to an empty list so the
     client renders its free-text fallback.
     """
-    service = _manual_service(request)
-    if service is None:
+    with get_session() as session:
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+        service = (
+            _manual_service(request, session, gym_account_id)
+            if gym_account_id is not None
+            else None
+        )
+    if gym_account_id is None or service is None:
         return JSONResponse({"class_types": [], "available": False})
     try:
         target_date = date.fromisoformat(book_date.strip())
@@ -208,7 +228,7 @@ def book_now_classes(
         return JSONResponse({"class_types": [], "available": False})
     try:
         class_types = service.list_class_types_at(
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             target_date=target_date,
             target_time=book_time,
         )
@@ -237,8 +257,14 @@ def book_now_submit(
     the operator's chosen class type when several classes share the
     start time; empty falls back to the first class at that time.
     """
-    service = _manual_service(request)
-    if service is None:
+    with get_session() as session:
+        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+        service = (
+            _manual_service(request, session, gym_account_id)
+            if gym_account_id is not None
+            else None
+        )
+    if gym_account_id is None or service is None:
         return _redirect_book_now(t("flash.booking.service_unavailable"), kind="error")
 
     try:
@@ -248,7 +274,7 @@ def book_now_submit(
 
     try:
         result = service.book(
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             target_date=target_date,
             target_time=book_time,
             class_type=book_class.strip() or None,
@@ -280,23 +306,28 @@ def book_now_submit(
     )
 
 
-def _manual_service(request: Request) -> ManualBookingService | None:
-    """Build a :class:`ManualBookingService` from app.state, or ``None``.
+def _manual_service(
+    request: Request, session: Session, gym_account_id: int
+) -> ManualBookingService | None:
+    """Build a per-gym :class:`ManualBookingService`, or ``None``.
 
-    Same wiring guard as :func:`booking_cancel`: when the WodBuster
-    client or cookie store is unwired (config missing) the caller
-    surfaces ``service_unavailable`` instead of a silent no-op.
+    Resolves the gym account's own client + idu (ADR-0007, P2b) so a
+    one-off booking targets that gym's subdomain rather than a single
+    global gym. Returns ``None`` when the cookie store or client factory
+    is unwired, or the gym account no longer exists.
     """
-    client = getattr(request.app.state, "wodbuster_client", None)
+    factory = gym_client_factory(request.app.state)
     store = getattr(request.app.state, "cookie_store", None)
-    if client is None or store is None:
+    if factory is None or store is None:
         return None
-    settings = getattr(request.app.state, "settings", None)
-    operator_idu = getattr(settings, "wodbuster_idu", None) if settings is not None else None
+    resolved = resolve_gym_client(factory, session, gym_account_id)
+    if resolved is None:
+        return None
+    client, idu = resolved
     return ManualBookingService(
         client=client,
         cookie_store=store,
-        operator_idu=operator_idu,
+        operator_idu=idu,
     )
 
 

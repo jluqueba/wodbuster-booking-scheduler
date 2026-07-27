@@ -43,6 +43,7 @@ from sqlalchemy.orm import Session
 
 from ..persistence.models import (
     Alert,
+    GymAccount,
     HeartbeatReading,
     NotificationOutbox,
     OperatorProfile,
@@ -82,7 +83,7 @@ AlertAction = Emit | Suppress | Clear | NoOp
 def evaluate_cookie_expiring(
     *,
     session: Session,
-    operator_id: int,
+    gym_account_id: int,
     projected_ttl_at: datetime | None,
     now: datetime,
     lead_time: timedelta = _DEFAULT_LEAD_TIME,
@@ -97,15 +98,15 @@ def evaluate_cookie_expiring(
     if projected_ttl_at is None:
         # No projection yet (freshly pasted, no Valid probe seen). No
         # data → no alert. Clear any historical open alert defensively.
-        if _open_alert(session, operator_id) is not None:
+        if _open_alert(session, gym_account_id) is not None:
             return Clear()
         return NoOp()
 
-    next_window_at = compute_next_window(session, operator_id, now)
+    next_window_at = compute_next_window(session, gym_account_id, now)
     if next_window_at is None:
         # No scheduled window in view. If an alert somehow remained
         # open (say a rule was deleted), close it.
-        if _open_alert(session, operator_id) is not None:
+        if _open_alert(session, gym_account_id) is not None:
             return Clear()
         return NoOp()
 
@@ -117,7 +118,7 @@ def evaluate_cookie_expiring(
     within_lead_time = next_window_at - now <= lead_time
     threshold_holds = cookie_dies_before_window and within_lead_time
 
-    open_alert = _open_alert(session, operator_id)
+    open_alert = _open_alert(session, gym_account_id)
     if not threshold_holds:
         return Clear() if open_alert is not None else NoOp()
 
@@ -146,7 +147,7 @@ def evaluate_cookie_expiring(
 
 def apply_alert_action(
     session: Session,
-    operator_id: int,
+    gym_account_id: int,
     action: AlertAction,
     *,
     now: datetime,
@@ -160,7 +161,7 @@ def apply_alert_action(
 
     On :class:`Emit`, two ``notification_outbox`` rows are appended
     (kind = ``telegram`` and ``banner``). The Telegram row is skipped
-    when the operator has no ``telegram_chat_id`` on file — US-007
+    when the owning user has no ``telegram_chat_id`` on file — US-007
     binds that later, and pushing a row with an empty target would
     just crash the dispatcher.
     """
@@ -168,7 +169,7 @@ def apply_alert_action(
         return None
 
     if isinstance(action, Clear):
-        open_alert = _open_alert(session, operator_id)
+        open_alert = _open_alert(session, gym_account_id)
         if open_alert is not None:
             open_alert.closed_at = now
             return int(open_alert.id)
@@ -176,7 +177,7 @@ def apply_alert_action(
 
     # Emit: get-or-create the open alert row, refresh last_emitted_at,
     # write the two outbox rows.
-    open_alert = _open_alert(session, operator_id)
+    open_alert = _open_alert(session, gym_account_id)
     payload = {
         "kind": _ALERT_KIND,
         "next_window_at": action.next_window_at.isoformat(),
@@ -184,7 +185,7 @@ def apply_alert_action(
     }
     if open_alert is None:
         alert = Alert(
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             kind=_ALERT_KIND,
             payload=payload,
             first_emitted_at=now,
@@ -197,19 +198,21 @@ def apply_alert_action(
         alert.payload = payload
         alert.last_emitted_at = now
 
-    _enqueue_outbox_rows(session, operator_id, alert.id, payload, now=now)
+    _enqueue_outbox_rows(session, gym_account_id, alert.id, payload, now=now)
     return int(alert.id)
 
 
-def close_open_cookie_expiring(session: Session, operator_id: int, *, now: datetime) -> int | None:
-    """Close the operator's open ``cookie_expiring`` alert, if any.
+def close_open_cookie_expiring(
+    session: Session, gym_account_id: int, *, now: datetime
+) -> int | None:
+    """Close the gym account's open ``cookie_expiring`` alert, if any.
 
     Called from :meth:`CookieStore.save` for the clear-on-refresh
     contract (US4.4): a successful re-paste means the operator has
     dealt with the underlying condition; the alert should stop nagging
     immediately, not on the next heartbeat.
     """
-    open_alert = _open_alert(session, operator_id)
+    open_alert = _open_alert(session, gym_account_id)
     if open_alert is None:
         return None
     open_alert.closed_at = now
@@ -217,34 +220,34 @@ def close_open_cookie_expiring(session: Session, operator_id: int, *, now: datet
 
 
 def acknowledge_open_cookie_expiring(
-    session: Session, operator_id: int, *, now: datetime
+    session: Session, gym_account_id: int, *, now: datetime
 ) -> int | None:
-    """Acknowledge the operator's open ``cookie_expiring`` alert (US4/FR-027).
+    """Acknowledge the gym account's open ``cookie_expiring`` alert (US4/FR-027).
 
     Powers the Telegram ``/ack`` command. Sets ``acknowledged_at`` on
-    the single open ``cookie_expiring`` row for ``operator_id`` so the
+    the single open ``cookie_expiring`` row for ``gym_account_id`` so the
     evaluator suppresses re-emission for the current heartbeat cycle
     (see :func:`evaluate_cookie_expiring`). The underlying condition is
     not cleared — acknowledgement only quiets the nag for one cycle.
 
-    Returns the acknowledged alert id, or ``None`` when the operator
+    Returns the acknowledged alert id, or ``None`` when the gym account
     has no open ``cookie_expiring`` alert (nothing to acknowledge).
-    The ``_open_alert`` filter is scoped to ``operator_id`` so one
-    operator can never acknowledge another's alert (FR-005).
+    The ``_open_alert`` filter is scoped to ``gym_account_id`` so one
+    tenant can never acknowledge another's alert (FR-005).
     """
-    open_alert = _open_alert(session, operator_id)
+    open_alert = _open_alert(session, gym_account_id)
     if open_alert is None:
         return None
     open_alert.acknowledged_at = now
     return int(open_alert.id)
 
 
-def _open_alert(session: Session, operator_id: int) -> Alert | None:
+def _open_alert(session: Session, gym_account_id: int) -> Alert | None:
     """Return the currently-open ``cookie_expiring`` row, or ``None``."""
     return session.scalar(
         select(Alert)
         .where(
-            Alert.operator_id == operator_id,
+            Alert.gym_account_id == gym_account_id,
             Alert.kind == _ALERT_KIND,
             Alert.closed_at.is_(None),
         )
@@ -253,7 +256,7 @@ def _open_alert(session: Session, operator_id: int) -> Alert | None:
 
 
 def previous_heartbeat_at(
-    session: Session, operator_id: int, current_probed_at: datetime
+    session: Session, gym_account_id: int, current_probed_at: datetime
 ) -> datetime | None:
     """Return the ``probed_at`` of the heartbeat that preceded ``current``.
 
@@ -265,7 +268,7 @@ def previous_heartbeat_at(
     return session.scalar(
         select(HeartbeatReading.probed_at)
         .where(
-            HeartbeatReading.operator_id == operator_id,
+            HeartbeatReading.gym_account_id == gym_account_id,
             HeartbeatReading.probed_at < current_probed_at,
         )
         .order_by(HeartbeatReading.probed_at.desc())
@@ -275,37 +278,50 @@ def previous_heartbeat_at(
 
 def _enqueue_outbox_rows(
     session: Session,
-    operator_id: int,
+    gym_account_id: int,
     alert_id: int,
     payload: dict[str, str],
     *,
     now: datetime,
 ) -> None:
-    """Append one outbox row per channel (Telegram, banner)."""
+    """Append one outbox row per channel (Telegram, banner).
+
+    Outbox delivery is user-scoped (ADR-0007): the rows carry the
+    owning ``user_id`` plus the ``gym_account_id`` for message context.
+    The user is resolved from the gym account so callers only pass the
+    gym-account id.
+    """
     outbox_payload = {**payload, "alert_id": alert_id}
 
-    # Banner row: target is the operator id as a string; the dashboard
-    # partial filters by operator anyway, but every outbox row needs a
+    gym_account = session.get(GymAccount, gym_account_id)
+    if gym_account is None:  # pragma: no cover - FK guarantees presence
+        return
+    user_id = gym_account.user_id
+
+    # Banner row: target is the user id as a string; the dashboard
+    # partial filters by user anyway, but every outbox row needs a
     # non-null target for the dispatcher.
     session.add(
         NotificationOutbox(
-            operator_id=operator_id,
+            user_id=user_id,
+            gym_account_id=gym_account_id,
             kind="banner",
-            target=str(operator_id),
+            target=str(user_id),
             payload=outbox_payload,
             enqueued_at=now,
         )
     )
 
-    # Telegram: only when the operator has bound a chat id. US-007
+    # Telegram: only when the user has bound a chat id. US-007
     # populates that; before then, silently skip so the dispatcher
     # never sees an empty-target row.
-    operator = session.get(OperatorProfile, operator_id)
+    operator = session.get(OperatorProfile, user_id)
     if operator is None or not operator.telegram_chat_id:
         return
     session.add(
         NotificationOutbox(
-            operator_id=operator_id,
+            user_id=user_id,
+            gym_account_id=gym_account_id,
             kind="telegram",
             target=operator.telegram_chat_id,
             payload=outbox_payload,

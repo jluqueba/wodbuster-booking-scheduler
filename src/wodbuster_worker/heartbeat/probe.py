@@ -55,7 +55,7 @@ class HeartbeatOutcome:
     scheduler emitting a log event or an APScheduler job listener).
     """
 
-    operator_id: int
+    gym_account_id: int
     reading_id: int
     result: Literal["valid", "rejected", "unknown"]
     probed_at: datetime
@@ -91,7 +91,7 @@ class HeartbeatProbe:
     def run(
         self,
         session: Session,
-        operator_id: int,
+        gym_account_id: int,
         *,
         now: datetime | None = None,
     ) -> HeartbeatOutcome:
@@ -102,13 +102,13 @@ class HeartbeatProbe:
         commit. Composes cleanly with US-003's per-request session and
         with the scheduler job (which will commit its own scope).
 
-        Raises :class:`NoCookieOnFile` when the operator has never
-        pasted a cookie. Raises :class:`CookieDecryptError` when a row
-        exists but is unreadable (mirrors :meth:`CookieStore.load`).
+        Raises :class:`NoCookieOnFile` when the gym account has never
+        had a cookie pasted. Raises :class:`CookieDecryptError` when a
+        row exists but is unreadable (mirrors :meth:`CookieStore.load`).
         """
-        cookie_value = self._store.load(session, operator_id)
+        cookie_value = self._store.load(session, gym_account_id)
         if cookie_value is None:
-            raise NoCookieOnFile(operator_id)
+            raise NoCookieOnFile(gym_account_id)
 
         # ``now`` is injected for testability. Real callers rely on the
         # default, which is timezone-aware UTC to match the
@@ -126,7 +126,7 @@ class HeartbeatProbe:
         # Read the current projection under the caller's session so the
         # estimator sees an up-to-date value in the same transaction.
         credential = session.execute(
-            select(CookieCredential).where(CookieCredential.operator_id == operator_id)
+            select(CookieCredential).where(CookieCredential.gym_account_id == gym_account_id)
         ).scalar_one()
         new_projection = project_ttl(
             verdict=verdict,
@@ -142,7 +142,7 @@ class HeartbeatProbe:
         credential.projected_ttl_at = new_projection
 
         reading = HeartbeatReading(
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             probed_at=probed_at,
             result=result,
             projected_ttl_at=new_projection,
@@ -153,7 +153,7 @@ class HeartbeatProbe:
         session.flush()  # populate reading.id without committing
 
         return HeartbeatOutcome(
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             reading_id=int(reading.id),
             result=result,
             probed_at=probed_at,

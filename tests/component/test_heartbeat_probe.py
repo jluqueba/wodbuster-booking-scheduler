@@ -61,17 +61,29 @@ def session_factory(postgres_engine: Engine) -> sessionmaker[Session]:
 
 
 def _make_operator(engine: Engine, name: str = "Alice") -> int:
+    """Insert an operator + one gym account; return the gym_account_id.
+
+    The heartbeat probe and cookie store are gym-account-scoped
+    (ADR-0007), so these tests operate on the gym-account id.
+    """
     with engine.begin() as conn:
+        op_id = conn.execute(
+            text("INSERT INTO operator_profile (display_name) VALUES (:n) RETURNING id"),
+            {"n": name},
+        ).scalar_one()
         return int(
             conn.execute(
-                text("INSERT INTO operator_profile (display_name) VALUES (:n) RETURNING id"),
-                {"n": name},
+                text(
+                    "INSERT INTO gym_account (user_id, gym_slug, display_name, idu) "
+                    "VALUES (:op, 'antworktrainingcenter', :n, :idu) RETURNING id"
+                ),
+                {"op": op_id, "n": name, "idu": f"idu{int(op_id):032d}"[:32]},
             ).scalar_one()
         )
 
 
-def _seed_cookie(session: Session, store: CookieStore, operator_id: int, value: str) -> None:
-    store.save(session, operator_id, value, validated_at=datetime.now(tz=UTC))
+def _seed_cookie(session: Session, store: CookieStore, gym_account_id: int, value: str) -> None:
+    store.save(session, gym_account_id, value, validated_at=datetime.now(tz=UTC))
     session.commit()
 
 
@@ -108,12 +120,12 @@ def test_valid_probe_writes_reading_and_updates_freshness_columns(
     assert outcome.reading_id > 0
 
     with session_factory() as session:
-        cred = session.query(CookieCredential).filter_by(operator_id=op_id).one()
+        cred = session.query(CookieCredential).filter_by(gym_account_id=op_id).one()
         assert cred.last_validated_at == now
         assert cred.last_probe_status == "valid"
         assert cred.projected_ttl_at == now + _CEILING
 
-        readings = session.query(HeartbeatReading).filter_by(operator_id=op_id).all()
+        readings = session.query(HeartbeatReading).filter_by(gym_account_id=op_id).all()
         assert len(readings) == 1
         assert readings[0].result == "valid"
         assert readings[0].projected_ttl_at == now + _CEILING
@@ -130,7 +142,7 @@ def test_rejected_probe_forces_immediate_expiry_projection(
         _seed_cookie(session, store, op_id, ".WBAuth-x")
         # Simulate a fresh Valid heartbeat's projection so we can prove
         # a Rejected verdict overrides it.
-        cred = session.query(CookieCredential).filter_by(operator_id=op_id).one()
+        cred = session.query(CookieCredential).filter_by(gym_account_id=op_id).one()
         cred.projected_ttl_at = datetime(2026, 8, 1, tzinfo=UTC)
         session.commit()
 
@@ -143,7 +155,7 @@ def test_rejected_probe_forces_immediate_expiry_projection(
     assert outcome.projected_ttl_at == now  # immediate expiry
 
     with session_factory() as session:
-        cred = session.query(CookieCredential).filter_by(operator_id=op_id).one()
+        cred = session.query(CookieCredential).filter_by(gym_account_id=op_id).one()
         assert cred.projected_ttl_at == now
         assert cred.last_probe_status == "rejected"
 
@@ -157,7 +169,7 @@ def test_unknown_probe_leaves_projection_unchanged(
     original_projection = datetime(2026, 8, 15, tzinfo=UTC)
     with session_factory() as session:
         _seed_cookie(session, store, op_id, ".WBAuth-x")
-        cred = session.query(CookieCredential).filter_by(operator_id=op_id).one()
+        cred = session.query(CookieCredential).filter_by(gym_account_id=op_id).one()
         cred.projected_ttl_at = original_projection
         session.commit()
 
@@ -171,7 +183,7 @@ def test_unknown_probe_leaves_projection_unchanged(
     assert outcome.projected_ttl_at == original_projection
 
     with session_factory() as session:
-        cred = session.query(CookieCredential).filter_by(operator_id=op_id).one()
+        cred = session.query(CookieCredential).filter_by(gym_account_id=op_id).one()
         assert cred.projected_ttl_at == original_projection
         assert cred.last_probe_status == "unknown"
         # ``last_validated_at`` still updates so the "we ran a probe"
@@ -190,7 +202,7 @@ def test_run_without_cookie_raises_and_writes_nothing(
 
     assert validator.calls == []  # no probe issued
     with session_factory() as session:
-        assert session.query(HeartbeatReading).filter_by(operator_id=op_id).count() == 0
+        assert session.query(HeartbeatReading).filter_by(gym_account_id=op_id).count() == 0
 
 
 def test_consecutive_valid_probes_are_monotonic_non_increasing(
@@ -235,6 +247,6 @@ def test_probe_writes_reading_row_even_for_unknown_verdict(
         session.commit()
 
     with session_factory() as session:
-        readings = session.query(HeartbeatReading).filter_by(operator_id=op_id).all()
+        readings = session.query(HeartbeatReading).filter_by(gym_account_id=op_id).all()
         assert len(readings) == 1
         assert readings[0].result == "unknown"

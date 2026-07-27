@@ -26,6 +26,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -34,12 +35,26 @@ import structlog
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 
-from ..booking.executor import BookingExecutor
-from ..persistence.models import SchedulerRule
+from ..booking.executor import BookingExecutorProvider
+from ..persistence.models import GymAccount, SchedulerRule
 
 _log = structlog.get_logger(__name__)
 
 BOOKING_JOB_ID_PREFIX = "booking_rule_"
+
+
+@dataclass
+class _GymRef:
+    """Minimal gym-account view the executor provider + client factory need.
+
+    Captured inside the DB session so the provider/factory can key on
+    ``(gym_slug, idu)`` after the session closes, without holding a
+    detached ORM instance. Structurally satisfies ``GymAccountLike``.
+    """
+
+    gym_slug: str
+    idu: str
+
 
 # US1.4 pre-warm lead. Schedule each booking job this many seconds
 # before the operator-facing ``booking_opens_at`` moment. The
@@ -141,7 +156,7 @@ def _next_occurrence(*, now: datetime, day_of_week: int, at: time) -> datetime:
 def book_rule(
     rule_id: int,
     *,
-    executor: BookingExecutor,
+    executor_provider: BookingExecutorProvider,
     session_factory: SessionFactory,
     scheduler: BackgroundScheduler | None = None,
 ) -> None:
@@ -166,6 +181,25 @@ def book_rule(
             )
             return
 
+        gym_account = session.get(GymAccount, rule.gym_account_id)
+        if gym_account is None:
+            _log.warning(
+                "scheduler.booking.gym_account_gone",
+                rule_id=rule_id,
+                gym_account_id=rule.gym_account_id,
+            )
+            return
+        if not gym_account.active:
+            # FR-006: a deactivated gym account runs no bookings. Its
+            # rules may still be active, but the account gates them.
+            _log.info(
+                "scheduler.booking.gym_account_inactive",
+                rule_id=rule_id,
+                gym_account_id=rule.gym_account_id,
+            )
+            return
+        gym_ref = _GymRef(gym_slug=gym_account.gym_slug, idu=gym_account.idu)
+
         now = datetime.now(tz=UTC)
         window_open = next_window_open_for_rule(rule, now=now - timedelta(seconds=1))
         target_slot = target_slot_for_window(rule, window_open)
@@ -175,6 +209,7 @@ def book_rule(
         # its own session factory for the outcome write.
         rule_snapshot = _detach_rule(rule)
 
+    executor = executor_provider.for_gym_account(gym_ref)
     _log.info(
         "scheduler.booking.fire",
         rule_id=rule_id,
@@ -189,7 +224,7 @@ def book_rule(
             _schedule_next(
                 scheduler=scheduler,
                 rule=rule_snapshot,
-                executor=executor,
+                executor_provider=executor_provider,
                 session_factory=session_factory,
             )
 
@@ -197,7 +232,7 @@ def book_rule(
 def _detach_rule(rule: SchedulerRule) -> SchedulerRule:
     """Return a transient copy of ``rule`` safe to use after session close."""
     copy = SchedulerRule(
-        operator_id=rule.operator_id,
+        gym_account_id=rule.gym_account_id,
         day_of_week=rule.day_of_week,
         class_type=rule.class_type,
         class_time=rule.class_time,
@@ -220,7 +255,7 @@ def register_rule_job(
     scheduler: BackgroundScheduler,
     rule: SchedulerRule,
     *,
-    executor: BookingExecutor,
+    executor_provider: BookingExecutorProvider,
     session_factory: SessionFactory,
     now: datetime | None = None,
     prewarm_lead_s: float = DEFAULT_PREWARM_LEAD_S,
@@ -248,7 +283,7 @@ def register_rule_job(
         trigger=DateTrigger(run_date=run_at),
         args=[rule.id],
         kwargs={
-            "executor": executor,
+            "executor_provider": executor_provider,
             "session_factory": session_factory,
             "scheduler": scheduler,
         },
@@ -281,7 +316,7 @@ def _schedule_next(
     *,
     scheduler: BackgroundScheduler,
     rule: SchedulerRule,
-    executor: BookingExecutor,
+    executor_provider: BookingExecutorProvider,
     session_factory: SessionFactory,
 ) -> None:
     """Re-register the rule's job for the following window."""
@@ -289,7 +324,7 @@ def _schedule_next(
         register_rule_job(
             scheduler,
             rule,
-            executor=executor,
+            executor_provider=executor_provider,
             session_factory=session_factory,
             # Small offset so ``next_window_open_for_rule`` rolls
             # forward past the window that just fired.

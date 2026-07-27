@@ -61,7 +61,7 @@ def test_no_projection_and_no_open_alert_is_noop() -> None:
     with _patch_next_window(_NEXT_WINDOW_SOON):
         result = evaluate_cookie_expiring(
             session=session,  # type: ignore[arg-type]
-            operator_id=1,
+            gym_account_id=1,
             projected_ttl_at=None,
             now=_NOW,
         )
@@ -74,7 +74,7 @@ def test_no_projection_but_open_alert_clears() -> None:
     with _patch_next_window(_NEXT_WINDOW_SOON):
         result = evaluate_cookie_expiring(
             session=session,  # type: ignore[arg-type]
-            operator_id=1,
+            gym_account_id=1,
             projected_ttl_at=None,
             now=_NOW,
         )
@@ -87,7 +87,7 @@ def test_no_next_window_returns_noop_when_no_open_alert() -> None:
     with _patch_next_window(None):
         result = evaluate_cookie_expiring(
             session=session,  # type: ignore[arg-type]
-            operator_id=1,
+            gym_account_id=1,
             projected_ttl_at=_NOW + timedelta(days=15),
             now=_NOW,
         )
@@ -100,7 +100,7 @@ def test_no_next_window_clears_stale_open_alert() -> None:
     with _patch_next_window(None):
         result = evaluate_cookie_expiring(
             session=session,  # type: ignore[arg-type]
-            operator_id=1,
+            gym_account_id=1,
             projected_ttl_at=_NOW + timedelta(days=15),
             now=_NOW,
         )
@@ -117,7 +117,7 @@ def test_far_window_returns_noop_even_if_cookie_dies_before() -> None:
     with _patch_next_window(_NEXT_WINDOW_FAR):
         result = evaluate_cookie_expiring(
             session=session,  # type: ignore[arg-type]
-            operator_id=1,
+            gym_account_id=1,
             projected_ttl_at=projected,
             now=_NOW,
         )
@@ -131,7 +131,7 @@ def test_within_lead_time_but_cookie_survives_returns_noop() -> None:
     with _patch_next_window(_NEXT_WINDOW_SOON):
         result = evaluate_cookie_expiring(
             session=session,  # type: ignore[arg-type]
-            operator_id=1,
+            gym_account_id=1,
             projected_ttl_at=_NOW + timedelta(days=30),
             now=_NOW,
         )
@@ -146,7 +146,7 @@ def test_threshold_holds_and_no_open_alert_emits() -> None:
     with _patch_next_window(_NEXT_WINDOW_SOON):
         result = evaluate_cookie_expiring(
             session=session,  # type: ignore[arg-type]
-            operator_id=1,
+            gym_account_id=1,
             projected_ttl_at=projected,
             now=_NOW,
         )
@@ -161,7 +161,7 @@ def test_threshold_holds_with_open_alert_and_no_ack_re_emits() -> None:
     with _patch_next_window(_NEXT_WINDOW_SOON):
         result = evaluate_cookie_expiring(
             session=session,  # type: ignore[arg-type]
-            operator_id=1,
+            gym_account_id=1,
             projected_ttl_at=_NOW + timedelta(hours=6),
             now=_NOW,
         )
@@ -178,7 +178,7 @@ def test_threshold_holds_with_recent_ack_suppresses_this_cycle() -> None:
     with _patch_next_window(_NEXT_WINDOW_SOON):
         result = evaluate_cookie_expiring(
             session=session,  # type: ignore[arg-type]
-            operator_id=1,
+            gym_account_id=1,
             projected_ttl_at=_NOW + timedelta(hours=6),
             now=_NOW,
             previous_heartbeat_at=prev_hb,
@@ -196,7 +196,7 @@ def test_threshold_holds_with_stale_ack_re_emits() -> None:
     with _patch_next_window(_NEXT_WINDOW_SOON):
         result = evaluate_cookie_expiring(
             session=session,  # type: ignore[arg-type]
-            operator_id=1,
+            gym_account_id=1,
             projected_ttl_at=_NOW + timedelta(hours=6),
             now=_NOW,
             previous_heartbeat_at=prev_hb,
@@ -212,7 +212,7 @@ def test_ack_without_previous_heartbeat_re_emits() -> None:
     with _patch_next_window(_NEXT_WINDOW_SOON):
         result = evaluate_cookie_expiring(
             session=session,  # type: ignore[arg-type]
-            operator_id=1,
+            gym_account_id=1,
             projected_ttl_at=_NOW + timedelta(hours=6),
             now=_NOW,
             previous_heartbeat_at=None,
@@ -239,7 +239,7 @@ def test_lead_time_boundary(lead_hours: int, should_alert: bool) -> None:
     with _patch_next_window(next_window):
         result = evaluate_cookie_expiring(
             session=session,  # type: ignore[arg-type]
-            operator_id=1,
+            gym_account_id=1,
             projected_ttl_at=projected,
             now=_NOW,
         )

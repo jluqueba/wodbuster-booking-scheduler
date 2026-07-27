@@ -7,6 +7,7 @@ You set up your preferred classes once. A small service then watches the clock a
 ## What it does
 
 - **Books automatically** the moment a class window opens, with an optional backup class if the first one is full.
+- **Books at multiple gyms.** Add more than one WodBuster gym to your account; each gym books independently with its own login, so a cookie problem at one gym never affects the others.
 - **Simple web page** to manage everything: preferred classes, session cookie, booking history, and worker health.
 - **Telegram notifications** on every outcome, so a booking is never a mystery. You can also check status, cancel a class, or book a one-off class straight from the chat.
 - **Early warnings** (hours ahead) when your WodBuster session is about to expire, so you are never caught out at booking time.
@@ -15,7 +16,7 @@ You set up your preferred classes once. A small service then watches the clock a
 
 ## How it works, in plain terms
 
-1. You sign in to the web page and paste your WodBuster session cookie once.
+1. You sign in to the web page and paste your WodBuster session cookie once for each gym you book at.
 2. You create rules for the classes you want (for example, "Tuesday 19:00 CrossFit, or 20:00 if that is full").
 3. The service runs quietly in the background on Azure. When a booking window opens, it makes the reservation in the first second.
 4. You get a Telegram notification with the result, and you can check or cancel anything on the go.

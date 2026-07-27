@@ -20,8 +20,8 @@ Design decisions:
   ``save`` composes cleanly with the caller's commit-on-success block
   (US-003 upserts the cookie in the same transaction that clears the
   cookie-expiring alert — US4.4).
-- **Upsert semantics on ``operator_id``.** Exactly one active row per
-  operator (enforced by ``uq_cookie_credential_operator``). Re-pasting
+- **Upsert semantics on ``gym_account_id``.** Exactly one active row per
+  gym account (enforced by ``uq_cookie_credential_gym_account``). Re-pasting
   overwrites the ciphertext, nonce, and validation timestamps; it also
   clears ``projected_ttl_at`` so the next heartbeat is what re-derives
   the countdown from scratch.
@@ -39,11 +39,14 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..security.cipher import Cipher, InvalidCipherText
-from .models import CookieCredential
+from .models import CookieCredential, GymAccount
+
+_log = structlog.get_logger(__name__)
 
 
 class CookieDecryptError(Exception):
@@ -57,12 +60,17 @@ class CookieDecryptError(Exception):
 
 
 class CookieStore:
-    """Encrypted read/write path for one active cookie per operator.
+    """Encrypted read/write path for one active cookie per gym account.
 
     Instantiated once at startup with a :class:`Cipher` built from the
     Key Vault secret. Threadsafe (the underlying ``AESGCM`` primitive
     from ``cryptography`` is threadsafe, and the store adds no mutable
     state).
+
+    The AES-256-GCM associated data binds each ciphertext to its owning
+    ``(gym_account_id, gym_slug)`` (SEC-005). Authentication fails if a
+    row is copied to a different gym account, so a tenant can never
+    replay another tenant's stored cookie.
     """
 
     __slots__ = ("_cipher",)
@@ -70,15 +78,29 @@ class CookieStore:
     def __init__(self, cipher: Cipher) -> None:
         self._cipher = cipher
 
+    @staticmethod
+    def _associated_data(session: Session, gym_account_id: int) -> bytes:
+        """Return the GCM associated data bound to this gym account.
+
+        Resolves ``gym_slug`` from the :class:`GymAccount` row so callers
+        only pass an id. The slug is part of the tag input, so renaming
+        a gym account's slug (a re-key event) is treated as tampering
+        and forces a re-paste.
+        """
+        gym_account = session.get(GymAccount, gym_account_id)
+        if gym_account is None:
+            raise ValueError(f"unknown gym_account_id {gym_account_id}")
+        return f"gym_account:{gym_account_id}:{gym_account.gym_slug}".encode()
+
     def save(
         self,
         session: Session,
-        operator_id: int,
+        gym_account_id: int,
         cookie_value: str,
         *,
         validated_at: datetime,
     ) -> None:
-        """Upsert the encrypted cookie for ``operator_id``.
+        """Upsert the encrypted cookie for ``gym_account_id``.
 
         Callers must already have validated ``cookie_value`` via
         :class:`~wodbuster_worker.security.cookie.CookieValidator`.
@@ -94,16 +116,19 @@ class CookieStore:
         """
         if not cookie_value:
             raise ValueError("cookie_value must be a non-empty string")
-        ciphertext, nonce = self._cipher.encrypt(cookie_value.encode("utf-8"))
+        associated_data = self._associated_data(session, gym_account_id)
+        ciphertext, nonce = self._cipher.encrypt(
+            cookie_value.encode("utf-8"), associated_data=associated_data
+        )
 
         existing = session.execute(
-            select(CookieCredential).where(CookieCredential.operator_id == operator_id)
+            select(CookieCredential).where(CookieCredential.gym_account_id == gym_account_id)
         ).scalar_one_or_none()
 
         if existing is None:
             session.add(
                 CookieCredential(
-                    operator_id=operator_id,
+                    gym_account_id=gym_account_id,
                     cookie_ciphertext=ciphertext,
                     cookie_nonce=nonce,
                     last_validated_at=validated_at,
@@ -127,11 +152,11 @@ class CookieStore:
         # scratch.
         existing.projected_ttl_at = None
 
-    def load(self, session: Session, operator_id: int) -> str | None:
-        """Return the decrypted cookie for ``operator_id`` or ``None``.
+    def load(self, session: Session, gym_account_id: int) -> str | None:
+        """Return the decrypted cookie for ``gym_account_id`` or ``None``.
 
-        ``None`` means the operator has never pasted a cookie or the
-        row was hard-deleted. Callers treat that as "route to the
+        ``None`` means the gym account has never had a cookie pasted or
+        the row was hard-deleted. Callers treat that as "route to the
         paste form" rather than as an error.
 
         Raises :class:`CookieDecryptError` when a row exists but its
@@ -140,16 +165,43 @@ class CookieStore:
         leak whether the key or the payload was wrong.
         """
         row = session.execute(
-            select(CookieCredential).where(CookieCredential.operator_id == operator_id)
+            select(CookieCredential).where(CookieCredential.gym_account_id == gym_account_id)
         ).scalar_one_or_none()
         if row is None:
             return None
+        associated_data = self._associated_data(session, gym_account_id)
+        ciphertext = bytes(row.cookie_ciphertext)
+        nonce = bytes(row.cookie_nonce)
         try:
-            plaintext = self._cipher.decrypt(bytes(row.cookie_ciphertext), bytes(row.cookie_nonce))
-        except InvalidCipherText as exc:
-            raise CookieDecryptError(
-                f"cookie for operator {operator_id} failed authentication"
-            ) from exc
+            plaintext = self._cipher.decrypt(
+                ciphertext,
+                nonce,
+                associated_data=associated_data,
+            )
+        except InvalidCipherText:
+            # Backward compatibility (multi-gym migration): cookies stored
+            # in the single-gym era were encrypted WITHOUT associated data
+            # (SEC-005 AAD binding did not exist yet), and the migration
+            # moves that ciphertext onto the seeded gym account without
+            # re-encrypting it. Fall back to a no-AAD decrypt so an
+            # existing production cookie keeps booking; the next re-paste
+            # (or refresh) upgrades it to the bound form via ``save``.
+            #
+            # This does NOT reopen the SEC-005 replay hole: a ciphertext
+            # written WITH AAD for another gym account fails both the
+            # bound decrypt above and this no-AAD retry, so only a
+            # genuinely legacy blob is ever accepted here.
+            try:
+                plaintext = self._cipher.decrypt(ciphertext, nonce, associated_data=None)
+            except InvalidCipherText as exc:
+                raise CookieDecryptError(
+                    f"cookie for gym account {gym_account_id} failed authentication"
+                ) from exc
+            _log.warning(
+                "cookie.decrypt.legacy_no_aad",
+                gym_account_id=gym_account_id,
+                detail="decrypted a pre-migration cookie without AAD; re-paste to upgrade",
+            )
         return plaintext.decode("utf-8")
 
 

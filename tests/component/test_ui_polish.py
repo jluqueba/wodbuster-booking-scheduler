@@ -25,6 +25,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from .conftest import gym_account_id_for
+
 
 def _sign_in(
     app: FastAPI,
@@ -50,16 +52,17 @@ def _sign_in(
 def _seed_active_rule(engine: Engine, *, operator_id: int) -> int:
     """Insert a Wed-attendance rule opening 2d before at 21:30."""
     with engine.begin() as conn:
+        ga = gym_account_id_for(conn, operator_id)
         return int(
             conn.execute(
                 text(
                     "INSERT INTO scheduler_rule "
-                    "(operator_id, day_of_week, class_type, class_time, "
+                    "(gym_account_id, day_of_week, class_type, class_time, "
                     "booking_opens_days_before, booking_opens_at, active) "
-                    "VALUES (:op, 2, 'WOD', '21:30', 2, '21:30', true) "
+                    "VALUES (:ga, 2, 'WOD', '21:30', 2, '21:30', true) "
                     "RETURNING id"
                 ),
-                {"op": operator_id},
+                {"ga": ga},
             ).scalar_one()
         )
 

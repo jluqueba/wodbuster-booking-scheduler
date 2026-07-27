@@ -89,19 +89,19 @@ class _FakeProbe:
         self._script = list(script)
         self.calls: list[int] = []
 
-    def run(self, session: Any, operator_id: int) -> HeartbeatOutcome:
-        self.calls.append(operator_id)
+    def run(self, session: Any, gym_account_id: int) -> HeartbeatOutcome:
+        self.calls.append(gym_account_id)
         item = self._script.pop(0)
         if isinstance(item, Exception):
             raise item
         return item
 
 
-def _outcome(operator_id: int, result: str = "valid") -> HeartbeatOutcome:
+def _outcome(gym_account_id: int, result: str = "valid") -> HeartbeatOutcome:
     now = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
     return HeartbeatOutcome(
-        operator_id=operator_id,
-        reading_id=100 + operator_id,
+        gym_account_id=gym_account_id,
+        reading_id=100 + gym_account_id,
         result=result,  # type: ignore[arg-type]
         probed_at=now,
         projected_ttl_at=now + timedelta(days=30),
@@ -125,11 +125,11 @@ def test_tick_runs_probe_for_every_operator_in_order() -> None:
     outcomes = run_heartbeat_tick(
         probe,
         factory,
-        operator_ids=_ids([1, 2, 3]),  # type: ignore[arg-type]
+        gym_account_ids=_ids([1, 2, 3]),  # type: ignore[arg-type]
     )
 
     assert probe.calls == [1, 2, 3]
-    assert [o.operator_id for o in outcomes] == [1, 2, 3]
+    assert [o.gym_account_id for o in outcomes] == [1, 2, 3]
     # One session for the id-enumeration + one per probe = 4 opens.
     assert factory.opens == 4
 
@@ -141,11 +141,11 @@ def test_tick_skips_operators_without_a_cookie() -> None:
     outcomes = run_heartbeat_tick(
         probe,
         factory,
-        operator_ids=_ids([1, 2, 3, 4]),  # type: ignore[arg-type]
+        gym_account_ids=_ids([1, 2, 3, 4]),  # type: ignore[arg-type]
     )
 
     # Skipped operators produce no outcome and no error.
-    assert [o.operator_id for o in outcomes] == [2, 4]
+    assert [o.gym_account_id for o in outcomes] == [2, 4]
     assert probe.calls == [1, 2, 3, 4]
 
 
@@ -157,11 +157,11 @@ def test_tick_isolates_failures_across_operators() -> None:
     outcomes = run_heartbeat_tick(
         probe,
         factory,
-        operator_ids=_ids([1, 2, 3]),  # type: ignore[arg-type]
+        gym_account_ids=_ids([1, 2, 3]),  # type: ignore[arg-type]
     )
 
     # Failed operator absent; the others complete.
-    assert [o.operator_id for o in outcomes] == [1, 3]
+    assert [o.gym_account_id for o in outcomes] == [1, 3]
     assert probe.calls == [1, 2, 3]
 
 
@@ -172,7 +172,7 @@ def test_tick_with_no_operators_returns_empty_list() -> None:
     outcomes = run_heartbeat_tick(
         probe,
         factory,
-        operator_ids=_ids([]),  # type: ignore[arg-type]
+        gym_account_ids=_ids([]),  # type: ignore[arg-type]
     )
 
     assert outcomes == []

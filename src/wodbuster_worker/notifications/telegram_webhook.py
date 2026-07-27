@@ -72,10 +72,12 @@ from ..booking.manual import (
     NoCookieError,
 )
 from ..booking.upcoming import list_upcoming_slots
+from ..gyms.service import gym_client_factory, resolve_gym_client
 from ..heartbeat.alerts import acknowledge_open_cookie_expiring
 from ..heartbeat.next_window import compute_next_booking
 from ..i18n import lang_url, t
 from ..persistence.engine import get_session
+from ..persistence.gym_accounts import resolve_sole_gym_account_id
 from ..persistence.models import OperatorProfile
 from ..scheduler.rule_jobs import operator_timezone
 from . import telegram as telegram_sender
@@ -482,8 +484,11 @@ def _handle_next(request: Request, *, chat_id: str) -> str:
         operator = _operator_for_chat(session, chat_id)
         if operator is None:
             return _UNBOUND_REJECTION
-        next_booking = compute_next_booking(session, operator.id, now)
-        upcoming = list_upcoming_slots(session, operator.id, now=now)
+        gym_account_id = resolve_sole_gym_account_id(session, operator.id)
+        if gym_account_id is None:
+            return "Nothing scheduled. No active rules have a window on the horizon."
+        next_booking = compute_next_booking(session, gym_account_id, now)
+        upcoming = list_upcoming_slots(session, gym_account_id, now=now)
 
     if next_booking is None and not upcoming:
         return "Nothing scheduled. No active rules have a window on the horizon."
@@ -519,7 +524,10 @@ def _handle_last(request: Request, *, chat_id: str) -> str:
         operator = _operator_for_chat(session, chat_id)
         if operator is None:
             return _UNBOUND_REJECTION
-        recent = list_recent_bookings(session, operator.id, limit=1)
+        gym_account_id = resolve_sole_gym_account_id(session, operator.id)
+        if gym_account_id is None:
+            return "No bookings yet. Nothing has been attempted for this operator."
+        recent = list_recent_bookings(session, gym_account_id, limit=1)
 
     if not recent:
         return "No bookings yet. Nothing has been attempted for this operator."
@@ -542,9 +550,9 @@ def _handle_cancel(request: Request, *, chat_id: str, argument: str) -> str:
     except ValueError:
         return "Booking id must be a number. Usage: /cancel <booking-id>."
 
-    client = getattr(request.app.state, "wodbuster_client", None)
+    factory = gym_client_factory(request.app.state)
     cookie_store = getattr(request.app.state, "cookie_store", None)
-    if client is None or cookie_store is None:
+    if factory is None or cookie_store is None:
         return "Cancellation is temporarily unavailable. Try again shortly."
 
     tz = operator_timezone()
@@ -552,10 +560,17 @@ def _handle_cancel(request: Request, *, chat_id: str, argument: str) -> str:
         operator = _operator_for_chat(session, chat_id)
         if operator is None:
             return _UNBOUND_REJECTION
+        gym_account_id = resolve_sole_gym_account_id(session, operator.id)
+        if gym_account_id is None:
+            return f"Booking #{booking_id} not found for this operator."
+        resolved = resolve_gym_client(factory, session, gym_account_id)
+        if resolved is None:
+            return f"Booking #{booking_id} not found for this operator."
+        client, _idu = resolved
         try:
             outcome = cancel_booking(
                 session,
-                operator_id=operator.id,
+                gym_account_id=gym_account_id,
                 booking_id=booking_id,
                 client=client,
                 cookie_store=cookie_store,
@@ -609,19 +624,23 @@ def _handle_bookclass(request: Request, *, chat_id: str, argument: str) -> str:
         )
     class_type = " ".join(args[2:]).strip() or None
 
-    client = getattr(request.app.state, "wodbuster_client", None)
+    factory = gym_client_factory(request.app.state)
     cookie_store = getattr(request.app.state, "cookie_store", None)
-    if client is None or cookie_store is None:
+    if factory is None or cookie_store is None:
         return "Manual booking is temporarily unavailable. Try again shortly."
 
     with get_session() as session:
         operator = _operator_for_chat(session, chat_id)
         if operator is None:
             return _UNBOUND_REJECTION
-        operator_id = operator.id
+        gym_account_id = resolve_sole_gym_account_id(session, operator.id)
+        if gym_account_id is None:
+            return "No active WodBuster session on file. Refresh your cookie and retry."
+        resolved = resolve_gym_client(factory, session, gym_account_id)
+        if resolved is None:
+            return "No active WodBuster session on file. Refresh your cookie and retry."
+        client, operator_idu = resolved
 
-    settings = getattr(request.app.state, "settings", None)
-    operator_idu = getattr(settings, "wodbuster_idu", None) if settings is not None else None
     service = ManualBookingService(
         client=client,
         cookie_store=cookie_store,
@@ -631,7 +650,7 @@ def _handle_bookclass(request: Request, *, chat_id: str, argument: str) -> str:
     target_date = datetime.strptime(args[0], "%Y-%m-%d").date()
     try:
         result = service.book(
-            operator_id=operator_id,
+            gym_account_id=gym_account_id,
             target_date=target_date,
             target_time=args[1],
             class_type=class_type,

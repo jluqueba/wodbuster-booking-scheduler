@@ -530,6 +530,30 @@ button.wb-btn--danger:hover,
   color: var(--wb-danger);
 }
 
+/* Per-gym row actions (multi-gym P4): the activate toggle and the
+   collapsible cookie-refresh form stack vertically inside the table's
+   Actions cell so each gym's controls stay grouped. */
+.wb-gym-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+.wb-gym-actions form {
+  margin: 0;
+}
+.wb-gym-refresh summary {
+  cursor: pointer;
+  color: var(--wb-accent);
+  font-size: 0.88rem;
+}
+.wb-gym-refresh[open] summary {
+  margin-bottom: 0.5rem;
+}
+.wb-gym-refresh textarea {
+  margin-bottom: 0.5rem;
+}
+
 /* --------------------------------------------------------------------------
    Forms
    -------------------------------------------------------------------------- */

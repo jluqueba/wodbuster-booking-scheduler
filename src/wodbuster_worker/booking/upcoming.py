@@ -59,7 +59,7 @@ class UpcomingSlot:
 
 def list_upcoming_slots(
     session: Session,
-    operator_id: int,
+    gym_account_id: int,
     *,
     now: datetime | None = None,
     horizon_days: int = 14,
@@ -75,11 +75,11 @@ def list_upcoming_slots(
     _now = now if now is not None else datetime.now(tz=UTC)
     horizon = _now + timedelta(days=horizon_days)
 
-    granted_by_key = _load_granted_index(session, operator_id, _now, horizon)
-    covered_keys = _load_covered_keys(session, operator_id, _now, horizon)
+    granted_by_key = _load_granted_index(session, gym_account_id, _now, horizon)
+    covered_keys = _load_covered_keys(session, gym_account_id, _now, horizon)
     pending: list[UpcomingSlot] = _project_pending(
         session,
-        operator_id=operator_id,
+        gym_account_id=gym_account_id,
         now=_now,
         horizon=horizon,
         covered_keys=covered_keys,
@@ -99,7 +99,7 @@ def list_upcoming_slots(
 
 def _load_granted_index(
     session: Session,
-    operator_id: int,
+    gym_account_id: int,
     now: datetime,
     horizon: datetime,
 ) -> dict[tuple[int | None, datetime], UpcomingSlot]:
@@ -107,7 +107,7 @@ def _load_granted_index(
     rows = session.execute(
         select(BookingOutcome)
         .where(
-            BookingOutcome.operator_id == operator_id,
+            BookingOutcome.gym_account_id == gym_account_id,
             BookingOutcome.terminal_status == "granted",
             BookingOutcome.target_slot >= now,
             BookingOutcome.target_slot <= horizon,
@@ -130,7 +130,7 @@ def _load_granted_index(
 
 def _load_covered_keys(
     session: Session,
-    operator_id: int,
+    gym_account_id: int,
     now: datetime,
     horizon: datetime,
 ) -> set[tuple[int | None, datetime]]:
@@ -141,7 +141,7 @@ def _load_covered_keys(
     """
     rows = session.execute(
         select(BookingOutcome.rule_id, BookingOutcome.target_slot).where(
-            BookingOutcome.operator_id == operator_id,
+            BookingOutcome.gym_account_id == gym_account_id,
             BookingOutcome.target_slot >= now,
             BookingOutcome.target_slot <= horizon,
         )
@@ -152,7 +152,7 @@ def _load_covered_keys(
 def _project_pending(
     session: Session,
     *,
-    operator_id: int,
+    gym_account_id: int,
     now: datetime,
     horizon: datetime,
     covered_keys: set[tuple[int | None, datetime]],
@@ -162,7 +162,7 @@ def _project_pending(
     rules = (
         session.execute(
             select(SchedulerRule).where(
-                SchedulerRule.operator_id == operator_id,
+                SchedulerRule.gym_account_id == gym_account_id,
                 SchedulerRule.active.is_(True),
             )
         )

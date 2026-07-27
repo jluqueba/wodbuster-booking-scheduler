@@ -29,7 +29,7 @@ from ..scheduler.rule_jobs import (
 )
 
 
-def compute_next_window(session: Session, operator_id: int, now: datetime) -> datetime | None:
+def compute_next_window(session: Session, gym_account_id: int, now: datetime) -> datetime | None:
     """Return the earliest upcoming booking-window datetime.
 
     The value is timezone-aware UTC. Callers compare it against
@@ -43,7 +43,7 @@ def compute_next_window(session: Session, operator_id: int, now: datetime) -> da
     rules = (
         session.execute(
             select(SchedulerRule).where(
-                SchedulerRule.operator_id == operator_id,
+                SchedulerRule.gym_account_id == gym_account_id,
                 SchedulerRule.active.is_(True),
             )
         )
@@ -82,7 +82,9 @@ class NextBooking:
     rule_id: int
 
 
-def compute_next_booking(session: Session, operator_id: int, now: datetime) -> NextBooking | None:
+def compute_next_booking(
+    session: Session, gym_account_id: int, now: datetime
+) -> NextBooking | None:
     """Return richer info about the next scheduled booking.
 
     Same selection semantics as :func:`compute_next_window` (earliest
@@ -96,7 +98,7 @@ def compute_next_booking(session: Session, operator_id: int, now: datetime) -> N
     rules = (
         session.execute(
             select(SchedulerRule).where(
-                SchedulerRule.operator_id == operator_id,
+                SchedulerRule.gym_account_id == gym_account_id,
                 SchedulerRule.active.is_(True),
             )
         )

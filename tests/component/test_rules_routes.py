@@ -18,6 +18,8 @@ from sqlalchemy.orm import sessionmaker
 
 from wodbuster_worker.persistence.models import SchedulerRule
 
+from .conftest import gym_account_id_for
+
 
 def _sign_in(
     app: FastAPI,
@@ -121,7 +123,8 @@ def test_create_single_day_persists_one_row(
 
     factory = sessionmaker(bind=postgres_engine)
     with factory() as session:
-        rules = session.query(SchedulerRule).filter_by(operator_id=op_id).all()
+        gym_account_id = gym_account_id_for(session, op_id)
+        rules = session.query(SchedulerRule).filter_by(gym_account_id=gym_account_id).all()
         assert len(rules) == 1
         rule = rules[0]
         assert rule.day_of_week == 2
@@ -155,9 +158,10 @@ def test_create_multi_day_fans_out_to_n_rows(
 
     factory = sessionmaker(bind=postgres_engine)
     with factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
         rules = (
             session.query(SchedulerRule)
-            .filter_by(operator_id=op_id)
+            .filter_by(gym_account_id=gym_account_id)
             .order_by(SchedulerRule.day_of_week)
             .all()
         )
@@ -190,7 +194,8 @@ def test_create_with_second_shot_persists_both_fields(
 
     factory = sessionmaker(bind=postgres_engine)
     with factory() as session:
-        rule = session.query(SchedulerRule).filter_by(operator_id=op_id).one()
+        gym_account_id = gym_account_id_for(session, op_id)
+        rule = session.query(SchedulerRule).filter_by(gym_account_id=gym_account_id).one()
         assert rule.second_shot_class_type == "Halterofilia"
         assert rule.second_shot_class_time == "20:30"
 
@@ -223,7 +228,8 @@ def test_create_with_no_days_re_renders_with_error(
 
     factory = sessionmaker(bind=postgres_engine)
     with factory() as session:
-        assert session.query(SchedulerRule).filter_by(operator_id=op_id).count() == 0
+        gym_account_id = gym_account_id_for(session, op_id)
+        assert session.query(SchedulerRule).filter_by(gym_account_id=gym_account_id).count() == 0
 
 
 def test_create_without_csrf_is_forbidden(
@@ -297,7 +303,8 @@ def test_edit_updates_all_fields_in_place(
             headers=_csrf_headers(client),
         )
         with factory() as session:
-            rule_id = session.query(SchedulerRule).filter_by(operator_id=op_id).one().id
+            gym_account_id = gym_account_id_for(session, op_id)
+            rule_id = session.query(SchedulerRule).filter_by(gym_account_id=gym_account_id).one().id
 
         response = client.post(
             f"/rules/{rule_id}",
@@ -379,7 +386,10 @@ def test_edit_rule_of_other_operator_returns_404(
 
     factory = sessionmaker(bind=postgres_engine)
     with factory() as session:
-        alice_rule_id = session.query(SchedulerRule).filter_by(operator_id=op_a_id).one().id
+        gym_account_id = gym_account_id_for(session, op_a_id)
+        alice_rule_id = (
+            session.query(SchedulerRule).filter_by(gym_account_id=gym_account_id).one().id
+        )
 
     with _sign_in(app, subject_b, "Bob", monkeypatch) as client:
         assert client.get(f"/rules/{alice_rule_id}").status_code == 404
@@ -426,7 +436,8 @@ def test_delete_rule_removes_row(
             headers=_csrf_headers(client),
         )
         with factory() as session:
-            rule_id = session.query(SchedulerRule).filter_by(operator_id=op_id).one().id
+            gym_account_id = gym_account_id_for(session, op_id)
+            rule_id = session.query(SchedulerRule).filter_by(gym_account_id=gym_account_id).one().id
 
         response = client.post(
             f"/rules/{rule_id}/delete",

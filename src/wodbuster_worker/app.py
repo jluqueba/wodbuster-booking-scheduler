@@ -29,11 +29,12 @@ from .auth.deps import AuthRedirectRequired
 from .auth.oauth import build_oauth
 from .auth.routes import router as auth_router
 from .auth.session import IdleTimeoutMiddleware, build_session_middleware
-from .booking.executor import BookingExecutor
+from .booking.executor import BookingExecutorProvider
 from .booking.routes import router as history_router
 from .booking.vacation_routes import router as vacation_router
 from .config import Settings, get_settings
 from .cookie.routes import router as cookie_router
+from .gyms.routes import router as gyms_router
 from .heartbeat.next_window import compute_next_booking
 from .heartbeat.probe import HeartbeatProbe
 from .i18n import register_jinja_globals
@@ -59,7 +60,7 @@ from .scheduler.scheduler import (
 from .security.cipher import Cipher
 from .security.cookie import CookieValidator
 from .security.keyvault import Secrets, load_secrets
-from .wodbuster_client.client import WodBusterClient
+from .wodbuster_client.client import WodBusterClient, WodBusterClientFactory
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -95,6 +96,17 @@ def _build_cookie_stack(
     validator = CookieValidator(wodbuster_client) if wodbuster_client else None
     store = CookieStore(cipher) if cipher else None
     return cipher, wodbuster_client, validator, store
+
+
+def _default_gym_discovery_factory(gym_slug: str) -> WodBusterClient:
+    """Build a discovery-only WodBuster client for the add-gym flow.
+
+    The gym's ``idu`` is unknown until discovery, so the client is built
+    without one; only ``discover_idu`` (and its implicit cookie
+    validation) are exercised on it. The base URL is derived solely from
+    the already-allow-list-validated slug (SEC-001).
+    """
+    return WodBusterClient(gym=gym_slug)
 
 
 def _build_heartbeat_probe(
@@ -206,6 +218,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.wodbuster_client = wb_client
         app.state.cookie_validator = validator
         app.state.cookie_store = store
+    if not hasattr(app.state, "gym_discovery_factory") or app.state.gym_discovery_factory is None:
+        app.state.gym_discovery_factory = _default_gym_discovery_factory
     if not hasattr(app.state, "heartbeat_probe") or app.state.heartbeat_probe is None:
         app.state.heartbeat_probe = _build_heartbeat_probe(
             settings, app.state.cookie_store, app.state.cookie_validator
@@ -254,18 +268,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # client are both live. Missing dependencies mean bookings
             # cannot fire; the scheduler still hosts heartbeat and
             # dispatcher jobs so the operator sees the cookie state.
-            if app.state.cookie_store is not None and app.state.wodbuster_client is not None:
-                executor = BookingExecutor(
-                    client=app.state.wodbuster_client,
+            # Booking wiring: only when the cookie store is live. Each
+            # rule's attempt resolves a per-gym-account client + idu via
+            # the executor provider (ADR-0007), so no global gym is
+            # required — a gym account added through the /gyms flow books
+            # against its own subdomain.
+            if app.state.cookie_store is not None:
+                client_factory = getattr(app.state, "booking_client_factory", None)
+                if not isinstance(client_factory, WodBusterClientFactory):
+                    client_factory = WodBusterClientFactory()
+                app.state.booking_client_factory = client_factory
+                executor_provider = BookingExecutorProvider(
+                    client_factory=client_factory,
                     session_factory=get_session,
                     cookie_store=app.state.cookie_store,
-                    operator_idu=settings.wodbuster_idu,
                 )
-                app.state.booking_executor = executor
+                app.state.booking_executor_provider = executor_provider
                 app.state.booking_scheduler = scheduler
                 register_rule_bootstrap_jobs(
                     scheduler,
-                    executor=executor,
+                    executor_provider=executor_provider,
                     session_factory=get_session,
                 )
             scheduler.start()
@@ -325,6 +347,7 @@ def create_app(*, settings: Settings | None = None, secrets: Secrets | None = No
     app.state.wodbuster_client = wb_client
     app.state.cookie_validator = validator
     app.state.cookie_store = store
+    app.state.gym_discovery_factory = _default_gym_discovery_factory
     app.state.heartbeat_probe = _build_heartbeat_probe(effective_settings, store, validator)
     # The scheduler itself is built lazily inside the lifespan hook
     # so tests that construct an app without entering its lifespan
@@ -375,6 +398,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(history_router)
     app.include_router(vacation_router)
     app.include_router(telegram_router)
+    app.include_router(gyms_router)
     app.include_router(static_pages_router)
     app.add_api_route("/health", health, methods=["GET"])
     # Static assets (brand CSS, later JS / images). Mounted after

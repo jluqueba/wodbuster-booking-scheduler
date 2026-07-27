@@ -26,12 +26,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from wodbuster_worker.booking.executor import BookingExecutor
+from wodbuster_worker.booking.executor import BookingExecutor, BookingExecutorProvider
 from wodbuster_worker.persistence.models import SchedulerRule
 from wodbuster_worker.wodbuster_client.client import (
     BookingActionResponse,
     LoadClassResponse,
     WodBusterAuthError,
+    WodBusterClientFactory,
     WodBusterTransportError,
 )
 
@@ -56,7 +57,7 @@ def _no_vacation_window(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.setattr(
         "wodbuster_worker.booking.executor.find_covering_window",
-        lambda session, *, operator_id, target_slot: None,
+        lambda session, *, gym_account_id, target_slot: None,
     )
 
 
@@ -144,7 +145,7 @@ class _FakeCookieStore:
     def __init__(self, cookie: str | None) -> None:
         self._cookie = cookie
 
-    def load(self, session: Any, operator_id: int) -> str | None:
+    def load(self, session: Any, gym_account_id: int) -> str | None:
         return self._cookie
 
 
@@ -210,7 +211,7 @@ def _rule(
 ) -> SchedulerRule:
     """Build a rule without touching Postgres (uses SQLAlchemy transient state)."""
     rule = SchedulerRule(
-        operator_id=1,
+        gym_account_id=1,
         day_of_week=2,
         class_type=class_type,
         class_time=class_time,
@@ -509,7 +510,7 @@ def test_vacation_skip_guard_short_circuits_before_wodbuster(
     fake_window.id = 77
     monkeypatch.setattr(
         "wodbuster_worker.booking.executor.find_covering_window",
-        lambda session, *, operator_id, target_slot: fake_window,
+        lambda session, *, gym_account_id, target_slot: fake_window,
     )
 
     result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
@@ -532,7 +533,7 @@ def test_vacation_skip_guard_absent_lets_booking_proceed(
     )
     monkeypatch.setattr(
         "wodbuster_worker.booking.executor.find_covering_window",
-        lambda session, *, operator_id, target_slot: None,
+        lambda session, *, gym_account_id, target_slot: None,
     )
 
     result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
@@ -995,3 +996,40 @@ def test_alignment_upstream_error_swallowed_and_booking_proceeds(
     assert result.terminal_status == "granted"
     assert len(client.load_class_calls) == 2
     assert writer.calls[0]["terminal_status"] == "granted"
+
+
+# ---------------------------------------------------------------------------
+# BookingExecutorProvider — per-gym-account isolation (P2, ADR-0007)
+# ---------------------------------------------------------------------------
+
+
+def test_provider_isolates_and_caches_executors_per_gym_account() -> None:
+    """Each gym account resolves to its own executor bound to that gym's
+    client + idu, cached by ``(gym_slug, idu)`` so bookings never cross
+    gym boundaries."""
+    built: list[tuple[str, str]] = []
+
+    def builder(gym: str, idu: str) -> Any:
+        built.append((gym, idu))
+        return MagicMock()
+
+    provider = BookingExecutorProvider(
+        client_factory=WodBusterClientFactory(builder=builder),
+        session_factory=MagicMock(),
+        cookie_store=MagicMock(),
+    )
+
+    gym_a = _types.SimpleNamespace(gym_slug="adwork", idu="idu-a")
+    gym_b = _types.SimpleNamespace(gym_slug="antworktrainingcenter", idu="idu-b")
+
+    ex_a1 = provider.for_gym_account(gym_a)
+    ex_a2 = provider.for_gym_account(gym_a)
+    ex_b = provider.for_gym_account(gym_b)
+
+    assert ex_a1 is ex_a2  # cached per gym account
+    assert ex_a1 is not ex_b  # isolated per gym
+    # One client built per distinct gym account, each carrying its own idu.
+    assert built == [("adwork", "idu-a"), ("antworktrainingcenter", "idu-b")]
+    # Each executor is bound to its gym account's idu (enrollment check).
+    assert ex_a1._operator_idu == "idu-a"
+    assert ex_b._operator_idu == "idu-b"

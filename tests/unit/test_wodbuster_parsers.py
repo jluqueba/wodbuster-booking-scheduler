@@ -25,6 +25,7 @@ from wodbuster_worker.wodbuster_client.parsers import (
     find_matching_slot,
     operator_idu_to_guid,
     parse_class_instance,
+    parse_self_idu,
     read_target_enrollment,
 )
 
@@ -369,3 +370,42 @@ def test_read_target_enrollment_missing_plazas_is_not_full() -> None:
     result = read_target_enrollment(payload, slot_id=45872, operator_idu=_IDU)
     assert result.capacity is None
     assert result.is_full is False
+
+
+# ---------------------------------------------------------------------------
+# parse_self_idu — the add-gym self-idu discovery source (T005)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_self_idu_reads_menu_avatar_guid() -> None:
+    html = (
+        '<nav><img class="avatar inmenu" '
+        'src="https://cdn.wodbuster.com/static/atletas/a/a/e/'
+        f'{_GUID}.jpg?t=6388420596108"></nav>'
+    )
+    assert parse_self_idu(html) == _IDU
+
+
+def test_parse_self_idu_ignores_other_athlete_avatars() -> None:
+    # A class-roster avatar (no ``inmenu`` class) must NOT be picked up;
+    # only the logged-in operator's menu avatar counts.
+    html = (
+        '<img class="rosteravatar" '
+        'src="https://cdn.wodbuster.com/static/atletas/b/b/b/'
+        'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb.jpg">'
+        '<img class="inmenu" '
+        'src="https://cdn.wodbuster.com/static/atletas/a/a/e/'
+        f'{_GUID}.jpg">'
+    )
+    assert parse_self_idu(html) == _IDU
+
+
+def test_parse_self_idu_returns_none_without_menu_avatar() -> None:
+    assert parse_self_idu("<html><body>no avatar</body></html>") is None
+    # An avatar without the inmenu marker is not a self-identifier.
+    assert (
+        parse_self_idu(
+            f'<img class="x" src="https://cdn.wodbuster.com/static/atletas/a/a/e/{_GUID}.jpg">'
+        )
+        is None
+    )
