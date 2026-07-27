@@ -29,7 +29,7 @@ from fastapi.templating import Jinja2Templates
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
-from ..booking.executor import BookingExecutor
+from ..booking.executor import BookingExecutorProvider
 from ..i18n import lang_url
 from ..persistence.cookie_store import CookieStore
 from ..persistence.engine import get_session
@@ -536,8 +536,8 @@ def _str_only(form_data: Mapping[str, object]) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def _scheduler_bits(request: Request) -> tuple[Any, BookingExecutor] | None:
-    """Return (scheduler, executor) from app.state if booking is wired.
+def _scheduler_bits(request: Request) -> tuple[Any, BookingExecutorProvider] | None:
+    """Return (scheduler, executor_provider) from app.state if booking is wired.
 
     Missing when the operator has not seeded ``wodbuster_gym`` /
     ``wodbuster_idu`` / cookie encryption key. In that state the app
@@ -545,10 +545,10 @@ def _scheduler_bits(request: Request) -> tuple[Any, BookingExecutor] | None:
     are no-ops from the scheduler's perspective.
     """
     scheduler = getattr(request.app.state, "booking_scheduler", None)
-    executor = getattr(request.app.state, "booking_executor", None)
-    if scheduler is None or executor is None:
+    executor_provider = getattr(request.app.state, "booking_executor_provider", None)
+    if scheduler is None or executor_provider is None:
         return None
-    return scheduler, executor
+    return scheduler, executor_provider
 
 
 def _sync_after_create(request: Request, rules: list[SchedulerRule]) -> None:
@@ -556,13 +556,13 @@ def _sync_after_create(request: Request, rules: list[SchedulerRule]) -> None:
     bits = _scheduler_bits(request)
     if bits is None:
         return
-    scheduler, executor = bits
+    scheduler, executor_provider = bits
     for rule in rules:
         try:
             register_rule_job(
                 scheduler,
                 rule,
-                executor=executor,
+                executor_provider=executor_provider,
                 session_factory=get_session,
             )
         except ValueError:
@@ -578,12 +578,12 @@ def _sync_after_update(request: Request, rule: SchedulerRule) -> None:
     bits = _scheduler_bits(request)
     if bits is None:
         return
-    scheduler, executor = bits
+    scheduler, executor_provider = bits
     with contextlib.suppress(ValueError):
         register_rule_job(
             scheduler,
             rule,
-            executor=executor,
+            executor_provider=executor_provider,
             session_factory=get_session,
         )
 
@@ -593,7 +593,7 @@ def _sync_after_delete(request: Request, rule_id: int) -> None:
     bits = _scheduler_bits(request)
     if bits is None:
         return
-    scheduler, _executor = bits
+    scheduler, _executor_provider = bits
     unregister_rule_job(scheduler, rule_id)
 
 

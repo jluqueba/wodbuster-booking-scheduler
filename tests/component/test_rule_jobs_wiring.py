@@ -79,7 +79,7 @@ def _seed_scheduler_on_app(app: FastAPI) -> BackgroundScheduler:
     """
     scheduler = BackgroundScheduler(timezone="UTC")
     app.state.booking_scheduler = scheduler
-    app.state.booking_executor = MagicMock()
+    app.state.booking_executor_provider = MagicMock()
     return scheduler
 
 

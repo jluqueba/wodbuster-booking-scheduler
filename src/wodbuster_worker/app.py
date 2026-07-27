@@ -29,7 +29,7 @@ from .auth.deps import AuthRedirectRequired
 from .auth.oauth import build_oauth
 from .auth.routes import router as auth_router
 from .auth.session import IdleTimeoutMiddleware, build_session_middleware
-from .booking.executor import BookingExecutor
+from .booking.executor import BookingExecutorProvider
 from .booking.routes import router as history_router
 from .booking.vacation_routes import router as vacation_router
 from .config import Settings, get_settings
@@ -60,7 +60,7 @@ from .scheduler.scheduler import (
 from .security.cipher import Cipher
 from .security.cookie import CookieValidator
 from .security.keyvault import Secrets, load_secrets
-from .wodbuster_client.client import WodBusterClient
+from .wodbuster_client.client import WodBusterClient, WodBusterClientFactory
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -268,18 +268,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # client are both live. Missing dependencies mean bookings
             # cannot fire; the scheduler still hosts heartbeat and
             # dispatcher jobs so the operator sees the cookie state.
-            if app.state.cookie_store is not None and app.state.wodbuster_client is not None:
-                executor = BookingExecutor(
-                    client=app.state.wodbuster_client,
+            # Booking wiring: only when the cookie store is live. Each
+            # rule's attempt resolves a per-gym-account client + idu via
+            # the executor provider (ADR-0007), so no global gym is
+            # required — a gym account added through the /gyms flow books
+            # against its own subdomain.
+            if app.state.cookie_store is not None:
+                client_factory = WodBusterClientFactory()
+                executor_provider = BookingExecutorProvider(
+                    client_factory=client_factory,
                     session_factory=get_session,
                     cookie_store=app.state.cookie_store,
-                    operator_idu=settings.wodbuster_idu,
                 )
-                app.state.booking_executor = executor
+                app.state.booking_client_factory = client_factory
+                app.state.booking_executor_provider = executor_provider
                 app.state.booking_scheduler = scheduler
                 register_rule_bootstrap_jobs(
                     scheduler,
-                    executor=executor,
+                    executor_provider=executor_provider,
                     session_factory=get_session,
                 )
             scheduler.start()

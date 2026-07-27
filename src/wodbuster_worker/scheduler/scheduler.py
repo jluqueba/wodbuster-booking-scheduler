@@ -36,7 +36,7 @@ import structlog
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from ..booking.executor import BookingExecutor
+from ..booking.executor import BookingExecutorProvider
 from ..heartbeat.probe import HeartbeatProbe
 from ..notifications.dispatcher import NotificationDispatcher
 from ..observability.healthchecks import ping as healthchecks_ping
@@ -231,7 +231,7 @@ def register_healthchecks_job(
 def register_rule_bootstrap_jobs(
     scheduler: BackgroundScheduler,
     *,
-    executor: BookingExecutor,
+    executor_provider: BookingExecutorProvider,
     session_factory: SessionFactory,
 ) -> int:
     """Register a booking-window job for every active scheduler rule.
@@ -258,7 +258,7 @@ def register_rule_bootstrap_jobs(
                 register_rule_job(
                     scheduler,
                     rule,
-                    executor=executor,
+                    executor_provider=executor_provider,
                     session_factory=session_factory,
                 )
             except ValueError as exc:

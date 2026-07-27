@@ -26,12 +26,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from wodbuster_worker.booking.executor import BookingExecutor
+from wodbuster_worker.booking.executor import BookingExecutor, BookingExecutorProvider
 from wodbuster_worker.persistence.models import SchedulerRule
 from wodbuster_worker.wodbuster_client.client import (
     BookingActionResponse,
     LoadClassResponse,
     WodBusterAuthError,
+    WodBusterClientFactory,
     WodBusterTransportError,
 )
 
@@ -995,3 +996,40 @@ def test_alignment_upstream_error_swallowed_and_booking_proceeds(
     assert result.terminal_status == "granted"
     assert len(client.load_class_calls) == 2
     assert writer.calls[0]["terminal_status"] == "granted"
+
+
+# ---------------------------------------------------------------------------
+# BookingExecutorProvider — per-gym-account isolation (P2, ADR-0007)
+# ---------------------------------------------------------------------------
+
+
+def test_provider_isolates_and_caches_executors_per_gym_account() -> None:
+    """Each gym account resolves to its own executor bound to that gym's
+    client + idu, cached by ``(gym_slug, idu)`` so bookings never cross
+    gym boundaries."""
+    built: list[tuple[str, str]] = []
+
+    def builder(gym: str, idu: str) -> Any:
+        built.append((gym, idu))
+        return MagicMock()
+
+    provider = BookingExecutorProvider(
+        client_factory=WodBusterClientFactory(builder=builder),
+        session_factory=MagicMock(),
+        cookie_store=MagicMock(),
+    )
+
+    gym_a = _types.SimpleNamespace(gym_slug="adwork", idu="idu-a")
+    gym_b = _types.SimpleNamespace(gym_slug="antworktrainingcenter", idu="idu-b")
+
+    ex_a1 = provider.for_gym_account(gym_a)
+    ex_a2 = provider.for_gym_account(gym_a)
+    ex_b = provider.for_gym_account(gym_b)
+
+    assert ex_a1 is ex_a2  # cached per gym account
+    assert ex_a1 is not ex_b  # isolated per gym
+    # One client built per distinct gym account, each carrying its own idu.
+    assert built == [("adwork", "idu-a"), ("antworktrainingcenter", "idu-b")]
+    # Each executor is bound to its gym account's idu (enrollment check).
+    assert ex_a1._operator_idu == "idu-a"
+    assert ex_b._operator_idu == "idu-b"

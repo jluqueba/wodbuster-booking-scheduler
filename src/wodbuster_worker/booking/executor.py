@@ -60,8 +60,10 @@ from ..persistence.cookie_store import CookieStore
 from ..persistence.models import BookingOutcome, SchedulerRule
 from ..wodbuster_client.client import (
     BookingActionResponse,
+    GymAccountLike,
     LoadClassResponse,
     WodBusterAuthError,
+    WodBusterClientFactory,
     WodBusterProtocolError,
     WodBusterTransportError,
 )
@@ -944,4 +946,54 @@ def _format_slot(target_slot: datetime) -> str:
     return target_slot.astimezone(operator_timezone()).strftime("%a %d %b %H:%M %Z")
 
 
-__all__ = ["BookingExecutor", "BookingResult", "SessionFactory"]
+class BookingExecutorProvider:
+    """Resolve a per-gym-account :class:`BookingExecutor` (ADR-0007, P2).
+
+    A booking rule targets a specific gym account, so its attempt must run
+    against that gym's subdomain (client) with that gym's ``idu``. This
+    provider caches one executor per ``(gym_slug, idu)`` pair, each bound
+    to the client the :class:`WodBusterClientFactory` returns for that gym
+    account. The shared ``cookie_store`` still resolves the per-gym-account
+    cookie at call time (keyed by ``gym_account_id``), so credentials never
+    cross gym boundaries.
+
+    Thread-safe for the scheduler's use: executors are built once per gym
+    account and reused; the cache is only ever populated, never mutated in
+    a way that races a concurrent read for a different key.
+    """
+
+    __slots__ = ("_cache", "_client_factory", "_cookie_store", "_session_factory")
+
+    def __init__(
+        self,
+        *,
+        client_factory: WodBusterClientFactory,
+        session_factory: SessionFactory,
+        cookie_store: CookieStore,
+    ) -> None:
+        self._client_factory = client_factory
+        self._session_factory = session_factory
+        self._cookie_store = cookie_store
+        self._cache: dict[tuple[str, str], BookingExecutor] = {}
+
+    def for_gym_account(self, gym_account: GymAccountLike) -> BookingExecutor:
+        """Return the executor bound to ``gym_account``, building on miss."""
+        key = (gym_account.gym_slug, gym_account.idu)
+        executor = self._cache.get(key)
+        if executor is None:
+            executor = BookingExecutor(
+                client=self._client_factory.get(gym_account),
+                session_factory=self._session_factory,
+                cookie_store=self._cookie_store,
+                operator_idu=gym_account.idu,
+            )
+            self._cache[key] = executor
+        return executor
+
+
+__all__ = [
+    "BookingExecutor",
+    "BookingExecutorProvider",
+    "BookingResult",
+    "SessionFactory",
+]
