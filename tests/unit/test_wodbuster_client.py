@@ -148,11 +148,13 @@ def test_transport_error_wraps_httpx_exception() -> None:
         _client(httpx.MockTransport(handler)).load_class(cookie_value="any", ticks=1)
 
 
-def test_constructor_rejects_empty_gym_and_idu() -> None:
+def test_constructor_rejects_empty_gym_but_allows_absent_idu() -> None:
     with pytest.raises(ValueError, match="gym"):
         WodBusterClient(gym="", idu="idu")
-    with pytest.raises(ValueError, match="idu"):
-        WodBusterClient(gym="g", idu="")
+    # ``idu`` is optional: an absent or empty idu yields a discovery-only
+    # client (used by the add-gym flow before the gym's idu is known).
+    WodBusterClient(gym="g")
+    WodBusterClient(gym="g", idu="")
 
 
 # ---------------------------------------------------------------------------
@@ -322,3 +324,65 @@ def test_borrar_accepts_int_class_id_and_stringifies() -> None:
     # httpx serialises ints to str; the client must not stringify twice
     # or lose the value in a numeric edge (leading zeros etc).
     assert captured["id"] == "555"
+
+
+# ---------------------------------------------------------------------------
+# discover_idu — self-idu discovery for the add-gym flow (FR-011)
+# ---------------------------------------------------------------------------
+
+_MENU_AVATAR_HTML = (
+    '<html><body><nav><img class="avatar inmenu" '
+    'src="https://cdn.wodbuster.com/static/atletas/a/a/e/'
+    'aae990e4-fa58-4cfc-894d-e204f0e37605.jpg?t=6388420596108"></nav>'
+    "<div>reservas</div></body></html>"
+)
+
+
+def _discovery_client(handler: httpx.MockTransport) -> WodBusterClient:
+    """Build a discovery-only client (gym known, idu not yet)."""
+    http_client = httpx.Client(transport=handler, follow_redirects=False)
+    return WodBusterClient(gym="newgym", http_client=http_client)
+
+
+def test_discover_idu_reads_self_idu_from_menu_avatar() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "newgym.wodbuster.com"
+        assert request.url.path == "/athlete/reservas.aspx"
+        assert request.headers["cookie"] == ".WBAuth=fresh-cookie"
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html; charset=utf-8"},
+            content=_MENU_AVATAR_HTML.encode(),
+        )
+
+    idu = _discovery_client(httpx.MockTransport(handler)).discover_idu("fresh-cookie")
+    assert idu == "aae990e4fa584cfc894de204f0e37605"
+
+
+def test_discover_idu_rejected_cookie_raises_auth_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(302, headers={"location": "/account/login.aspx?ReturnUrl=%2f"})
+
+    with pytest.raises(WodBusterAuthError):
+        _discovery_client(httpx.MockTransport(handler)).discover_idu("stale")
+
+
+def test_discover_idu_no_avatar_raises_protocol_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html"},
+            content=b"<html><body>no menu here</body></html>",
+        )
+
+    with pytest.raises(WodBusterProtocolError, match="idu"):
+        _discovery_client(httpx.MockTransport(handler)).discover_idu("cookie")
+
+
+def test_idu_scoped_call_on_discovery_client_fails_loudly() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"{}")
+
+    client = _discovery_client(httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError, match="discovery-only"):
+        client.load_class(cookie_value="c", ticks=1)

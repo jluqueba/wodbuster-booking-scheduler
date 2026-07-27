@@ -1,0 +1,79 @@
+{# Gym-account management: list current gyms + add a new one (US multi-gym P1). #}
+{% extends "base.html" %}
+
+{% block title %}Gyms — WodBuster Booking Worker{% endblock %}
+
+{% block nav %}
+  {% set active_nav = "gyms" %}
+  {% include "_nav.html" %}
+{% endblock %}
+
+{% block content %}
+  <h1 class="wb-page-title">Your gyms</h1>
+  <p class="wb-page-subtitle">Add and manage the WodBuster gyms you book at.</p>
+
+  {% if flash %}
+    <div class="wb-flash wb-flash--{{ flash_kind }}" role="status">{{ flash }}</div>
+  {% endif %}
+
+  <section class="wb-card">
+    {% if gyms %}
+      <table class="wb-table">
+        <thead>
+          <tr><th>Gym</th><th>Slug</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {% for gym in gyms %}
+            <tr>
+              <td>{{ gym.display_name }}</td>
+              <td><code>{{ gym.gym_slug }}</code></td>
+              <td>{{ "Active" if gym.active else "Inactive" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="wb-muted">No gyms yet. Add one below.</p>
+    {% endif %}
+  </section>
+
+  {% if addable %}
+    <form class="wb-card" method="post" action="{{ lang_url('/gyms') }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+      <label for="gym_slug">Gym</label>
+      <select id="gym_slug" name="gym_slug" required>
+        {% for slug in addable %}
+          <option value="{{ slug }}">{{ slug }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="display_name">Display name (optional)</label>
+      <input
+        type="text"
+        id="display_name"
+        name="display_name"
+        autocomplete="off"
+        placeholder="e.g. Adwork"
+      >
+
+      <label for="cookie_value">.WBAuth cookie for this gym</label>
+      <textarea
+        id="cookie_value"
+        name="cookie_value"
+        rows="4"
+        spellcheck="false"
+        autocomplete="off"
+        required
+      ></textarea>
+      <p class="wb-muted wb-note wb-note--framed">
+        Paste the <code>.WBAuth</code> cookie value from a signed-in browser session at that
+        gym. We validate it and detect your athlete id automatically.
+      </p>
+
+      <button type="submit" class="wb-btn--primary">Add gym</button>
+    </form>
+  {% else %}
+    <p class="wb-muted">You have added every gym on the allow-list.</p>
+  {% endif %}
+{% endblock %}

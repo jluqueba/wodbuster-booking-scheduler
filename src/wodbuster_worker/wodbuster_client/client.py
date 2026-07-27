@@ -56,6 +56,8 @@ from typing import Any, Literal, Protocol
 
 import httpx
 
+from .parsers import parse_self_idu
+
 _CONNECT_TIMEOUT_S = 5.0
 _READ_TIMEOUT_S = 15.0
 _LOGIN_PATH_MARKER = "/account/login"  # WodBuster redirects unauth'd requests here.
@@ -188,7 +190,7 @@ class WodBusterClient:
     def __init__(
         self,
         gym: str,
-        idu: str,
+        idu: str | None = None,
         *,
         base_domain: str = "wodbuster.com",
         connect_timeout_s: float = _CONNECT_TIMEOUT_S,
@@ -197,10 +199,12 @@ class WodBusterClient:
     ) -> None:
         if not gym:
             raise ValueError("gym must be a non-empty slug")
-        if not idu:
-            raise ValueError("idu must be a non-empty identifier")
+        # ``idu`` is optional: a discovery-only client (used by the
+        # add-gym flow before the gym's idu is known) builds the base
+        # URL and calls ``discover_idu`` without it. The idu-scoped
+        # calls fail loudly via ``_require_idu`` if invoked on it.
         self._base_url = f"https://{gym}.{base_domain}"
-        self._idu = idu
+        self._idu: str | None = idu or None
         # Tests inject their own httpx.Client backed by
         # httpx.MockTransport. Production callers rely on the default.
         self._client = http_client or httpx.Client(
@@ -244,13 +248,52 @@ class WodBusterClient:
         status_code, latency_ms, payload = self._authenticated_get(
             path="/athlete/handlers/LoadClass.ashx",
             cookie_value=cookie_value,
-            params={"ticks": ticks, "idu": self._idu},
+            params={"ticks": ticks, "idu": self._require_idu()},
         )
         return LoadClassResponse(
             status_code=status_code,
             latency_ms=latency_ms,
             payload=payload,
         )
+
+    def discover_idu(self, cookie_value: str) -> str:
+        """Discover the signed-in athlete's own idu (FR-011, multi-gym).
+
+        Fetches an authenticated ``/athlete/reservas.aspx`` page and reads
+        the operator's own idu from the top-nav avatar
+        (:func:`parse_self_idu`). Doubles as cookie validation: a rejected
+        cookie redirects to the login page, surfaced as
+        :class:`WodBusterAuthError`. Requires no pre-known idu, so the
+        add-gym flow calls it on a discovery-only client.
+
+        Raises :class:`WodBusterAuthError` when the cookie is rejected,
+        :class:`WodBusterTransportError` on network failure, and
+        :class:`WodBusterProtocolError` when the page is served but no
+        idu can be extracted (a markup/API change).
+        """
+        url = f"{self._base_url}/athlete/reservas.aspx"
+        headers = {"Cookie": f".WBAuth={cookie_value}"}
+        try:
+            response = self._client.get(url, headers=headers)
+        except httpx.TransportError as exc:
+            raise WodBusterTransportError(str(exc)) from exc
+
+        if response.is_redirect:
+            location = response.headers.get("location", "")
+            if _LOGIN_PATH_MARKER in location.lower():
+                raise WodBusterAuthError(f"redirected to login: {location}")
+            raise WodBusterProtocolError(
+                f"unexpected redirect {response.status_code} to {location!r}"
+            )
+        if response.status_code in (401, 403):
+            raise WodBusterAuthError(f"server returned {response.status_code}")
+        if response.status_code != 200:
+            raise WodBusterProtocolError(f"unexpected status {response.status_code}")
+
+        idu = parse_self_idu(response.text)
+        if idu is None:
+            raise WodBusterProtocolError("authenticated page did not expose the operator's idu")
+        return idu
 
     def inscribir(
         self,
@@ -313,7 +356,7 @@ class WodBusterClient:
             params={
                 "id": class_id,
                 "ticks": ticks,
-                "idu": self._idu,
+                "idu": self._require_idu(),
             },
         )
         raw_res = payload.get("Res")
@@ -325,6 +368,15 @@ class WodBusterClient:
             raw_res=raw_res_str,
             payload=payload,
         )
+
+    def _require_idu(self) -> str:
+        """Return the client's idu or fail if it is a discovery-only client."""
+        if self._idu is None:
+            raise RuntimeError(
+                "WodBusterClient was constructed without an idu; only "
+                "discover_idu is available on a discovery-only client."
+            )
+        return self._idu
 
     def _authenticated_get(
         self,

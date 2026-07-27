@@ -34,6 +34,7 @@ from .booking.routes import router as history_router
 from .booking.vacation_routes import router as vacation_router
 from .config import Settings, get_settings
 from .cookie.routes import router as cookie_router
+from .gyms.routes import router as gyms_router
 from .heartbeat.next_window import compute_next_booking
 from .heartbeat.probe import HeartbeatProbe
 from .i18n import register_jinja_globals
@@ -95,6 +96,17 @@ def _build_cookie_stack(
     validator = CookieValidator(wodbuster_client) if wodbuster_client else None
     store = CookieStore(cipher) if cipher else None
     return cipher, wodbuster_client, validator, store
+
+
+def _default_gym_discovery_factory(gym_slug: str) -> WodBusterClient:
+    """Build a discovery-only WodBuster client for the add-gym flow.
+
+    The gym's ``idu`` is unknown until discovery, so the client is built
+    without one; only ``discover_idu`` (and its implicit cookie
+    validation) are exercised on it. The base URL is derived solely from
+    the already-allow-list-validated slug (SEC-001).
+    """
+    return WodBusterClient(gym=gym_slug)
 
 
 def _build_heartbeat_probe(
@@ -206,6 +218,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.wodbuster_client = wb_client
         app.state.cookie_validator = validator
         app.state.cookie_store = store
+    if not hasattr(app.state, "gym_discovery_factory") or app.state.gym_discovery_factory is None:
+        app.state.gym_discovery_factory = _default_gym_discovery_factory
     if not hasattr(app.state, "heartbeat_probe") or app.state.heartbeat_probe is None:
         app.state.heartbeat_probe = _build_heartbeat_probe(
             settings, app.state.cookie_store, app.state.cookie_validator
@@ -325,6 +339,7 @@ def create_app(*, settings: Settings | None = None, secrets: Secrets | None = No
     app.state.wodbuster_client = wb_client
     app.state.cookie_validator = validator
     app.state.cookie_store = store
+    app.state.gym_discovery_factory = _default_gym_discovery_factory
     app.state.heartbeat_probe = _build_heartbeat_probe(effective_settings, store, validator)
     # The scheduler itself is built lazily inside the lifespan hook
     # so tests that construct an app without entering its lifespan
@@ -375,6 +390,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(history_router)
     app.include_router(vacation_router)
     app.include_router(telegram_router)
+    app.include_router(gyms_router)
     app.include_router(static_pages_router)
     app.add_api_route("/health", health, methods=["GET"])
     # Static assets (brand CSS, later JS / images). Mounted after
