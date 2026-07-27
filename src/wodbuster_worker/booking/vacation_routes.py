@@ -31,6 +31,7 @@ from fastapi.templating import Jinja2Templates
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
+from ..gyms.service import gym_client_factory, resolve_gym_client
 from ..i18n import lang_url, t
 from ..persistence.engine import get_session
 from ..persistence.gym_accounts import resolve_sole_gym_account_id
@@ -87,9 +88,9 @@ def vacation_enable(
     operator_id: int = Depends(require_session),
 ) -> Response:
     """Open a new vacation window and bulk-cancel granted bookings."""
-    client = getattr(request.app.state, "wodbuster_client", None)
+    factory = gym_client_factory(request.app.state)
     store = getattr(request.app.state, "cookie_store", None)
-    if client is None or store is None:
+    if factory is None or store is None:
         return _redirect_with_flash(
             t("flash.booking.service_unavailable"),
             kind="error",
@@ -112,6 +113,13 @@ def vacation_enable(
                 t("flash.booking.service_unavailable"),
                 kind="error",
             )
+        resolved = resolve_gym_client(factory, session, gym_account_id)
+        if resolved is None:
+            return _redirect_with_flash(
+                t("flash.booking.service_unavailable"),
+                kind="error",
+            )
+        client, _idu = resolved
         try:
             vacation_service.enable(
                 session,

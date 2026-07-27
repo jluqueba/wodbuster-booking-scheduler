@@ -103,9 +103,33 @@ class _FakeWodBusterClient:
         return self._inscribir_response
 
 
+def _idu(op_id: int) -> str:
+    """The per-gym idu the conftest assigns to ``op_id``'s gym account."""
+    return f"idu{op_id:032d}"[:32]
+
+
+def _enrolled(operator_idu: str) -> list[dict[str, str]]:
+    """An ``AtletasEntrenando`` list confirming the operator is enrolled."""
+    return [{"Url": f"/athlete/perfil.aspx?gid={operator_idu}"}]
+
+
 def _load_response_with(
-    class_type: str, class_time: str, *, seconds_until_publication: float = -100.0
+    class_type: str,
+    class_time: str,
+    *,
+    seconds_until_publication: float = -100.0,
+    enrolled_idu: str | None = None,
 ) -> LoadClassResponse:
+    valor: dict[str, Any] = {
+        "Id": 45654,
+        "Nombre": class_type,
+        "HoraComienzo": f"{class_time}:00",
+        "TipoEstado": "Inscribible",
+        "Plazas": 16,
+        "AtletasEnListaDeEspera": 0,
+    }
+    if enrolled_idu is not None:
+        valor["AtletasEntrenando"] = _enrolled(enrolled_idu)
     return LoadClassResponse(
         status_code=200,
         latency_ms=10.0,
@@ -113,18 +137,7 @@ def _load_response_with(
             "Data": [
                 {
                     "Hora": f"{class_time}:00",
-                    "Valores": [
-                        {
-                            "Valor": {
-                                "Id": 45654,
-                                "Nombre": class_type,
-                                "HoraComienzo": f"{class_time}:00",
-                                "TipoEstado": "Inscribible",
-                                "Plazas": 16,
-                                "AtletasEnListaDeEspera": 0,
-                            }
-                        }
-                    ],
+                    "Valores": [{"Valor": valor}],
                 }
             ],
             "SegundosHastaPublicacion": seconds_until_publication,
@@ -147,21 +160,22 @@ def _load_response_multi(
     slots: list[tuple[str, int]],
     *,
     seconds_until_publication: float = -100.0,
+    enrolled_idu: str | None = None,
 ) -> LoadClassResponse:
     """LoadClass payload with several classes at the same start time."""
-    valores = [
-        {
-            "Valor": {
-                "Id": slot_id,
-                "Nombre": name,
-                "HoraComienzo": f"{class_time}:00",
-                "TipoEstado": "Inscribible",
-                "Plazas": 16,
-                "AtletasEnListaDeEspera": 0,
-            }
+    valores = []
+    for name, slot_id in slots:
+        valor: dict[str, Any] = {
+            "Id": slot_id,
+            "Nombre": name,
+            "HoraComienzo": f"{class_time}:00",
+            "TipoEstado": "Inscribible",
+            "Plazas": 16,
+            "AtletasEnListaDeEspera": 0,
         }
-        for name, slot_id in slots
-    ]
+        if enrolled_idu is not None:
+            valor["AtletasEntrenando"] = _enrolled(enrolled_idu)
+        valores.append({"Valor": valor})
     return LoadClassResponse(
         status_code=200,
         latency_ms=10.0,
@@ -212,7 +226,7 @@ def test_book_now_grants_within_window(
     op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
     store = _seed_cookie(postgres_engine, op_id)
     fake = _FakeWodBusterClient(
-        load_response=_load_response_with("WOD", "18:30"),
+        load_response=_load_response_with("WOD", "18:30", enrolled_idu=_idu(op_id)),
         inscribir_response=_inscribir_ok(),
     )
 
@@ -286,7 +300,7 @@ def test_book_now_books_chosen_class_type_on_collision(
     store = _seed_cookie(postgres_engine, op_id)
     fake = _FakeWodBusterClient(
         load_response=_load_response_multi(
-            "08:30", [("Cross Training", 111), ("Open Endurance", 222)]
+            "08:30", [("Cross Training", 111), ("Open Endurance", 222)], enrolled_idu=_idu(op_id)
         ),
         inscribir_response=_inscribir_ok(),
     )

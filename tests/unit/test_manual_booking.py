@@ -336,7 +336,7 @@ def test_list_class_types_at_returns_sorted_distinct() -> None:
     service = _service(client=client)
 
     names = service.list_class_types_at(
-        operator_id=1, target_date=_TARGET_DATE, target_time="08:30"
+        gym_account_id=1, target_date=_TARGET_DATE, target_time="08:30"
     )
 
     assert names == ["Cross Training", "Open Endurance"]
@@ -350,7 +350,7 @@ def test_list_class_types_at_no_cookie_returns_empty() -> None:
     service = _service(client=client, cookie=None)
 
     names = service.list_class_types_at(
-        operator_id=1, target_date=_TARGET_DATE, target_time="08:30"
+        gym_account_id=1, target_date=_TARGET_DATE, target_time="08:30"
     )
 
     assert names == []

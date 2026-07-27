@@ -18,7 +18,7 @@ cookie, it:
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -26,6 +26,46 @@ from sqlalchemy.orm import Session
 from ..config import Settings
 from ..persistence.cookie_store import CookieStore
 from ..persistence.models import GymAccount
+from ..wodbuster_client.client import WodBusterClient, WodBusterClientFactory
+
+
+def gym_client_factory(app_state: Any) -> WodBusterClientFactory | None:
+    """Return the per-gym client factory usable by the booking paths.
+
+    Prefers ``app_state.booking_client_factory`` (the real per-gym factory
+    wired in prod). Falls back to wrapping a single
+    ``app_state.wodbuster_client`` so single-gym deployments and tests that
+    inject one client keep working without a factory. Returns ``None`` when
+    neither is wired.
+    """
+    factory = getattr(app_state, "booking_client_factory", None)
+    if isinstance(factory, WodBusterClientFactory):
+        return factory
+    client = getattr(app_state, "wodbuster_client", None)
+    if client is not None:
+        # Duck-typed clients (test fakes) are accepted here; the real
+        # per-gym factory is preferred above when wired.
+        return WodBusterClientFactory(builder=lambda gym, idu: client)
+    return None
+
+
+def resolve_gym_client(
+    factory: WodBusterClientFactory,
+    session: Session,
+    gym_account_id: int,
+) -> tuple[WodBusterClient, str] | None:
+    """Return the ``(client, idu)`` for a gym account, or ``None``.
+
+    The per-gym-account client is memoised on ``factory`` by
+    ``(gym_slug, idu)``, so booking, manual booking, cancellation, the
+    rule picker, and vacation bulk-cancel all target the gym account's
+    own subdomain + ``idu`` (ADR-0007, P2b) rather than a single global
+    gym. Returns ``None`` when the gym account no longer exists.
+    """
+    gym_account = session.get(GymAccount, gym_account_id)
+    if gym_account is None:
+        return None
+    return factory.get(gym_account), gym_account.idu
 
 
 class DiscoveryClientProtocol(Protocol):
@@ -103,4 +143,10 @@ def add_gym_account(
     return int(account.id)
 
 
-__all__ = ["DiscoveryClientProtocol", "GymAlreadyExistsError", "add_gym_account"]
+__all__ = [
+    "DiscoveryClientProtocol",
+    "GymAlreadyExistsError",
+    "add_gym_account",
+    "gym_client_factory",
+    "resolve_gym_client",
+]

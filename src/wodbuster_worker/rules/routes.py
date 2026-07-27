@@ -30,6 +30,7 @@ from fastapi.templating import Jinja2Templates
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
 from ..booking.executor import BookingExecutorProvider
+from ..gyms.service import gym_client_factory, resolve_gym_client
 from ..i18n import lang_url
 from ..persistence.cookie_store import CookieStore
 from ..persistence.engine import get_session
@@ -43,7 +44,6 @@ from ..scheduler.rule_jobs import (
 )
 from ..wodbuster_client.client import (
     WodBusterAuthError,
-    WodBusterClient,
     WodBusterProtocolError,
     WodBusterTransportError,
 )
@@ -126,9 +126,14 @@ def _picker_or_none(request: Request, gym_account_id: int | None) -> AvailableCl
     if gym_account_id is None:
         return None
     store = getattr(request.app.state, "cookie_store", None)
-    client = getattr(request.app.state, "wodbuster_client", None)
-    if not isinstance(store, CookieStore) or not isinstance(client, WodBusterClient):
+    factory = gym_client_factory(request.app.state)
+    if not isinstance(store, CookieStore) or factory is None:
         return None
+    with get_session() as session:
+        resolved = resolve_gym_client(factory, session, gym_account_id)
+    if resolved is None:
+        return None
+    client, _idu = resolved
     return fetch_available_classes(store, client, gym_account_id)
 
 
@@ -306,8 +311,8 @@ def rules_api_classes_debug(
     names — PII).
     """
     store = getattr(request.app.state, "cookie_store", None)
-    client = getattr(request.app.state, "wodbuster_client", None)
-    if not isinstance(store, CookieStore) or not isinstance(client, WodBusterClient):
+    factory = gym_client_factory(request.app.state)
+    if not isinstance(store, CookieStore) or factory is None:
         return JSONResponse(
             {
                 "stage": "no_cookie_stack",
@@ -318,9 +323,13 @@ def rules_api_classes_debug(
 
     with get_session() as session:
         gym_account_id = resolve_sole_gym_account_id(session, operator_id)
-        cookie_value = store.load(session, gym_account_id) if gym_account_id else None
-    if cookie_value is None:
+        if gym_account_id is None:
+            return JSONResponse({"stage": "no_cookie", "sources": {}, "result": None})
+        cookie_value = store.load(session, gym_account_id)
+        resolved = resolve_gym_client(factory, session, gym_account_id)
+    if cookie_value is None or resolved is None:
         return JSONResponse({"stage": "no_cookie", "sources": {}, "result": None})
+    client, _idu = resolved
 
     try:
         loaded = client.load_class(cookie_value, _today_ticks_utc())

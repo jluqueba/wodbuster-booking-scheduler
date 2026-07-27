@@ -254,7 +254,7 @@ class ManualBookingService:
     def list_class_types_at(
         self,
         *,
-        operator_id: int,
+        gym_account_id: int,
         target_date: date,
         target_time: str,
     ) -> list[str]:
@@ -275,7 +275,7 @@ class ManualBookingService:
         target_slot = self._target_slot(target_date, hhmm)
         ticks = _midnight_utc_ticks(target_slot)
 
-        cookie = self._load_cookie(operator_id)
+        cookie = self._load_cookie(gym_account_id)
         if cookie is None:
             return []
         try:

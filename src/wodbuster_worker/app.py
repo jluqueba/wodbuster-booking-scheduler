@@ -274,13 +274,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # required — a gym account added through the /gyms flow books
             # against its own subdomain.
             if app.state.cookie_store is not None:
-                client_factory = WodBusterClientFactory()
+                client_factory = getattr(app.state, "booking_client_factory", None)
+                if not isinstance(client_factory, WodBusterClientFactory):
+                    client_factory = WodBusterClientFactory()
+                app.state.booking_client_factory = client_factory
                 executor_provider = BookingExecutorProvider(
                     client_factory=client_factory,
                     session_factory=get_session,
                     cookie_store=app.state.cookie_store,
                 )
-                app.state.booking_client_factory = client_factory
                 app.state.booking_executor_provider = executor_provider
                 app.state.booking_scheduler = scheduler
                 register_rule_bootstrap_jobs(
