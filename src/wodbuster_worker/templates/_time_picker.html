@@ -40,3 +40,42 @@
     >
   </div>
 {%- endmacro %}
+
+{# Calendar date picker macro (Flatpickr).
+
+   Renders a text <input> that Flatpickr enhances into a themed
+   calendar popover (dark theme, consistent with the time picker and
+   unlike the OS-native ``<input type="date">``). The wire value stays
+   ``YYYY-MM-DD`` (``dateFormat: 'Y-m-d'``), exactly what the server
+   parser expects — zero server-side normalisation. If Flatpickr fails
+   to load the plain input still accepts a typed ``YYYY-MM-DD``.
+
+   Options:
+   - ``min_today``: block days before today (sensible for scheduling
+     a future vacation).
+   - ``link_min_from``: the ``id`` of another date picker whose chosen
+     value becomes this one's ``minDate`` (e.g. end >= start).
+
+   Usage:
+       {% import "_time_picker.html" as widgets %}
+       {{ widgets.date_picker("start_date", "", required=true, min_today=true) }}
+#}
+{% macro date_picker(name, value, required=false, min_today=false, link_min_from="") -%}
+  {% set safe_id = name | replace('_', '-') %}
+  <div class="wb-date-picker">
+    <input
+      type="text"
+      id="{{ safe_id }}"
+      name="{{ name }}"
+      value="{{ value or '' }}"
+      class="wb-date-flatpickr wb-time-picker__input"
+      autocomplete="off"
+      placeholder="YYYY-MM-DD"
+      pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}"
+      inputmode="numeric"
+      {% if min_today %}data-fp-min-today="true"{% endif %}
+      {% if link_min_from %}data-fp-min-from="{{ link_min_from }}"{% endif %}
+      {% if required %}required{% endif %}
+    >
+  </div>
+{%- endmacro %}

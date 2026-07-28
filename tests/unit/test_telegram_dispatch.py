@@ -32,7 +32,6 @@ from wodbuster_worker.notifications.telegram_webhook import (
         ("/last", "last"),
         ("/cancel", "cancel"),
         ("/ack", "ack"),
-        ("/bookclass", "bookclass"),
     ],
 )
 def test_supported_commands_route_to_their_handler(command: str, expected: str) -> None:

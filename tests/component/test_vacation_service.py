@@ -14,8 +14,9 @@ Covers three scenarios end-to-end against real Postgres:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import select, text
@@ -251,6 +252,50 @@ def test_enable_persists_window_with_normalized_boundaries(
         assert persisted.end_date.replace(microsecond=0) == datetime(
             2026, 8, 5, 23, 59, 59, tzinfo=UTC
         )
+
+
+def test_enable_preserves_the_selected_local_day_for_a_zone_ahead_of_utc(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """Regression: dates picked in a zone ahead of UTC must store the
+    SAME calendar day, not the previous one.
+
+    The route anchors ``start_date`` / ``end_date`` at local midnight in
+    the operator's zone. Europe/Madrid is UTC+2 in August, so local
+    midnight is 22:00 the previous day in UTC. Flooring by the UTC date
+    used to roll the whole window back a day (the reported bug); the
+    stored instants must round-trip back to the chosen local days.
+    """
+    tz = ZoneInfo("Europe/Madrid")
+    op_id = _make_operator(postgres_engine)
+    store = _seed_cookie(postgres_engine, op_id)
+    client = _StubClient()
+
+    start = datetime(2026, 8, 3, 0, 0, tzinfo=tz)  # Mon 00:00 local
+    end = datetime(2026, 8, 5, 0, 0, tzinfo=tz)  # Wed 00:00 local
+
+    with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
+        window = vacation_service.enable(
+            session,
+            gym_account_id=gym_account_id,
+            start_date=start,
+            end_date=end,
+            client=client,
+            cookie_store=store,
+        )
+        session.commit()
+        window_id = int(window.id)
+
+    with session_factory() as session:
+        persisted = session.get(VacationWindow, window_id)
+        assert persisted is not None
+        # Round-tripped back to the operator's zone, the boundaries land
+        # on exactly the days that were selected (not the day before).
+        assert persisted.start_date.astimezone(tz).date() == date(2026, 8, 3)
+        assert persisted.end_date.astimezone(tz).date() == date(2026, 8, 5)
+        # And the stored start is the true UTC instant of local midnight.
+        assert persisted.start_date == datetime(2026, 8, 2, 22, 0, tzinfo=UTC)
 
 
 # ---------------------------------------------------------------------------

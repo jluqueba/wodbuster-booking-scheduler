@@ -263,6 +263,31 @@ def test_dashboard_countdown_present_when_rule_active(
     assert parsed > datetime.now(tz=UTC) - timedelta(seconds=5)
 
 
+def test_vacation_page_uses_flatpickr_date_picker(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The vacation form uses the themed Flatpickr calendar, not the
+    OS-native date input, and wires the start->end minimum link."""
+    _op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/vacation")
+
+    assert response.status_code == 200
+    body = response.text
+    # Both date fields are Flatpickr-enhanced calendar inputs.
+    assert body.count('class="wb-date-flatpickr wb-time-picker__input"') == 2
+    # The end date is linked to the start date's chosen value.
+    assert 'data-fp-min-from="start-date"' in body
+    # The Flatpickr loader is included on the page.
+    assert "flatpickr" in body
+    # The OS-native date input is gone.
+    assert 'type="date"' not in body
+
+
 def test_dashboard_countdown_empty_when_no_rules(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],

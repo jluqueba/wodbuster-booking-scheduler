@@ -10,7 +10,7 @@ against real Postgres. Verifies:
 - ``/start`` with an unknown / expired token leaves state alone.
 - Non-``/start`` messages leave state alone.
 - Command dispatcher (TG.2): ``/help``, ``/next``, ``/last``,
-  ``/cancel``, ``/ack``, ``/bookclass`` route to their handlers;
+  ``/cancel``, ``/ack`` route to their handlers;
   rule-mutation verbs are refused with an explanation (CC-009);
   stateful commands on an unbound chat leak no data (FR-031).
 
@@ -151,21 +151,18 @@ def _seed_open_cookie_alert(engine: Engine, operator_id: int) -> int:
 
 
 class _FakeWodBusterClient:
-    """Stub WodBuster client scripting ``load_class`` + ``borrar`` + ``inscribir``."""
+    """Stub WodBuster client scripting ``load_class`` + ``borrar``."""
 
     def __init__(
         self,
         *,
         load_response: LoadClassResponse | Exception | None = None,
         borrar_response: BookingActionResponse | Exception | None = None,
-        inscribir_response: BookingActionResponse | Exception | None = None,
     ) -> None:
         self._load_response = load_response
         self._borrar_response = borrar_response
-        self._inscribir_response = inscribir_response
         self.load_calls: list[dict[str, Any]] = []
         self.borrar_calls: list[dict[str, Any]] = []
-        self.inscribir_calls: list[dict[str, Any]] = []
 
     def load_class(self, cookie_value: str, ticks: int) -> LoadClassResponse:
         self.load_calls.append({"cookie": cookie_value, "ticks": ticks})
@@ -185,33 +182,12 @@ class _FakeWodBusterClient:
             raise AssertionError("fake: no borrar response scripted")
         return self._borrar_response
 
-    def inscribir(
-        self, cookie_value: str, *, class_id: str | int, ticks: int
-    ) -> BookingActionResponse:
-        self.inscribir_calls.append({"cookie": cookie_value, "class_id": class_id, "ticks": ticks})
-        if isinstance(self._inscribir_response, Exception):
-            raise self._inscribir_response
-        if self._inscribir_response is None:
-            raise AssertionError("fake: no inscribir response scripted")
-        return self._inscribir_response
-
-
-def _idu(op_id: int) -> str:
-    """The per-gym idu the conftest assigns to ``op_id``'s gym account."""
-    return f"idu{op_id:032d}"[:32]
-
-
-def _enrolled(operator_idu: str) -> list[dict[str, str]]:
-    """An ``AtletasEntrenando`` list confirming the operator is enrolled."""
-    return [{"Url": f"/athlete/perfil.aspx?gid={operator_idu}"}]
-
 
 def _load_response_with(
     class_type: str,
     class_time: str,
     *,
     seconds_until_publication: float = -100.0,
-    enrolled_idu: str | None = None,
 ) -> LoadClassResponse:
     valor: dict[str, Any] = {
         "Id": 45654,
@@ -221,8 +197,6 @@ def _load_response_with(
         "Plazas": 16,
         "AtletasEnListaDeEspera": 0,
     }
-    if enrolled_idu is not None:
-        valor["AtletasEntrenando"] = _enrolled(enrolled_idu)
     return LoadClassResponse(
         status_code=200,
         latency_ms=10.0,
@@ -245,47 +219,6 @@ def _borrar_ok() -> BookingActionResponse:
         outcome="granted",
         raw_res="Ok",
         payload={"Res": "Ok"},
-    )
-
-
-def _load_response_multi(
-    class_time: str,
-    slots: list[tuple[str, int]],
-    *,
-    seconds_until_publication: float = -100.0,
-    enrolled_idu: str | None = None,
-) -> LoadClassResponse:
-    """LoadClass payload with several classes at the same start time."""
-    valores = []
-    for name, slot_id in slots:
-        valor: dict[str, Any] = {
-            "Id": slot_id,
-            "Nombre": name,
-            "HoraComienzo": f"{class_time}:00",
-            "TipoEstado": "Inscribible",
-            "Plazas": 16,
-            "AtletasEnListaDeEspera": 0,
-        }
-        if enrolled_idu is not None:
-            valor["AtletasEntrenando"] = _enrolled(enrolled_idu)
-        valores.append({"Valor": valor})
-    return LoadClassResponse(
-        status_code=200,
-        latency_ms=10.0,
-        payload={
-            "Data": [{"Hora": f"{class_time}:00", "Valores": valores}],
-            "SegundosHastaPublicacion": seconds_until_publication,
-        },
-    )
-
-
-def _inscribir_ok() -> BookingActionResponse:
-    return BookingActionResponse(
-        status_code=200,
-        latency_ms=25.0,
-        outcome="granted",
-        raw_res="Ok",
-        payload={"Res": "Ok", "Data": []},
     )
 
 
@@ -499,7 +432,7 @@ def test_help_lists_supported_commands(
 
     assert replies, "expected a reply"
     body = replies[-1]["text"]
-    for verb in ("/cancel", "/next", "/last", "/ack", "/bookclass"):
+    for verb in ("/cancel", "/next", "/last", "/ack"):
         assert verb in body
 
 
@@ -751,145 +684,3 @@ def test_ack_with_no_open_alert_reports_nothing_to_do(
 
     assert replies
     assert "no open cookie-expiring" in replies[-1]["text"].lower()
-
-
-def test_bookclass_books_within_window(
-    app_factory: Callable[..., FastAPI],
-    seed_operator: Callable[..., tuple[int, str]],
-    postgres_engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """US8.3 / CC-013: /bookclass for an in-window class with an
-    available slot is granted on both surfaces (booking_outcome row
-    with rule_id NULL + a notification signal)."""
-    op_id, _ = seed_operator()
-    _bind_chat(postgres_engine, op_id, "424242")
-    store = _seed_cookie(postgres_engine, op_id)
-    fake = _FakeWodBusterClient(
-        load_response=_load_response_with("WOD", "18:30", enrolled_idu=_idu(op_id)),
-        inscribir_response=_inscribir_ok(),
-    )
-    replies = _capture_replies(monkeypatch)
-
-    app = app_factory()
-    with TestClient(app) as client:
-        _override_after_lifespan(app, bind_store=TelegramBindStore(), bot_token="tok")
-        app.state.cookie_store = store
-        app.state.wodbuster_client = fake
-        _post_command(client, chat_id=424242, text_body="/bookclass 2026-07-15 18:30")
-
-    assert replies
-    body = replies[-1]["text"].lower()
-    assert "booked" in body
-    assert "wod" in body
-    assert len(fake.inscribir_calls) == 1
-    with postgres_engine.connect() as conn:
-        gym_account_id = gym_account_id_for(conn, op_id)
-        row = conn.execute(
-            text(
-                "SELECT terminal_status, rule_id FROM booking_outcome "
-                "WHERE gym_account_id = :ga ORDER BY id DESC LIMIT 1"
-            ),
-            {"ga": gym_account_id},
-        ).one()
-    assert row.terminal_status == "granted"
-    assert row.rule_id is None
-
-
-def test_bookclass_books_chosen_class_type_on_collision(
-    app_factory: Callable[..., FastAPI],
-    seed_operator: Callable[..., tuple[int, str]],
-    postgres_engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """US8.3: an optional trailing class type disambiguates a collision."""
-    op_id, _ = seed_operator()
-    _bind_chat(postgres_engine, op_id, "424242")
-    store = _seed_cookie(postgres_engine, op_id)
-    fake = _FakeWodBusterClient(
-        load_response=_load_response_multi(
-            "08:30", [("Cross Training", 111), ("Open Endurance", 222)], enrolled_idu=_idu(op_id)
-        ),
-        inscribir_response=_inscribir_ok(),
-    )
-    replies = _capture_replies(monkeypatch)
-
-    app = app_factory()
-    with TestClient(app) as client:
-        _override_after_lifespan(app, bind_store=TelegramBindStore(), bot_token="tok")
-        app.state.cookie_store = store
-        app.state.wodbuster_client = fake
-        _post_command(
-            client, chat_id=424242, text_body="/bookclass 2026-07-15 08:30 Open Endurance"
-        )
-
-    assert replies
-    assert "open endurance" in replies[-1]["text"].lower()
-    assert len(fake.inscribir_calls) == 1
-    assert fake.inscribir_calls[0]["class_id"] == 222
-    with postgres_engine.connect() as conn:
-        gym_account_id = gym_account_id_for(conn, op_id)
-        target_class = conn.execute(
-            text(
-                "SELECT target_class FROM booking_outcome "
-                "WHERE gym_account_id = :ga ORDER BY id DESC LIMIT 1"
-            ),
-            {"ga": gym_account_id},
-        ).scalar_one()
-    assert target_class == "Open Endurance"
-
-
-def test_bookclass_window_closed_rejects_without_booking(
-    app_factory: Callable[..., FastAPI],
-    seed_operator: Callable[..., tuple[int, str]],
-    postgres_engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """CC-010: /bookclass outside the reservation window is rejected
-    with no ``inscribir`` (booking) call."""
-    op_id, _ = seed_operator()
-    _bind_chat(postgres_engine, op_id, "424242")
-    store = _seed_cookie(postgres_engine, op_id)
-    fake = _FakeWodBusterClient(
-        load_response=_load_response_with("WOD", "18:30", seconds_until_publication=3600.0),
-        inscribir_response=_inscribir_ok(),
-    )
-    replies = _capture_replies(monkeypatch)
-
-    app = app_factory()
-    with TestClient(app) as client:
-        _override_after_lifespan(app, bind_store=TelegramBindStore(), bot_token="tok")
-        app.state.cookie_store = store
-        app.state.wodbuster_client = fake
-        _post_command(client, chat_id=424242, text_body="/bookclass 2026-07-15 18:30")
-
-    assert replies
-    assert "open for booking" in replies[-1]["text"].lower()
-    # The mutating booking call must NOT fire while the window is closed.
-    assert fake.inscribir_calls == []
-    with postgres_engine.connect() as conn:
-        gym_account_id = gym_account_id_for(conn, op_id)
-        count = conn.execute(
-            text("SELECT count(*) FROM booking_outcome WHERE gym_account_id = :ga"),
-            {"ga": gym_account_id},
-        ).scalar_one()
-    assert count == 0
-
-
-def test_bookclass_rejects_malformed_arguments(
-    app_factory: Callable[..., FastAPI],
-    seed_operator: Callable[..., tuple[int, str]],
-    postgres_engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    op_id, _ = seed_operator()
-    _bind_chat(postgres_engine, op_id, "424242")
-    replies = _capture_replies(monkeypatch)
-
-    app = app_factory()
-    with TestClient(app) as client:
-        _override_after_lifespan(app, bind_store=TelegramBindStore(), bot_token="tok")
-        _post_command(client, chat_id=424242, text_body="/bookclass not-a-date")
-
-    assert replies
-    assert "usage" in replies[-1]["text"].lower()

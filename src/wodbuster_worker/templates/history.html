@@ -39,6 +39,17 @@
     color: var(--wb-info);
     border-color: var(--wb-info);
   }
+  .wb-chip--vacation {
+    background: rgba(96, 165, 250, 0.12);
+    color: var(--wb-info);
+    border-color: var(--wb-info);
+  }
+  .wb-upcoming__item--vacation {
+    opacity: 0.72;
+  }
+  .wb-upcoming__item--vacation .wb-upcoming__class {
+    text-decoration: line-through;
+  }
   .wb-flash {
     padding: 0.75rem 1rem;
     border-radius: var(--wb-radius);
@@ -77,9 +88,12 @@
 
   {# ---- Upcoming (H.1 full) -------------------------------------
 
-     Two flavours share this section:
+     Three flavours share this section:
        - ``granted`` slots come from real ``booking_outcome`` rows
          and expose the Cancel form.
+       - ``vacation`` slots are rule projections that fall inside an
+         open vacation window; they will be skipped, so we show a
+         muted "on vacation" chip and no cancel button.
        - ``pending`` slots come from rule projections; the scheduler
          has not fired yet, so there is nothing to cancel and we
          show a "scheduled" chip instead.
@@ -114,6 +128,10 @@
                       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                       <button type="submit" class="wb-btn wb-btn--danger">{{ t("history.cancel_button") }}</button>
                     </form>
+                  {% elif slot.kind == "vacation" %}
+                    <span class="wb-chip wb-chip--vacation wb-upcoming__chip">
+                      🏖️ {{ t("chip.vacation") }}
+                    </span>
                   {% else %}
                     <span class="wb-chip wb-chip--pending wb-upcoming__chip">
                       ⏱️ {{ t("chip.scheduled") }}

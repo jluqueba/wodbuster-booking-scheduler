@@ -327,7 +327,6 @@ The dispatcher routes on an explicit allow-list of eight commands (`src/wodbuste
 | `/last` | Information | Yes | Most recent booking outcome. |
 | `/cancel <booking-id>` | Action | Yes | Idempotent cancel of a booking. |
 | `/ack` | Action | Yes | Acknowledge the open cookie-expiring alert. |
-| `/bookclass <YYYY-MM-DD> <HH:MM> [class type]` | Action | Yes | One-off manual booking. Optional class type disambiguates classes sharing a start time. |
 
 Information-extraction commands: three commands return operator data (`/status`, `/next`, `/last`), and `/help` enumerates the full set. Every stateful command requires the chat to be bound to an operator; unbound chats receive a no-data-leak rejection that never surfaces another operator's data.
 
@@ -345,7 +344,6 @@ Every page except the landing hero and `/health` is gated by an authenticated se
 | `/cookie` | `cookie/` | Paste-and-validate the `.WBAuth` cookie for the gym account; shows the projected time-to-expiry countdown. |
 | `/rules`, `/rules/new`, `/rules/{id}` | `rules/` | List, create, edit, and delete scheduler rules; a class-picker helper reads available class types from WodBuster. |
 | `/history` | `history.html` | Booking attempt history with terminal statuses. |
-| `/book-now` | `book_now.html` | Manual one-off booking form. |
 | `/vacation` | `vacation.html` | Create and close vacation windows; bulk-cancels bookings in the range. |
 | `/telegram` | `telegram.html` | Bind status, one-shot deep-link generation, test message, and unbind. |
 | `/faq` | `faq.html` | Static frequently-asked-questions content. |

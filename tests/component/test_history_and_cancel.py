@@ -458,6 +458,62 @@ def test_history_upcoming_section_projects_pending_rule_attempts(
     assert "scheduled" in upcoming  # pending chip label
 
 
+def test_history_upcoming_section_marks_vacation_covered_slots(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A projected slot inside an open vacation window shows an
+    ``🏖️ on vacation`` chip (muted, struck through) instead of the
+    ``scheduled`` chip, so the operator sees the class will be skipped."""
+    monkeypatch.setenv("WORKER_TIMEZONE", "UTC")
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+
+    now = datetime.now(tz=UTC)
+    attend_dow = (now.weekday() + 1) % 7
+    with postgres_engine.begin() as conn:
+        gym_account_id = gym_account_id_for(conn, op_id)
+        conn.execute(
+            text(
+                "INSERT INTO scheduler_rule ("
+                " gym_account_id, day_of_week, class_type, class_time, "
+                " booking_opens_days_before, booking_opens_at, active"
+                ") VALUES (:ga, :dow, 'VacayWOD', '21:30', 0, '21:30', true)"
+            ),
+            {"ga": gym_account_id, "dow": attend_dow},
+        )
+        # An open vacation window covering the whole projection horizon.
+        conn.execute(
+            text(
+                "INSERT INTO vacation_window ("
+                " gym_account_id, start_date, end_date, created_at"
+                ") VALUES (:ga, :s, :e, :c)"
+            ),
+            {
+                "ga": gym_account_id,
+                "s": now - timedelta(days=1),
+                "e": now + timedelta(days=20),
+                "c": now - timedelta(days=1),
+            },
+        )
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/history")
+
+    assert response.status_code == 200
+    text_body = response.text
+    section_start = text_body.index('<section class="wb-upcoming">')
+    section_end = text_body.index("</section>", section_start)
+    upcoming = text_body[section_start:section_end]
+    assert "VacayWOD" in upcoming
+    assert "on vacation" in upcoming  # vacation chip label
+    assert "wb-upcoming__item--vacation" in upcoming
+    # Every projected slot is covered, so no "scheduled" chip remains.
+    assert "scheduled" not in upcoming
+
+
 def test_history_unauthenticated_redirects_to_login(
     app_factory: Callable[..., FastAPI],
 ) -> None:

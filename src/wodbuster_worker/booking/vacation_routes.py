@@ -9,12 +9,13 @@ Three routes under ``/vacation``:
 Both mutating routes are CSRF-protected and auth-gated.
 
 Design note: the create form takes ``start_date`` and ``end_date`` as
-``YYYY-MM-DD`` strings (native ``<input type="date">``). They are
-interpreted as calendar days in the operator's timezone and
-persisted as ``[00:00, 23:59:59.999999]`` UTC after the timezone
-conversion happens inside :func:`vacation.enable`. That keeps
-"holiday from Mon through Wed" natural for the operator: the
-booking on Wed at 21:30 local is covered.
+``YYYY-MM-DD`` strings (a themed Flatpickr calendar picker; the wire
+value stays ``YYYY-MM-DD``). They are interpreted as calendar days in
+the operator's timezone and persisted as ``[00:00, 23:59:59.999999]``
+of that local day, converted to UTC inside :func:`vacation.enable`.
+That keeps "holiday from Mon through Wed" natural for the operator: the
+booking on Wed at 21:30 local is covered, and the day the operator
+picked is the day that is stored (no off-by-one across the UTC boundary).
 """
 
 from __future__ import annotations

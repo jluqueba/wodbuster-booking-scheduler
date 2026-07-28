@@ -50,6 +50,7 @@ EN: dict[str, str] = {
     "chip.not_bound": "not bound",
     "chip.granted": "granted",
     "chip.scheduled": "scheduled",
+    "chip.vacation": "on vacation",
     "chip.full": "full",
     "chip.cancelled": "cancelled",
     "chip.skipped": "skipped",
@@ -60,9 +61,9 @@ EN: dict[str, str] = {
     "nav.dashboard": "🏠 Dashboard",
     "nav.rules": "📅 Rules",
     "nav.history": "📜 History",
-    "nav.book_now": "⚡ Book now",
     "nav.vacation": "🏖️ Vacation",
     "nav.cookie": "🍪 Cookie",
+    "nav.gyms": "🏢 Gyms",
     "nav.telegram": "🤖 Telegram",
     "nav.faq": "❓ FAQ",
     "nav.logout": "Log out",
@@ -157,25 +158,6 @@ EN: dict[str, str] = {
     # -- history / upcoming -----------------------------------------
     "history.eyebrow": "Activity",
     "history.title": "📜 Booking history",
-    "book_now.eyebrow": "One-off booking",
-    "book_now.title": "⚡ Book a class now",
-    "book_now.subtitle": (
-        "Fire a single booking for a specific date and time, outside your "
-        "recurring rules. Pick the class type when several classes share "
-        "the same start time."
-    ),
-    "book_now.form.date": "Date",
-    "book_now.form.time": "Time",
-    "book_now.form.class_type": "Class type",
-    "book_now.form.class_type_placeholder": "Pick a date and time first",
-    "book_now.form.class_type_loading": "Loading classes…",
-    "book_now.form.class_type_any": "Any class at this time",
-    "book_now.submit_button": "Book now",
-    "book_now.hint": (
-        "The booking only fires when the class is already within its "
-        "reservation window. Outside the window the attempt is rejected "
-        "without contacting WodBuster."
-    ),
     "history.subtitle": (
         "This week's booking attempts, newest first. Use the "
         "Cancel button on any upcoming granted class to release your slot "
@@ -219,6 +201,47 @@ EN: dict[str, str] = {
     "cookie.status.valid": "valid",
     "cookie.status.rejected": "rejected",
     "cookie.status.unknown": "unknown",
+    # -- gyms --------------------------------------------------------
+    "gyms.title": "🏢 Your gyms",
+    "gyms.subtitle": "Add and manage the WodBuster gyms you book at.",
+    "gyms.table.gym": "Gym",
+    "gyms.table.slug": "Slug",
+    "gyms.table.status": "Status",
+    "gyms.table.actions": "Actions",
+    "gyms.status.active": "Active",
+    "gyms.status.inactive": "Inactive",
+    "gyms.actions.deactivate": "Deactivate",
+    "gyms.actions.reactivate": "Reactivate",
+    "gyms.refresh.summary": "Refresh cookie",
+    "gyms.refresh.label": "New .WBAuth cookie for {name}",
+    "gyms.refresh.button": "Refresh cookie",
+    "gyms.empty": "No gyms yet. Add one below.",
+    "gyms.add.gym_label": "Gym",
+    "gyms.add.display_name_label": "Display name (optional)",
+    "gyms.add.display_name_placeholder": "e.g. Adwork",
+    "gyms.add.cookie_label": ".WBAuth cookie for this gym",
+    "gyms.add.note": (
+        "Paste the .WBAuth cookie value from a signed-in browser session at that gym. "
+        "We validate it and detect your athlete id automatically."
+    ),
+    "gyms.add.button": "Add gym",
+    "gyms.all_added": "You have added every gym on the allow-list.",
+    "gyms.flash.unavailable": "Gym management is temporarily unavailable. Try again shortly.",
+    "gyms.flash.not_allowlisted": "That gym is not on the allow-list.",
+    "gyms.flash.duplicate": "You already added that gym.",
+    "gyms.flash.cookie_rejected": (
+        "That cookie was rejected. Re-copy the .WBAuth value from a signed-in "
+        "browser session and try again."
+    ),
+    "gyms.flash.unreachable": "Could not reach that gym right now. Try again in a minute.",
+    "gyms.flash.added": "Added gym '{slug}'.",
+    "gyms.flash.cookie_blank": "Paste the .WBAuth cookie value before submitting.",
+    "gyms.flash.cookie_refreshed": "Cookie refreshed.",
+    "gyms.flash.gone": "That gym no longer exists.",
+    "gyms.flash.deactivated": (
+        "Gym deactivated. It will not book or probe until you reactivate it."
+    ),
+    "gyms.flash.reactivated": "Gym reactivated.",
     # -- vacation ----------------------------------------------------
     "vacation.eyebrow": "Automation",
     "vacation.title": "🏖️ Vacation mode",
@@ -472,17 +495,6 @@ EN: dict[str, str] = {
     "flash.booking.service_unavailable": (
         "Booking service unavailable — check WodBuster configuration."
     ),
-    "flash.booking.manual_granted": "Booked {klass} at {time}. Confirmation sent to Telegram.",
-    "flash.booking.manual_not_granted": "Booking not granted ({status}).",
-    "flash.booking.manual_window_closed": (
-        "That class is not open for booking yet. Try again once its reservation window opens."
-    ),
-    "flash.booking.manual_no_class": "No class found at {time} on {date}.",
-    "flash.booking.manual_no_cookie": (
-        "No active WodBuster session on file. Refresh your cookie and retry."
-    ),
-    "flash.booking.manual_invalid_input": "Enter a valid date and time (HH:MM).",
-    "flash.booking.manual_failed": "Booking failed: {reason}",
     "flash.vacation.enabled": (
         "Vacation mode enabled from {start} through {end}. Granted "
         "bookings inside the range have been cancelled."
@@ -538,6 +550,7 @@ ES: dict[str, str] = {
     "chip.not_bound": "no vinculado",
     "chip.granted": "reservado",
     "chip.scheduled": "programado",
+    "chip.vacation": "en vacaciones",
     "chip.full": "completo",
     "chip.cancelled": "cancelado",
     "chip.skipped": "omitido",
@@ -548,9 +561,9 @@ ES: dict[str, str] = {
     "nav.dashboard": "🏠 Panel",
     "nav.rules": "📅 Reglas",
     "nav.history": "📜 Historial",
-    "nav.book_now": "⚡ Reservar ya",
     "nav.vacation": "🏖️ Vacaciones",
     "nav.cookie": "🍪 Cookie",
+    "nav.gyms": "🏢 Gimnasios",
     "nav.telegram": "🤖 Telegram",
     "nav.faq": "❓ Ayuda",
     "nav.logout": "Cerrar sesión",
@@ -651,25 +664,6 @@ ES: dict[str, str] = {
     # -- history / upcoming -----------------------------------------
     "history.eyebrow": "Actividad",
     "history.title": "📜 Historial de reservas",
-    "book_now.eyebrow": "Reserva puntual",
-    "book_now.title": "⚡ Reserva una clase ya",
-    "book_now.subtitle": (
-        "Lanza una reserva única para una fecha y hora concretas, al "
-        "margen de tus reglas periódicas. Elige el tipo de clase cuando "
-        "varias clases comparten la misma hora de inicio."
-    ),
-    "book_now.form.date": "Fecha",
-    "book_now.form.time": "Hora",
-    "book_now.form.class_type": "Tipo de clase",
-    "book_now.form.class_type_placeholder": "Elige antes fecha y hora",
-    "book_now.form.class_type_loading": "Cargando clases…",
-    "book_now.form.class_type_any": "Cualquier clase a esa hora",
-    "book_now.submit_button": "Reservar ya",
-    "book_now.hint": (
-        "La reserva solo se lanza cuando la clase ya está dentro de su "
-        "ventana de reserva. Fuera de la ventana el intento se rechaza "
-        "sin contactar con WodBuster."
-    ),
     "history.subtitle": (
         "Los intentos de reserva de esta semana, del más reciente al más antiguo. "
         "Usa el botón Cancelar en cualquier clase reservada próxima para "
@@ -713,6 +707,52 @@ ES: dict[str, str] = {
     "cookie.status.valid": "válida",
     "cookie.status.rejected": "rechazada",
     "cookie.status.unknown": "desconocido",
+    # -- gyms --------------------------------------------------------
+    "gyms.title": "🏢 Tus gimnasios",
+    "gyms.subtitle": "Añade y gestiona los gimnasios de WodBuster en los que reservas.",
+    "gyms.table.gym": "Gimnasio",
+    "gyms.table.slug": "Slug",
+    "gyms.table.status": "Estado",
+    "gyms.table.actions": "Acciones",
+    "gyms.status.active": "Activo",
+    "gyms.status.inactive": "Inactivo",
+    "gyms.actions.deactivate": "Desactivar",
+    "gyms.actions.reactivate": "Reactivar",
+    "gyms.refresh.summary": "Actualizar cookie",
+    "gyms.refresh.label": "Nueva cookie .WBAuth para {name}",
+    "gyms.refresh.button": "Actualizar cookie",
+    "gyms.empty": "Aún no hay gimnasios. Añade uno debajo.",
+    "gyms.add.gym_label": "Gimnasio",
+    "gyms.add.display_name_label": "Nombre para mostrar (opcional)",
+    "gyms.add.display_name_placeholder": "p.ej. Adwork",
+    "gyms.add.cookie_label": "Cookie .WBAuth para este gimnasio",
+    "gyms.add.note": (
+        "Pega el valor de la cookie .WBAuth desde una sesión iniciada en el navegador "
+        "en ese gimnasio. La validamos y detectamos tu identificador de atleta "
+        "automáticamente."
+    ),
+    "gyms.add.button": "Añadir gimnasio",
+    "gyms.all_added": "Ya has añadido todos los gimnasios de la lista permitida.",
+    "gyms.flash.unavailable": (
+        "La gestión de gimnasios no está disponible ahora mismo. Inténtalo de nuevo en un momento."
+    ),
+    "gyms.flash.not_allowlisted": "Ese gimnasio no está en la lista permitida.",
+    "gyms.flash.duplicate": "Ya has añadido ese gimnasio.",
+    "gyms.flash.cookie_rejected": (
+        "La cookie fue rechazada. Vuelve a copiar el valor .WBAuth desde una sesión "
+        "iniciada en el navegador e inténtalo de nuevo."
+    ),
+    "gyms.flash.unreachable": (
+        "No se pudo contactar con ese gimnasio ahora mismo. Inténtalo de nuevo en un minuto."
+    ),
+    "gyms.flash.added": "Gimnasio '{slug}' añadido.",
+    "gyms.flash.cookie_blank": "Pega el valor de la cookie .WBAuth antes de enviar.",
+    "gyms.flash.cookie_refreshed": "Cookie actualizada.",
+    "gyms.flash.gone": "Ese gimnasio ya no existe.",
+    "gyms.flash.deactivated": (
+        "Gimnasio desactivado. No reservará ni comprobará hasta que lo reactives."
+    ),
+    "gyms.flash.reactivated": "Gimnasio reactivado.",
     # -- vacation ----------------------------------------------------
     "vacation.eyebrow": "Automatización",
     "vacation.title": "🏖️ Modo vacaciones",
@@ -978,18 +1018,6 @@ ES: dict[str, str] = {
     "flash.booking.service_unavailable": (
         "Servicio de reservas no disponible — revisa la configuración de WodBuster."
     ),
-    "flash.booking.manual_granted": "Reservada {klass} a las {time}. Confirmación enviada a Telegram.",
-    "flash.booking.manual_not_granted": "Reserva no concedida ({status}).",
-    "flash.booking.manual_window_closed": (
-        "Esa clase todavía no está abierta para reservar. Vuelve a "
-        "intentarlo cuando se abra su ventana de reserva."
-    ),
-    "flash.booking.manual_no_class": "No hay ninguna clase a las {time} el {date}.",
-    "flash.booking.manual_no_cookie": (
-        "No hay sesión activa de WodBuster. Renueva tu cookie e inténtalo de nuevo."
-    ),
-    "flash.booking.manual_invalid_input": "Introduce una fecha y hora válidas (HH:MM).",
-    "flash.booking.manual_failed": "Fallo en la reserva: {reason}",
     "flash.vacation.enabled": (
         "Modo vacaciones activado del {start} al {end}. Las reservas "
         "concedidas dentro del rango se han cancelado."

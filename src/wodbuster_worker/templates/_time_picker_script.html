@@ -35,6 +35,37 @@
         allowInput: true,
         disableMobile: false,
       });
+
+      // Calendar date pickers (``.wb-date-flatpickr``). The wire value
+      // stays ``YYYY-MM-DD`` so the server parser is unchanged.
+      var dateEls = Array.prototype.slice.call(
+        document.querySelectorAll('.wb-date-flatpickr')
+      );
+      dateEls.forEach(function (el) {
+        var opts = {
+          dateFormat: 'Y-m-d',
+          allowInput: true,
+          disableMobile: false,
+        };
+        if (el.dataset.fpMinToday) {
+          opts.minDate = 'today';
+        }
+        flatpickr(el, opts);
+      });
+      // Second pass: link one picker's minDate to another's chosen value
+      // (e.g. the end date cannot precede the start date).
+      dateEls.forEach(function (el) {
+        var srcId = el.dataset.fpMinFrom;
+        if (!srcId) {
+          return;
+        }
+        var src = document.getElementById(srcId);
+        if (src && src._flatpickr && el._flatpickr) {
+          src._flatpickr.config.onChange.push(function (selected) {
+            el._flatpickr.set('minDate', selected[0] || null);
+          });
+        }
+      });
     }
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', initAll);

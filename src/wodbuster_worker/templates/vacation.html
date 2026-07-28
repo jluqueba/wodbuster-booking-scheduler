@@ -11,6 +11,7 @@
       schedule their first holiday.
 #}
 {% extends "base.html" %}
+{% import "_time_picker.html" as widgets %}
 
 {% block title %}{{ t("nav.vacation") }} — WodBuster Booking Scheduler{% endblock %}
 
@@ -49,7 +50,7 @@
     color: var(--wb-text-muted);
     margin-bottom: 0.35rem;
   }
-  .wb-vacation-form input[type="date"] {
+  .wb-vacation-form input {
     width: 100%;
   }
 </style>
@@ -75,12 +76,12 @@
   <form method="post" action="{{ lang_url('/vacation') }}" class="wb-vacation-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <div>
-      <label for="vac-start">{{ t("vacation.form.start") }}</label>
-      <input type="date" id="vac-start" name="start_date" required>
+      <label for="start-date">{{ t("vacation.form.start") }}</label>
+      {{ widgets.date_picker("start_date", "", required=true, min_today=true) }}
     </div>
     <div>
-      <label for="vac-end">{{ t("vacation.form.end") }}</label>
-      <input type="date" id="vac-end" name="end_date" required>
+      <label for="end-date">{{ t("vacation.form.end") }}</label>
+      {{ widgets.date_picker("end_date", "", required=true, min_today=true, link_min_from="start-date") }}
     </div>
     <div>
       <button type="submit" class="wb-btn wb-btn--primary">
@@ -136,4 +137,6 @@
     </table>
     </div>
   {% endif %}
+
+  {% include "_time_picker_script.html" %}
 {% endblock %}
