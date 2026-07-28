@@ -20,7 +20,7 @@
     {% if gyms %}
       <table class="wb-table">
         <thead>
-          <tr><th>{{ t("gyms.table.gym") }}</th><th>{{ t("gyms.table.slug") }}</th><th>{{ t("gyms.table.status") }}</th><th>{{ t("gyms.table.actions") }}</th></tr>
+          <tr><th>{{ t("gyms.table.gym") }}</th><th>{{ t("gyms.table.slug") }}</th><th>{{ t("gyms.table.status") }}</th><th>{{ t("gyms.table.cookie") }}</th><th>{{ t("gyms.table.activation") }}</th></tr>
         </thead>
         <tbody>
           {% for gym in gyms %}
@@ -28,48 +28,47 @@
               <td>{{ gym.display_name }}</td>
               <td><code>{{ gym.gym_slug }}</code></td>
               <td>{{ t("gyms.status.active") if gym.active else t("gyms.status.inactive") }}</td>
-              <td>
-                <div class="wb-gym-actions">
-                  {% if gym.active %}
-                    <form
-                      method="post"
-                      action="{{ lang_url('/gyms/' ~ gym.id ~ '/deactivate') }}"
-                    >
-                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                      <button type="submit" class="wb-btn--secondary">{{ t("gyms.actions.deactivate") }}</button>
-                    </form>
-                  {% else %}
-                    <form
-                      method="post"
-                      action="{{ lang_url('/gyms/' ~ gym.id ~ '/reactivate') }}"
-                    >
-                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                      <button type="submit" class="wb-btn--secondary">{{ t("gyms.actions.reactivate") }}</button>
-                    </form>
-                  {% endif %}
-
-                  <details class="wb-gym-refresh">
-                    <summary>{{ t("gyms.refresh.summary") }}</summary>
-                    <form
-                      method="post"
-                      action="{{ lang_url('/gyms/' ~ gym.id ~ '/cookie') }}"
-                    >
-                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                      <label for="cookie_value_{{ gym.id }}">
-                        {{ t("gyms.refresh.label", name=gym.display_name) }}
-                      </label>
-                      <textarea
-                        id="cookie_value_{{ gym.id }}"
-                        name="cookie_value"
-                        rows="3"
-                        spellcheck="false"
-                        autocomplete="off"
-                        required
-                      ></textarea>
-                      <button type="submit" class="wb-btn--primary">{{ t("gyms.refresh.button") }}</button>
-                    </form>
-                  </details>
-                </div>
+              <td class="wb-cell-actions">
+                <details class="wb-gym-refresh">
+                  <summary>{{ t("gyms.refresh.summary") }}</summary>
+                  <form
+                    method="post"
+                    action="{{ lang_url('/gyms/' ~ gym.id ~ '/cookie') }}"
+                  >
+                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                    <label for="cookie_value_{{ gym.id }}">
+                      {{ t("gyms.refresh.label", name=gym.display_name) }}
+                    </label>
+                    <textarea
+                      id="cookie_value_{{ gym.id }}"
+                      name="cookie_value"
+                      rows="3"
+                      spellcheck="false"
+                      autocomplete="off"
+                      required
+                    ></textarea>
+                    <button type="submit" class="wb-btn wb-btn--primary">{{- t("gyms.refresh.button") -}}</button>
+                  </form>
+                </details>
+              </td>
+              <td class="wb-cell-actions">
+                {% if gym.active %}
+                  <form
+                    method="post"
+                    action="{{ lang_url('/gyms/' ~ gym.id ~ '/deactivate') }}"
+                  >
+                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                    <button type="submit" class="wb-btn wb-btn--danger">{{- t("gyms.actions.deactivate") -}}</button>
+                  </form>
+                {% else %}
+                  <form
+                    method="post"
+                    action="{{ lang_url('/gyms/' ~ gym.id ~ '/reactivate') }}"
+                  >
+                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                    <button type="submit" class="wb-btn">{{- t("gyms.actions.reactivate") -}}</button>
+                  </form>
+                {% endif %}
               </td>
             </tr>
           {% endfor %}
@@ -113,7 +112,7 @@
         {{ t("gyms.add.note") }}
       </p>
 
-      <button type="submit" class="wb-btn--primary">{{ t("gyms.add.button") }}</button>
+      <button type="submit" class="wb-btn wb-btn--primary">{{- t("gyms.add.button") -}}</button>
     </form>
   {% else %}
     <p class="wb-muted">{{ t("gyms.all_added") }}</p>

@@ -66,7 +66,9 @@ EN: dict[str, str] = {
     "nav.gyms": "🏢 Gyms",
     "nav.telegram": "🤖 Telegram",
     "nav.faq": "❓ FAQ",
-    "nav.logout": "Log out",
+    "nav.logout": "👋 Log out",
+    "modal.cancel": "🚫 Cancel",
+    "modal.confirm": "✅ Confirm",
     # -- dashboard ---------------------------------------------------
     "dashboard.eyebrow": "Welcome back",
     "dashboard.title.hero": "Hero",
@@ -152,8 +154,8 @@ EN: dict[str, str] = {
         "your WodBuster schedule."
     ),
     "rules.form.not_in_schedule": "{name} (not in current schedule)",
-    "rules.form.create_button": "Create rule",
-    "rules.form.save_button": "Save changes",
+    "rules.form.create_button": "➕ Create rule",
+    "rules.form.save_button": "💾 Save changes",
     "rules.form.delete_button": "🗑️ Delete rule",
     # -- history / upcoming -----------------------------------------
     "history.eyebrow": "Activity",
@@ -191,7 +193,7 @@ EN: dict[str, str] = {
     ),
     "cookie.paste.title": "Paste a fresh cookie",
     "cookie.hint": ("Extract it in devtools: Application → Cookies → .wodbuster.com → .WBAuth."),
-    "cookie.paste_button": "Validate and save",
+    "cookie.paste_button": "💾 Validate and save",
     "cookie.status.empty": "No cookie on file yet. Paste one below to enable booking.",
     "cookie.status.pasted": "Pasted",
     "cookie.status.last_validated": "Last validated",
@@ -207,14 +209,15 @@ EN: dict[str, str] = {
     "gyms.table.gym": "Gym",
     "gyms.table.slug": "Slug",
     "gyms.table.status": "Status",
-    "gyms.table.actions": "Actions",
+    "gyms.table.cookie": "Cookie",
+    "gyms.table.activation": "Activation",
     "gyms.status.active": "Active",
     "gyms.status.inactive": "Inactive",
-    "gyms.actions.deactivate": "Deactivate",
-    "gyms.actions.reactivate": "Reactivate",
+    "gyms.actions.deactivate": "🚫 Deactivate",
+    "gyms.actions.reactivate": "✅ Reactivate",
     "gyms.refresh.summary": "Refresh cookie",
     "gyms.refresh.label": "New .WBAuth cookie for {name}",
-    "gyms.refresh.button": "Refresh cookie",
+    "gyms.refresh.button": "🔄 Refresh cookie",
     "gyms.empty": "No gyms yet. Add one below.",
     "gyms.add.gym_label": "Gym",
     "gyms.add.display_name_label": "Display name (optional)",
@@ -224,7 +227,7 @@ EN: dict[str, str] = {
         "Paste the .WBAuth cookie value from a signed-in browser session at that gym. "
         "We validate it and detect your athlete id automatically."
     ),
-    "gyms.add.button": "Add gym",
+    "gyms.add.button": "➕ Add gym",
     "gyms.all_added": "You have added every gym on the allow-list.",
     "gyms.flash.unavailable": "Gym management is temporarily unavailable. Try again shortly.",
     "gyms.flash.not_allowlisted": "That gym is not on the allow-list.",
@@ -336,7 +339,7 @@ EN: dict[str, str] = {
     "auth.denied.contact": (
         "If you believe this is a mistake, contact the operator who set up this deployment."
     ),
-    "auth.denied.back": "← Back to sign-in",
+    "auth.denied.back": "⬅️ Back to sign-in",
     "auth.signin.with_microsoft": "🪟 Sign in with Microsoft",
     "auth.signin.with_github": "🐙 Sign in with GitHub",
     "auth.signin.with_google": "🌐 Sign in with Google",
@@ -566,7 +569,9 @@ ES: dict[str, str] = {
     "nav.gyms": "🏢 Gimnasios",
     "nav.telegram": "🤖 Telegram",
     "nav.faq": "❓ Ayuda",
-    "nav.logout": "Cerrar sesión",
+    "nav.logout": "👋 Cerrar sesión",
+    "modal.cancel": "🚫 Cancelar",
+    "modal.confirm": "✅ Confirmar",
     # -- dashboard ---------------------------------------------------
     "dashboard.eyebrow": "Hola de nuevo",
     "dashboard.title.hero": "Crack",
@@ -658,8 +663,8 @@ ES: dict[str, str] = {
         "tu horario de WodBuster."
     ),
     "rules.form.not_in_schedule": "{name} (no está en el horario actual)",
-    "rules.form.create_button": "Crear regla",
-    "rules.form.save_button": "Guardar cambios",
+    "rules.form.create_button": "➕ Crear regla",
+    "rules.form.save_button": "💾 Guardar cambios",
     "rules.form.delete_button": "🗑️ Borrar regla",
     # -- history / upcoming -----------------------------------------
     "history.eyebrow": "Actividad",
@@ -697,7 +702,7 @@ ES: dict[str, str] = {
     ),
     "cookie.paste.title": "Pega una cookie nueva",
     "cookie.hint": ("Cópiala desde devtools: Application → Cookies → .wodbuster.com → .WBAuth."),
-    "cookie.paste_button": "Validar y guardar",
+    "cookie.paste_button": "💾 Validar y guardar",
     "cookie.status.empty": "Aún no hay cookie. Pega una debajo para activar las reservas.",
     "cookie.status.pasted": "Pegada",
     "cookie.status.last_validated": "Última validación",
@@ -713,14 +718,15 @@ ES: dict[str, str] = {
     "gyms.table.gym": "Gimnasio",
     "gyms.table.slug": "Slug",
     "gyms.table.status": "Estado",
-    "gyms.table.actions": "Acciones",
+    "gyms.table.cookie": "Cookie",
+    "gyms.table.activation": "Activación",
     "gyms.status.active": "Activo",
     "gyms.status.inactive": "Inactivo",
-    "gyms.actions.deactivate": "Desactivar",
-    "gyms.actions.reactivate": "Reactivar",
+    "gyms.actions.deactivate": "🚫 Desactivar",
+    "gyms.actions.reactivate": "✅ Reactivar",
     "gyms.refresh.summary": "Actualizar cookie",
     "gyms.refresh.label": "Nueva cookie .WBAuth para {name}",
-    "gyms.refresh.button": "Actualizar cookie",
+    "gyms.refresh.button": "🔄 Actualizar cookie",
     "gyms.empty": "Aún no hay gimnasios. Añade uno debajo.",
     "gyms.add.gym_label": "Gimnasio",
     "gyms.add.display_name_label": "Nombre para mostrar (opcional)",
@@ -731,7 +737,7 @@ ES: dict[str, str] = {
         "en ese gimnasio. La validamos y detectamos tu identificador de atleta "
         "automáticamente."
     ),
-    "gyms.add.button": "Añadir gimnasio",
+    "gyms.add.button": "➕ Añadir gimnasio",
     "gyms.all_added": "Ya has añadido todos los gimnasios de la lista permitida.",
     "gyms.flash.unavailable": (
         "La gestión de gimnasios no está disponible ahora mismo. Inténtalo de nuevo en un momento."
@@ -853,7 +859,7 @@ ES: dict[str, str] = {
     "auth.denied.contact": (
         "Si crees que es un error, contacta con la persona que configuró el despliegue."
     ),
-    "auth.denied.back": "← Volver a iniciar sesión",
+    "auth.denied.back": "⬅️ Volver a iniciar sesión",
     "auth.signin.with_microsoft": "🪟 Entrar con Microsoft",
     "auth.signin.with_github": "🐙 Entrar con GitHub",
     "auth.signin.with_google": "🌐 Entrar con Google",

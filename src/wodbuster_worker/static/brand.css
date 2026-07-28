@@ -450,7 +450,6 @@ html {
   color: var(--wb-accent-ink);
   box-shadow: 0 6px 20px var(--wb-accent-glow);
 }
-.wb-hero__cta::after { content: "→"; font-weight: 400; }
 
 .wb-hero__ctas {
   display: flex;
@@ -532,18 +531,9 @@ button.wb-btn--danger:hover,
   color: var(--wb-danger);
 }
 
-/* Per-gym row actions (multi-gym P4): the activate toggle and the
-   collapsible cookie-refresh form stack vertically inside the table's
-   Actions cell so each gym's controls stay grouped. */
-.wb-gym-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  align-items: flex-start;
-}
-.wb-gym-actions form {
-  margin: 0;
-}
+/* Per-gym cookie-refresh disclosure (multi-gym P4). Each row's actions
+   now live in their own table columns, so no grouping wrapper is
+   needed; only the collapsible refresh form keeps custom styling. */
 .wb-gym-refresh summary {
   cursor: pointer;
   color: var(--wb-accent);
@@ -759,11 +749,12 @@ fieldset legend {
   margin-left: 0.4rem;
 }
 /* Compact the in-table action buttons (rules Edit/Delete, history
-   Cancel). At full size the six-column rules table grew wider than its
-   container, so the horizontal-scroll wrapper clipped the trailing
-   Delete button at the right edge (the red fill looked cut off).
-   Smaller padding keeps the Edit/Delete pair inside the table width. */
-.wb-rules-table .wb-cell-actions .wb-btn {
+   Cancel, vacation End early, gyms activation). At full size the
+   six-column rules table grew wider than its container, so the
+   horizontal-scroll wrapper clipped the trailing Delete button at the
+   right edge (the red fill looked cut off). Smaller padding keeps the
+   action buttons tight and consistent across every table. */
+.wb-cell-actions .wb-btn {
   padding: 0.35rem 0.7rem;
   font-size: 0.82rem;
 }

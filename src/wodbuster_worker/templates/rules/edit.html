@@ -164,8 +164,8 @@
     </fieldset>
 
     <div class="wb-form-actions">
-      <button type="submit" class="wb-btn--primary"
-              {% if picker_unavailable %}disabled{% endif %}>{{ t("rules.form.save_button") }}</button>
+      <button type="submit" class="wb-btn wb-btn--primary"
+              {% if picker_unavailable %}disabled{% endif %}>{{- t("rules.form.save_button") -}}</button>
       {% if delete_url %}
         <form method="post" action="{{ delete_url }}" class="wb-inline-form"
               onsubmit="return wbConfirm(this, event, '{{ t('rules.confirm.delete') }}')">
