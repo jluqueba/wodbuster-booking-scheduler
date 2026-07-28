@@ -126,9 +126,7 @@
                 onsubmit="return wbConfirm(this, event, '{{ t('vacation.confirm.close') }}')"
               >
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                <button type="submit" class="wb-btn wb-btn--danger">
-                  {{ t("vacation.actions.end_early") }}
-                </button>
+                <button type="submit" class="wb-btn wb-btn--danger">{{- t("vacation.actions.end_early") -}}</button>
               </form>
             </td>
           </tr>

@@ -279,7 +279,7 @@ def test_vacation_page_uses_flatpickr_date_picker(
     assert response.status_code == 200
     body = response.text
     # Both date fields are Flatpickr-enhanced calendar inputs.
-    assert body.count('class="wb-date-flatpickr wb-time-picker__input"') == 2
+    assert body.count('class="wb-date-flatpickr wb-date-picker__input"') == 2
     # The end date is linked to the start date's chosen value.
     assert 'data-fp-min-from="start-date"' in body
     # The Flatpickr loader is included on the page.

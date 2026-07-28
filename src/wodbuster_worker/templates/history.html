@@ -198,9 +198,7 @@
                   onsubmit="return wbConfirm(this, event, '{{ t('history.confirm.cancel') }}')"
                 >
                   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                  <button type="submit" class="wb-btn wb-btn--danger">
-                    {{ t("history.cancel_button") }}
-                  </button>
+                  <button type="submit" class="wb-btn wb-btn--danger">{{- t("history.cancel_button") -}}</button>
                 </form>
               {% endif %}
             </td>

@@ -59,6 +59,6 @@
   </ul>
   <form method="post" action="{{ lang_url('/auth/logout') }}">
     <input type="hidden" name="_csrf" value="{{ csrf_token | default('') }}">
-    <button type="submit" class="wb-nav__logout">{{ t("nav.logout") }} 👋</button>
+    <button type="submit" class="wb-nav__logout">{{- t("nav.logout") -}}</button>
   </form>
 </nav>
