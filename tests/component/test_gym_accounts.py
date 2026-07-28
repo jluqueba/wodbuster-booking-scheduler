@@ -232,6 +232,27 @@ def test_gyms_list_shows_owned_and_offers_addable(
     assert "adwork" in body  # addable option in the form
 
 
+def test_gyms_page_renders_in_spanish_under_es_prefix(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The /gyms page follows the URL-prefix language like the rest of the app."""
+    _op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory(gym_allowlist=_ALLOWLIST)
+    _install_factory(app)
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        resp = client.get("/es/gyms", follow_redirects=False)
+
+    assert resp.status_code == 200
+    body = resp.text
+    assert "Tus gimnasios" in body  # Spanish h1
+    assert "Añadir gimnasio" in body  # Spanish add button
+    assert "Your gyms" not in body  # no English leakage
+
+
 def _active(engine: Engine, gym_account_id: int) -> bool:
     with engine.connect() as conn:
         return bool(

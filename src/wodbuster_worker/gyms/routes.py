@@ -8,9 +8,10 @@ Two routes under ``/gyms``:
   (SEC-001) BEFORE constructing any client, then validate the pasted
   cookie and discover the operator's own idu, and persist atomically.
 
-Both routes are auth-gated; the mutating route is CSRF-protected. The
-flash strings are plain English for now; localisation lands with the
-user-profile / language feature (ADR-0008).
+Both routes are auth-gated; the mutating route is CSRF-protected. All
+user-facing strings (page copy and flash messages) are localised through
+the i18n catalog (``t(...)``), so the page follows the URL-prefix
+language like the rest of the app.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from sqlalchemy import select
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_owned_gym_account, require_session
-from ..i18n import lang_url
+from ..i18n import lang_url, t
 from ..persistence.engine import get_session
 from ..persistence.models import GymAccount
 from ..wodbuster_client.client import (
@@ -113,9 +114,7 @@ def gyms_add(
     cookie_store = getattr(request.app.state, "cookie_store", None)
     factory = getattr(request.app.state, "gym_discovery_factory", None)
     if cookie_store is None or factory is None:
-        return _redirect_with_flash(
-            "Gym management is temporarily unavailable. Try again shortly.", kind="error"
-        )
+        return _redirect_with_flash(t("gyms.flash.unavailable"), kind="error")
 
     # SEC-001: validate the slug against the allow-list BEFORE building any
     # client or URL from it, so a crafted value can never redirect the
@@ -123,7 +122,7 @@ def gyms_add(
     try:
         slug = settings.validate_gym_slug(gym_slug)
     except ValueError:
-        return _redirect_with_flash("That gym is not on the allow-list.", kind="error")
+        return _redirect_with_flash(t("gyms.flash.not_allowlisted"), kind="error")
 
     client = factory(slug)
     with get_session() as session:
@@ -139,23 +138,17 @@ def gyms_add(
                 display_name=display_name.strip() or None,
             )
         except GymAlreadyExistsError:
-            return _redirect_with_flash("You already added that gym.", kind="warning")
+            return _redirect_with_flash(t("gyms.flash.duplicate"), kind="warning")
         except WodBusterAuthError:
-            return _redirect_with_flash(
-                "That cookie was rejected. Re-copy the .WBAuth value from a signed-in "
-                "browser session and try again.",
-                kind="error",
-            )
+            return _redirect_with_flash(t("gyms.flash.cookie_rejected"), kind="error")
         except (WodBusterProtocolError, WodBusterTransportError):
             _log.warning("gyms.add.discovery_failed", gym_slug=slug)
-            return _redirect_with_flash(
-                "Could not reach that gym right now. Try again in a minute.", kind="error"
-            )
+            return _redirect_with_flash(t("gyms.flash.unreachable"), kind="error")
         except ValueError:
-            return _redirect_with_flash("That gym is not on the allow-list.", kind="error")
+            return _redirect_with_flash(t("gyms.flash.not_allowlisted"), kind="error")
         session.commit()
 
-    return _redirect_with_flash(f"Added gym '{slug}'.", kind="info")
+    return _redirect_with_flash(t("gyms.flash.added", slug=slug), kind="info")
 
 
 @router.post(
@@ -178,15 +171,13 @@ def gyms_refresh_cookie(
     cookie_store = getattr(request.app.state, "cookie_store", None)
     factory = getattr(request.app.state, "gym_discovery_factory", None)
     if cookie_store is None or factory is None:
-        return _redirect_with_flash(
-            "Gym management is temporarily unavailable. Try again shortly.", kind="error"
-        )
+        return _redirect_with_flash(t("gyms.flash.unavailable"), kind="error")
 
     del settings  # not needed here; slug comes from the stored account
     with get_session() as session:
         account = session.get(GymAccount, gym_account_id)
         if account is None:  # pragma: no cover - authz guarantees existence
-            return _redirect_with_flash("That gym no longer exists.", kind="error")
+            return _redirect_with_flash(t("gyms.flash.gone"), kind="error")
         client = factory(account.gym_slug)
         try:
             refresh_gym_cookie(
@@ -197,23 +188,15 @@ def gyms_refresh_cookie(
                 client=client,
             )
         except ValueError:
-            return _redirect_with_flash(
-                "Paste the .WBAuth cookie value before submitting.", kind="error"
-            )
+            return _redirect_with_flash(t("gyms.flash.cookie_blank"), kind="error")
         except WodBusterAuthError:
-            return _redirect_with_flash(
-                "That cookie was rejected. Re-copy the .WBAuth value from a signed-in "
-                "browser session and try again.",
-                kind="error",
-            )
+            return _redirect_with_flash(t("gyms.flash.cookie_rejected"), kind="error")
         except (WodBusterProtocolError, WodBusterTransportError):
             _log.warning("gyms.refresh.discovery_failed", gym_account_id=gym_account_id)
-            return _redirect_with_flash(
-                "Could not reach that gym right now. Try again in a minute.", kind="error"
-            )
+            return _redirect_with_flash(t("gyms.flash.unreachable"), kind="error")
         session.commit()
 
-    return _redirect_with_flash("Cookie refreshed.", kind="info")
+    return _redirect_with_flash(t("gyms.flash.cookie_refreshed"), kind="info")
 
 
 @router.post(
@@ -230,9 +213,7 @@ def gyms_deactivate(
     with get_session() as session:
         set_gym_account_active(session, gym_account_id, active=False)
         session.commit()
-    return _redirect_with_flash(
-        "Gym deactivated. It will not book or probe until you reactivate it.", kind="info"
-    )
+    return _redirect_with_flash(t("gyms.flash.deactivated"), kind="info")
 
 
 @router.post(
@@ -249,7 +230,7 @@ def gyms_reactivate(
     with get_session() as session:
         set_gym_account_active(session, gym_account_id, active=True)
         session.commit()
-    return _redirect_with_flash("Gym reactivated.", kind="info")
+    return _redirect_with_flash(t("gyms.flash.reactivated"), kind="info")
 
 
 __all__ = ["router"]

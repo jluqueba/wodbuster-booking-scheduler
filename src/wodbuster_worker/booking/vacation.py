@@ -245,23 +245,31 @@ def find_covering_window(
 
 
 def _floor_day(dt: datetime) -> datetime:
-    """Return midnight of ``dt``'s date in UTC (inclusive start)."""
-    aware = dt.astimezone(UTC)
-    return datetime.combine(aware.date(), time.min, tzinfo=UTC)
+    """Return midnight of ``dt``'s calendar day, as a UTC instant.
+
+    The day is taken in ``dt``'s OWN timezone, then converted to UTC.
+    This keeps "the day the operator selected" intact: for a zone
+    ahead of UTC (e.g. Europe/Madrid), local midnight is the previous
+    day in UTC, so flooring by the UTC date would silently roll the
+    window back one day. Flooring in the local zone first avoids that.
+    """
+    local_midnight = datetime.combine(dt.date(), time.min, tzinfo=dt.tzinfo)
+    return local_midnight.astimezone(UTC)
 
 
 def _ceil_day(dt: datetime) -> datetime:
-    """Return the last microsecond of ``dt``'s date in UTC (inclusive end).
+    """Return the last microsecond of ``dt``'s calendar day, as a UTC instant.
 
-    Storing the ceiling here rather than at query time avoids
-    off-by-one bugs on the read side: any target-slot comparison
-    just uses ``<=`` against ``end_date``.
+    Mirrors :func:`_floor_day`: the end of the day is computed in
+    ``dt``'s own timezone (inclusive end) and then converted to UTC, so
+    a target-slot comparison on the read side can just use ``<=``
+    against ``end_date`` without any further timezone juggling.
+
+    ``time.max`` is ``23:59:59.999999`` — precise enough for the
+    skip-guard: booking slots never sit on the last microsecond.
     """
-    aware = dt.astimezone(UTC)
-    end_of_day = datetime.combine(aware.date(), time.max, tzinfo=UTC)
-    # ``time.max`` is ``23:59:59.999999`` — precise enough for the
-    # skip-guard: booking slots never sit on the last microsecond.
-    return end_of_day
+    local_end_of_day = datetime.combine(dt.date(), time.max, tzinfo=dt.tzinfo)
+    return local_end_of_day.astimezone(UTC)
 
 
 def _load_granted_bookings_in_range(

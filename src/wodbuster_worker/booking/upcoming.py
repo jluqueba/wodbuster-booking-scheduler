@@ -36,13 +36,13 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..persistence.models import BookingOutcome, SchedulerRule
+from ..persistence.models import BookingOutcome, SchedulerRule, VacationWindow
 from ..scheduler.rule_jobs import (
     next_window_open_for_rule,
     target_slot_for_window,
 )
 
-SlotKind = Literal["granted", "pending"]
+SlotKind = Literal["granted", "pending", "vacation"]
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,7 @@ class UpcomingSlot:
     target_slot: datetime  # timezone-aware UTC
     target_class: str
     rule_id: int | None  # None only for orphaned outcomes (rare)
-    booking_id: int | None  # None when kind == "pending"
+    booking_id: int | None  # None when kind != "granted"
     fallback_index: int | None  # only set on granted with a second shot
 
 
@@ -77,12 +77,14 @@ def list_upcoming_slots(
 
     granted_by_key = _load_granted_index(session, gym_account_id, _now, horizon)
     covered_keys = _load_covered_keys(session, gym_account_id, _now, horizon)
+    vacation_ranges = _load_open_vacation_ranges(session, gym_account_id, _now, horizon)
     pending: list[UpcomingSlot] = _project_pending(
         session,
         gym_account_id=gym_account_id,
         now=_now,
         horizon=horizon,
         covered_keys=covered_keys,
+        vacation_ranges=vacation_ranges,
         max_per_rule=max_per_rule,
     )
 
@@ -149,6 +151,32 @@ def _load_covered_keys(
     return {(rule_id, target_slot) for rule_id, target_slot in rows}
 
 
+def _load_open_vacation_ranges(
+    session: Session,
+    gym_account_id: int,
+    now: datetime,
+    horizon: datetime,
+) -> list[tuple[datetime, datetime]]:
+    """Return ``(start, end)`` for each open vacation window in range.
+
+    "Open" mirrors the scheduler skip-guard
+    (:func:`vacation.find_covering_window`): ``closed_at IS NULL`` and
+    ``end_date >= now``. Windows that start after the projection
+    horizon cannot cover any upcoming slot, so they are filtered out.
+    The ranges are matched in memory against each projected slot so
+    the projection issues one query instead of one per slot.
+    """
+    rows = session.execute(
+        select(VacationWindow.start_date, VacationWindow.end_date).where(
+            VacationWindow.gym_account_id == gym_account_id,
+            VacationWindow.closed_at.is_(None),
+            VacationWindow.end_date >= now,
+            VacationWindow.start_date <= horizon,
+        )
+    ).all()
+    return [(start, end) for start, end in rows]
+
+
 def _project_pending(
     session: Session,
     *,
@@ -156,9 +184,16 @@ def _project_pending(
     now: datetime,
     horizon: datetime,
     covered_keys: set[tuple[int | None, datetime]],
+    vacation_ranges: list[tuple[datetime, datetime]],
     max_per_rule: int,
 ) -> list[UpcomingSlot]:
-    """Project each active rule's next occurrences and drop covered ones."""
+    """Project each active rule's next occurrences and drop covered ones.
+
+    A projection whose ``target_slot`` falls inside an open vacation
+    window is emitted with ``kind="vacation"`` so the history page can
+    show that the class will be skipped, rather than a misleading
+    "scheduled" chip.
+    """
     rules = (
         session.execute(
             select(SchedulerRule).where(
@@ -188,9 +223,10 @@ def _project_pending(
                 # story. Advance the cursor and keep projecting.
                 cursor = window_open + timedelta(seconds=1)
                 continue
+            on_vacation = any(start <= target_slot <= end for start, end in vacation_ranges)
             projections.append(
                 UpcomingSlot(
-                    kind="pending",
+                    kind="vacation" if on_vacation else "pending",
                     target_slot=target_slot,
                     target_class=str(rule.class_type),
                     rule_id=int(rule.id),

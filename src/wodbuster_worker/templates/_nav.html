@@ -32,11 +32,6 @@
       >{{ t("nav.history") }}</a>
     </li>
     <li>
-      <a href="{{ lang_url('/book-now') }}"
-         {% if active_nav == "book_now" %}aria-current="page"{% endif %}
-      >{{ t("nav.book_now") }}</a>
-    </li>
-    <li>
       <a href="{{ lang_url('/vacation') }}"
          {% if active_nav == "vacation" %}aria-current="page"{% endif %}
       >{{ t("nav.vacation") }}</a>
@@ -49,7 +44,7 @@
     <li>
       <a href="{{ lang_url('/gyms') }}"
          {% if active_nav == "gyms" %}aria-current="page"{% endif %}
-      >Gyms</a>
+      >{{ t("nav.gyms") }}</a>
     </li>
     <li>
       <a href="{{ lang_url('/telegram') }}"

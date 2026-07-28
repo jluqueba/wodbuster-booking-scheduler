@@ -26,12 +26,10 @@ command nudge. Recognised commands:
 - ``/last``           most recent booking outcome (TG.3).
 - ``/cancel <id>``    idempotent cancel of a booking (US6.3, CC-015).
 - ``/ack``            acknowledge the open cookie-expiring alert (TG.5).
-- ``/bookclass <YYYY-MM-DD> <HH:MM>``  one-off manual booking (US8.3).
 
-Every stateful command (``/next``, ``/last``, ``/cancel``, ``/ack``,
-``/bookclass``) requires the chat to be bound to an operator (FR-031);
-unbound chats get a no-data-leak rejection, never another operator's
-data.
+Every stateful command (``/next``, ``/last``, ``/cancel``, ``/ack``)
+requires the chat to be bound to an operator (FR-031); unbound chats
+get a no-data-leak rejection, never another operator's data.
 
 Auth model:
 
@@ -63,13 +61,6 @@ from ..booking.cancellation import (
     CancellationUpstreamError,
     cancel_booking,
     list_recent_bookings,
-)
-from ..booking.manual import (
-    BookingWindowClosedError,
-    ClassNotVisibleError,
-    ManualBookingService,
-    ManualBookingUpstreamError,
-    NoCookieError,
 )
 from ..booking.upcoming import list_upcoming_slots
 from ..gyms.service import gym_client_factory, resolve_gym_client
@@ -334,8 +325,6 @@ def _handle_command(request: Request, *, chat_id: str, text: str) -> str | None:
         return _handle_cancel(request, chat_id=chat_id, argument=argument)
     if route == "ack":
         return _handle_ack(request, chat_id=chat_id)
-    if route == "bookclass":
-        return _handle_bookclass(request, chat_id=chat_id, argument=argument)
     if route == "rule_mutation":
         # US5.6 / CC-009: rule create/update/delete is web-UI only.
         # Reject with an explanation and change no state.
@@ -368,7 +357,6 @@ def _route(command: str) -> str:
         "/last": "last",
         "/cancel": "cancel",
         "/ack": "ack",
-        "/bookclass": "bookclass",
     }
     if command in supported:
         return supported[command]
@@ -426,7 +414,6 @@ def _handle_help() -> str:
         "/last — most recent booking outcome\n"
         "/cancel <booking-id> — cancel a booking\n"
         "/ack — acknowledge the cookie-expiring warning\n"
-        "/bookclass <YYYY-MM-DD> <HH:MM> [class type] — one-off manual booking\n"
         "Rules are managed in the web UI, not here."
     )
 
@@ -601,93 +588,6 @@ def _handle_ack(request: Request, *, chat_id: str) -> str:
             return "No open cookie-expiring warning to acknowledge."
         session.commit()
     return "Acknowledged. I'll stop nagging about the cookie for this cycle."
-
-
-def _handle_bookclass(request: Request, *, chat_id: str, argument: str) -> str:
-    """US8.3: one-off manual booking ``/bookclass <YYYY-MM-DD> <HH:MM> [class type]``.
-
-    Validates the argument shape, resolves the bound operator (FR-031),
-    then delegates to :class:`ManualBookingService`. The service issues
-    a single read-only ``LoadClass`` probe to check the reservation
-    window (CC-010) and resolve the class type before firing exactly
-    one booking attempt.
-
-    The optional trailing ``class type`` disambiguates several classes
-    sharing a start time (Cross Training vs Open Endurance at 08:30).
-    When omitted, the service books whichever class runs at that time.
-    """
-    args = argument.split()
-    if len(args) < 2 or not _valid_date(args[0]) or not _valid_time(args[1]):
-        return (
-            "Usage: /bookclass <YYYY-MM-DD> <HH:MM> [class type]. "
-            "Example: /bookclass 2026-07-15 18:30 Cross Training."
-        )
-    class_type = " ".join(args[2:]).strip() or None
-
-    factory = gym_client_factory(request.app.state)
-    cookie_store = getattr(request.app.state, "cookie_store", None)
-    if factory is None or cookie_store is None:
-        return "Manual booking is temporarily unavailable. Try again shortly."
-
-    with get_session() as session:
-        operator = _operator_for_chat(session, chat_id)
-        if operator is None:
-            return _UNBOUND_REJECTION
-        gym_account_id = resolve_sole_gym_account_id(session, operator.id)
-        if gym_account_id is None:
-            return "No active WodBuster session on file. Refresh your cookie and retry."
-        resolved = resolve_gym_client(factory, session, gym_account_id)
-        if resolved is None:
-            return "No active WodBuster session on file. Refresh your cookie and retry."
-        client, operator_idu = resolved
-
-    service = ManualBookingService(
-        client=client,
-        cookie_store=cookie_store,
-        operator_idu=operator_idu,
-    )
-
-    target_date = datetime.strptime(args[0], "%Y-%m-%d").date()
-    try:
-        result = service.book(
-            gym_account_id=gym_account_id,
-            target_date=target_date,
-            target_time=args[1],
-            class_type=class_type,
-        )
-    except NoCookieError:
-        return "No active WodBuster session on file. Refresh your cookie and retry."
-    except BookingWindowClosedError:
-        return (
-            f"{args[1]} on {args[0]} isn't open for booking yet. "
-            "Try again once its reservation window opens."
-        )
-    except ClassNotVisibleError:
-        if class_type is not None:
-            return f"No {class_type} class found at {args[1]} on {args[0]}."
-        return f"No class found at {args[1]} on {args[0]}."
-    except ManualBookingUpstreamError:
-        return "Couldn't reach WodBuster to book. Try again in a moment."
-
-    if result.terminal_status == "granted":
-        return f"Booked {result.class_type} at {args[1]} on {args[0]}."
-    return f"Booking for {args[1]} on {args[0]} wasn't granted ({result.terminal_status})."
-
-
-def _valid_date(value: str) -> bool:
-    try:
-        datetime.strptime(value, "%Y-%m-%d")
-    except ValueError:
-        return False
-    return True
-
-
-def _valid_time(value: str) -> bool:
-    try:
-        datetime.strptime(value, "%H:%M")
-    except ValueError:
-        return False
-    return True
 
 
 def _send_reply(request: Request, *, chat_id: str, text: str) -> None:

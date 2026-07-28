@@ -1,7 +1,7 @@
 {# Gym-account management: list current gyms + add a new one (US multi-gym P1). #}
 {% extends "base.html" %}
 
-{% block title %}Gyms — WodBuster Booking Worker{% endblock %}
+{% block title %}{{ t("nav.gyms") }} — WodBuster Booking Worker{% endblock %}
 
 {% block nav %}
   {% set active_nav = "gyms" %}
@@ -9,8 +9,8 @@
 {% endblock %}
 
 {% block content %}
-  <h1 class="wb-page-title">Your gyms</h1>
-  <p class="wb-page-subtitle">Add and manage the WodBuster gyms you book at.</p>
+  <h1 class="wb-page-title">{{ t("gyms.title") }}</h1>
+  <p class="wb-page-subtitle">{{ t("gyms.subtitle") }}</p>
 
   {% if flash %}
     <div class="wb-flash wb-flash--{{ flash_kind }}" role="status">{{ flash }}</div>
@@ -20,14 +20,14 @@
     {% if gyms %}
       <table class="wb-table">
         <thead>
-          <tr><th>Gym</th><th>Slug</th><th>Status</th><th>Actions</th></tr>
+          <tr><th>{{ t("gyms.table.gym") }}</th><th>{{ t("gyms.table.slug") }}</th><th>{{ t("gyms.table.status") }}</th><th>{{ t("gyms.table.actions") }}</th></tr>
         </thead>
         <tbody>
           {% for gym in gyms %}
             <tr>
               <td>{{ gym.display_name }}</td>
               <td><code>{{ gym.gym_slug }}</code></td>
-              <td>{{ "Active" if gym.active else "Inactive" }}</td>
+              <td>{{ t("gyms.status.active") if gym.active else t("gyms.status.inactive") }}</td>
               <td>
                 <div class="wb-gym-actions">
                   {% if gym.active %}
@@ -36,7 +36,7 @@
                       action="{{ lang_url('/gyms/' ~ gym.id ~ '/deactivate') }}"
                     >
                       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                      <button type="submit" class="wb-btn--secondary">Deactivate</button>
+                      <button type="submit" class="wb-btn--secondary">{{ t("gyms.actions.deactivate") }}</button>
                     </form>
                   {% else %}
                     <form
@@ -44,19 +44,19 @@
                       action="{{ lang_url('/gyms/' ~ gym.id ~ '/reactivate') }}"
                     >
                       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                      <button type="submit" class="wb-btn--secondary">Reactivate</button>
+                      <button type="submit" class="wb-btn--secondary">{{ t("gyms.actions.reactivate") }}</button>
                     </form>
                   {% endif %}
 
                   <details class="wb-gym-refresh">
-                    <summary>Refresh cookie</summary>
+                    <summary>{{ t("gyms.refresh.summary") }}</summary>
                     <form
                       method="post"
                       action="{{ lang_url('/gyms/' ~ gym.id ~ '/cookie') }}"
                     >
                       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                       <label for="cookie_value_{{ gym.id }}">
-                        New .WBAuth cookie for {{ gym.display_name }}
+                        {{ t("gyms.refresh.label", name=gym.display_name) }}
                       </label>
                       <textarea
                         id="cookie_value_{{ gym.id }}"
@@ -66,7 +66,7 @@
                         autocomplete="off"
                         required
                       ></textarea>
-                      <button type="submit" class="wb-btn--primary">Refresh cookie</button>
+                      <button type="submit" class="wb-btn--primary">{{ t("gyms.refresh.button") }}</button>
                     </form>
                   </details>
                 </div>
@@ -76,7 +76,7 @@
         </tbody>
       </table>
     {% else %}
-      <p class="wb-muted">No gyms yet. Add one below.</p>
+      <p class="wb-muted">{{ t("gyms.empty") }}</p>
     {% endif %}
   </section>
 
@@ -84,23 +84,23 @@
     <form class="wb-card" method="post" action="{{ lang_url('/gyms') }}">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
-      <label for="gym_slug">Gym</label>
+      <label for="gym_slug">{{ t("gyms.add.gym_label") }}</label>
       <select id="gym_slug" name="gym_slug" required>
         {% for slug in addable %}
           <option value="{{ slug }}">{{ slug }}</option>
         {% endfor %}
       </select>
 
-      <label for="display_name">Display name (optional)</label>
+      <label for="display_name">{{ t("gyms.add.display_name_label") }}</label>
       <input
         type="text"
         id="display_name"
         name="display_name"
         autocomplete="off"
-        placeholder="e.g. Adwork"
+        placeholder="{{ t('gyms.add.display_name_placeholder') }}"
       >
 
-      <label for="cookie_value">.WBAuth cookie for this gym</label>
+      <label for="cookie_value">{{ t("gyms.add.cookie_label") }}</label>
       <textarea
         id="cookie_value"
         name="cookie_value"
@@ -110,13 +110,12 @@
         required
       ></textarea>
       <p class="wb-muted wb-note wb-note--framed">
-        Paste the <code>.WBAuth</code> cookie value from a signed-in browser session at that
-        gym. We validate it and detect your athlete id automatically.
+        {{ t("gyms.add.note") }}
       </p>
 
-      <button type="submit" class="wb-btn--primary">Add gym</button>
+      <button type="submit" class="wb-btn--primary">{{ t("gyms.add.button") }}</button>
     </form>
   {% else %}
-    <p class="wb-muted">You have added every gym on the allow-list.</p>
+    <p class="wb-muted">{{ t("gyms.all_added") }}</p>
   {% endif %}
 {% endblock %}

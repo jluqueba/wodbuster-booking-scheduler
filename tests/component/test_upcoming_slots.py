@@ -118,6 +118,32 @@ def _make_outcome(
         )
 
 
+def _make_vacation(
+    engine: Engine,
+    *,
+    operator_id: int,
+    start: datetime,
+    end: datetime,
+    closed: bool = False,
+) -> None:
+    with engine.begin() as conn:
+        ga = gym_account_id_for(conn, operator_id)
+        conn.execute(
+            text(
+                "INSERT INTO vacation_window ("
+                " gym_account_id, start_date, end_date, created_at, closed_at"
+                ") VALUES (:ga, :s, :e, :c, :closed)"
+            ),
+            {
+                "ga": ga,
+                "s": start,
+                "e": end,
+                "c": start - timedelta(days=1),
+                "closed": start if closed else None,
+            },
+        )
+
+
 def test_returns_only_granted_outcome_when_no_rule_exists(
     postgres_engine: Engine, session_factory: sessionmaker[Session]
 ) -> None:
@@ -172,6 +198,68 @@ def test_projects_pending_when_no_outcome_covers_the_rule_slot(
     assert slots[0].rule_id == rule_id
     assert slots[0].booking_id is None
     assert slots[0].target_slot == datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+
+
+def test_pending_slot_inside_open_vacation_is_marked_vacation(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """A projected slot that falls inside an OPEN vacation window is
+    surfaced as ``kind == "vacation"`` so the operator sees it will be
+    skipped, not mislabelled as ``scheduled``."""
+    op_id = _make_operator(postgres_engine)
+    _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=2,
+        booking_opens_days_before=0,
+        booking_opens_at="21:30",
+        class_time="21:30",
+    )
+    now = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)  # Mon; next Wed = 2026-07-15 21:30
+    _make_vacation(
+        postgres_engine,
+        operator_id=op_id,
+        start=datetime(2026, 7, 13, 0, 0, tzinfo=UTC),
+        end=datetime(2026, 7, 20, 23, 59, 59, tzinfo=UTC),
+    )
+
+    with session_factory() as session:
+        slots = list_upcoming_slots(session, op_id, now=now, horizon_days=6)
+
+    assert len(slots) == 1
+    assert slots[0].kind == "vacation"
+    assert slots[0].target_slot == datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    assert slots[0].booking_id is None
+
+
+def test_pending_slot_ignores_a_closed_vacation_window(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """A closed vacation window no longer suppresses bookings, so the
+    projected slot stays ``pending`` (the scheduler will attempt it)."""
+    op_id = _make_operator(postgres_engine)
+    _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=2,
+        booking_opens_days_before=0,
+        booking_opens_at="21:30",
+        class_time="21:30",
+    )
+    now = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+    _make_vacation(
+        postgres_engine,
+        operator_id=op_id,
+        start=datetime(2026, 7, 13, 0, 0, tzinfo=UTC),
+        end=datetime(2026, 7, 20, 23, 59, 59, tzinfo=UTC),
+        closed=True,
+    )
+
+    with session_factory() as session:
+        slots = list_upcoming_slots(session, op_id, now=now, horizon_days=6)
+
+    assert len(slots) == 1
+    assert slots[0].kind == "pending"
 
 
 def test_outcome_dedups_projection_for_same_rule_slot(
