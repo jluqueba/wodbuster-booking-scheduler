@@ -485,6 +485,13 @@ button, .wb-btn, [role="button"] {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  /* Hug the label. Pico ships ``button { width: 100% }`` (and stretches
+     submit buttons inside forms); without this override every
+     ``<button type="submit">`` — Cancel, Deactivate, End early, Save —
+     rendered full-width while ``<a class="wb-btn">`` (Edit) hugged,
+     so buttons looked inconsistent. ``width: auto`` fits every button
+     to its text. */
+  width: auto;
   /* Guarantee identical box model between ``<a class="wb-btn">``
      and ``<button class="wb-btn">`` — anchors otherwise ship a
      different default line-height and no text-decoration reset,

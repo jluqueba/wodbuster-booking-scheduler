@@ -16,9 +16,9 @@
     <div class="wb-flash wb-flash--{{ flash_kind }}" role="status">{{ flash }}</div>
   {% endif %}
 
-  <section class="wb-card">
-    {% if gyms %}
-      <table class="wb-table">
+  {% if gyms %}
+    <div class="wb-table-wrap">
+      <table class="wb-rules-table">
         <thead>
           <tr><th>{{ t("gyms.table.gym") }}</th><th>{{ t("gyms.table.slug") }}</th><th>{{ t("gyms.table.status") }}</th><th>{{ t("gyms.table.cookie") }}</th><th>{{ t("gyms.table.activation") }}</th></tr>
         </thead>
@@ -56,6 +56,7 @@
                   <form
                     method="post"
                     action="{{ lang_url('/gyms/' ~ gym.id ~ '/deactivate') }}"
+                    class="wb-inline-form"
                   >
                     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                     <button type="submit" class="wb-btn wb-btn--danger">{{- t("gyms.actions.deactivate") -}}</button>
@@ -64,6 +65,7 @@
                   <form
                     method="post"
                     action="{{ lang_url('/gyms/' ~ gym.id ~ '/reactivate') }}"
+                    class="wb-inline-form"
                   >
                     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                     <button type="submit" class="wb-btn">{{- t("gyms.actions.reactivate") -}}</button>
@@ -74,10 +76,12 @@
           {% endfor %}
         </tbody>
       </table>
-    {% else %}
-      <p class="wb-muted">{{ t("gyms.empty") }}</p>
-    {% endif %}
-  </section>
+    </div>
+  {% else %}
+    <div class="wb-empty-state">
+      <p class="wb-empty-state__title">{{ t("gyms.empty") }}</p>
+    </div>
+  {% endif %}
 
   {% if addable %}
     <form class="wb-card" method="post" action="{{ lang_url('/gyms') }}">

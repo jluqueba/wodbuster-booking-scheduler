@@ -34,10 +34,17 @@ button, submit input, and link styled as a button (`.wb-btn`, `[role="button"]`)
 ## Buttons hug their text
 
 - The base rule (`button, .wb-btn, [role="button"]` in `brand.css`) is
-  `display: inline-flex; white-space: nowrap; gap: 0.35rem`, with no `min-width`
-  and no stretch. Buttons are as wide as their content.
+  `display: inline-flex; width: auto; white-space: nowrap; gap: 0.35rem`, with no
+  `min-width` and no stretch. Buttons are as wide as their content.
+- `width: auto` is load-bearing. Pico CSS (loaded before `brand.css`) sets
+  `<button>` to `width: 100%`, so every `<button type="submit">` inside a form
+  stretches full-width unless `brand.css` overrides `width`. Anchors styled as
+  buttons (`<a class="wb-btn">`) are not affected, which is why a row of Edit
+  (anchor) next to Delete (button) looked mismatched before the override.
 - Inline and in-table action buttons use the compact selector
   `.wb-cell-actions .wb-btn` (padding `0.35rem 0.7rem`, font `0.82rem`).
+- Wrap a table-cell action button's `<form>` in `class="wb-inline-form"` so the
+  form stays inline and the button right-aligns inside the `.wb-cell-actions` cell.
 - Always wrap the label with Jinja whitespace control: `{{- t("key") -}}` inside
   `<button>` and button-styled `<a>`. A bare `{{ t("key") }}` on its own line
   injects whitespace text nodes that, combined with `white-space: nowrap`, render
@@ -58,6 +65,9 @@ button, submit input, and link styled as a button (`.wb-btn`, `[role="button"]`)
 - One action per column. Do not group actions under a single "Actions" column.
 - The gyms table columns are Gym, Slug, Status, Cookie, Activation. The Cookie
   column holds the refresh form, the Activation column holds deactivate or reactivate.
+- All data tables use the same shell: `<div class="wb-table-wrap"><table class="wb-rules-table">`.
+  Do not wrap a table in `.wb-card` or use a bespoke `.wb-table` class; that made the
+  gyms table look different from the history and vacation tables.
 
 ## Related gotchas
 
