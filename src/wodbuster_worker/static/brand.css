@@ -223,12 +223,14 @@ hr {
    Main layout
    -------------------------------------------------------------------------- */
 
-/* Reserve the scrollbar gutter on every page. Without this, a short page
-   (e.g. the Telegram binding page) has no vertical scrollbar while taller
-   pages do, so the centered layout jumps sideways by the scrollbar width
-   as you navigate between them. */
+/* Always reserve the scrollbar track so a short page (e.g. the Telegram
+   binding page) and a tall page keep the centered layout in the same
+   place instead of jumping sideways by the scrollbar width as you
+   navigate. ``overflow-y: scroll`` is supported everywhere; the newer
+   ``scrollbar-gutter`` is not (Safari), so we use the battle-tested
+   property. */
 html {
-  scrollbar-gutter: stable;
+  overflow-y: scroll;
 }
 
 .wb-main {
@@ -714,7 +716,6 @@ fieldset legend {
      viewport. */
   width: 100%;
   overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
 }
 
 .wb-rules-table {

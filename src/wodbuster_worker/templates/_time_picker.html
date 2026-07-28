@@ -1,6 +1,6 @@
 {# 24-hour time picker macro (Flatpickr).
 
-   Renders a single text <input> that Flatpickr enhances into a
+   Renders a single text input that Flatpickr enhances into a
    compact hour/minute popover. Configuration:
 
    - ``time_24hr: true`` forces 24h regardless of browser/OS locale
@@ -34,6 +34,7 @@
       class="wb-time-flatpickr wb-time-picker__input"
       autocomplete="off"
       placeholder="HH:MM"
+      title="HH:MM"
       pattern="[0-9]{2}:[0-9]{2}"
       inputmode="numeric"
       {% if required %}required{% endif %}
@@ -43,9 +44,9 @@
 
 {# Calendar date picker macro (Flatpickr).
 
-   Renders a text <input> that Flatpickr enhances into a themed
+   Renders a text input that Flatpickr enhances into a themed
    calendar popover (dark theme, consistent with the time picker and
-   unlike the OS-native ``<input type="date">``). The wire value stays
+   unlike the OS-native ``type=date`` field). The wire value stays
    ``YYYY-MM-DD`` (``dateFormat: 'Y-m-d'``), exactly what the server
    parser expects — zero server-side normalisation. If Flatpickr fails
    to load the plain input still accepts a typed ``YYYY-MM-DD``.
@@ -61,16 +62,17 @@
        {{ widgets.date_picker("start_date", "", required=true, min_today=true) }}
 #}
 {% macro date_picker(name, value, required=false, min_today=false, link_min_from="") -%}
-  {% set safe_id = name | replace('_', '-') %}
+  {% set field_id = name | replace('_', '-') %}
   <div class="wb-date-picker">
     <input
       type="text"
-      id="{{ safe_id }}"
+      id="{{ field_id }}"
       name="{{ name }}"
       value="{{ value or '' }}"
-      class="wb-date-flatpickr wb-time-picker__input"
+      class="wb-date-flatpickr wb-date-picker__input"
       autocomplete="off"
       placeholder="YYYY-MM-DD"
+      title="YYYY-MM-DD"
       pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}"
       inputmode="numeric"
       {% if min_today %}data-fp-min-today="true"{% endif %}

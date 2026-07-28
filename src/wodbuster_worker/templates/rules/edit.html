@@ -91,7 +91,7 @@
           {% endif %}
         </div>
         <div>
-          <label for="class_time">{{ t("rules.form.class_time") }}</label>
+          <label for="class-time">{{ t("rules.form.class_time") }}</label>
           {{ widgets.time_picker("class_time", form_values.get("class_time", ""), required=true) }}
           {% if errors.get('class_time') %}
             <p class="wb-field-error">{{ errors['class_time'] }}</p>
@@ -120,7 +120,7 @@
           {% endif %}
         </div>
         <div>
-          <label for="booking_opens_at">{{ t("rules.form.opens_at") }}</label>
+          <label for="booking-opens-at">{{ t("rules.form.opens_at") }}</label>
           {{ widgets.time_picker("booking_opens_at", form_values.get("booking_opens_at", "22:40"), required=true) }}
           {% if errors.get('booking_opens_at') %}
             <p class="wb-field-error">{{ errors['booking_opens_at'] }}</p>
@@ -154,7 +154,7 @@
           {% endif %}
         </div>
         <div>
-          <label for="second_shot_class_time">{{ t("rules.form.second_shot_time") }}</label>
+          <label for="second-shot-class-time">{{ t("rules.form.second_shot_time") }}</label>
           {{ widgets.time_picker("second_shot_class_time", form_values.get("second_shot_class_time", ""), required=false) }}
           {% if errors.get('second_shot_class_time') %}
             <p class="wb-field-error">{{ errors['second_shot_class_time'] }}</p>
