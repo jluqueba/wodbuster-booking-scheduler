@@ -34,7 +34,7 @@ from .booking.routes import router as history_router
 from .booking.vacation_routes import router as vacation_router
 from .config import Settings, get_settings
 from .cookie.routes import router as cookie_router
-from .gyms.context import register_gym_globals
+from .gyms.context import active_gym_account_id, register_gym_globals
 from .gyms.routes import router as gyms_router
 from .heartbeat.next_window import compute_next_booking
 from .heartbeat.probe import HeartbeatProbe
@@ -429,9 +429,16 @@ def _register_routes(app: FastAPI) -> None:
             from datetime import UTC, datetime
 
             now = datetime.now(tz=UTC)
+            # Countdown is scoped to the gym the switcher has active; rules
+            # belong to a gym, so the next window changes with the selection.
+            active_gym_id = active_gym_account_id(request)
             with get_session() as session:
                 banners = load_banners_for_operator(session, operator_id)
-                next_booking = compute_next_booking(session, operator_id, now)
+                next_booking = (
+                    compute_next_booking(session, active_gym_id, now)
+                    if active_gym_id is not None
+                    else None
+                )
             next_window_iso = (
                 next_booking.window_open.isoformat() if next_booking is not None else None
             )

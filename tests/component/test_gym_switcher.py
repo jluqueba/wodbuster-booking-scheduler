@@ -8,6 +8,7 @@ selecting another user's gym is a 404 with no state change.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -169,6 +170,70 @@ def test_selection_persists_across_pages(
         response = client.get("/history")
     assert response.status_code == 200
     assert f'value="{gym2}" selected' in response.text
+
+
+def _next_window(html: str) -> str | None:
+    match = re.search(r'data-next-window="([^"]*)"', html)
+    return match.group(1) if match else None
+
+
+def test_dashboard_countdown_follows_selected_gym(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The next-booking countdown is scoped to the active gym: switching gyms
+    changes the window because rules belong to a gym."""
+    op_id, subject = seed_operator(display_name="Multi Op")
+    gym1 = _sole_gym_id(postgres_engine, op_id)
+    gym2 = _add_gym(postgres_engine, op_id, slug="secondgym", display_name="Second Gym")
+    factory = sessionmaker(bind=postgres_engine)
+    with factory() as session:
+        # Deliberately different windows per gym so the countdown must differ.
+        session.add(
+            SchedulerRule(
+                gym_account_id=gym1,
+                day_of_week=2,
+                class_type="GymOne",
+                class_time="21:30",
+                booking_opens_days_before=2,
+                booking_opens_at="21:30",
+                active=True,
+            )
+        )
+        session.add(
+            SchedulerRule(
+                gym_account_id=gym2,
+                day_of_week=4,
+                class_type="GymTwo",
+                class_time="10:00",
+                booking_opens_days_before=1,
+                booking_opens_at="07:30",
+                active=True,
+            )
+        )
+        session.commit()
+
+    app = app_factory()
+    with _sign_in(app, subject, "Multi Op", monkeypatch) as client:
+        csrf = client.cookies["wodbuster_csrf"]
+        client.post(
+            "/gyms/select",
+            data={"_csrf": csrf, "gym_account_id": str(gym1), "next": "/"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        window_gym1 = _next_window(client.get("/").text)
+        client.post(
+            "/gyms/select",
+            data={"_csrf": csrf, "gym_account_id": str(gym2), "next": "/"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        window_gym2 = _next_window(client.get("/").text)
+
+    assert window_gym1, "gym 1 should have a countdown window"
+    assert window_gym2, "gym 2 should have a countdown window"
+    assert window_gym1 != window_gym2
 
 
 def test_select_other_users_gym_is_404(
