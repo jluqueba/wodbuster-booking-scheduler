@@ -67,6 +67,8 @@
   <h1 class="wb-page-title">{{ t("vacation.title") }}</h1>
   <p class="wb-page-subtitle">{{ t("vacation.subtitle") }}</p>
 
+  {% include "_gym_prompt.html" %}
+
   {% if flash %}
     <div class="wb-flash wb-flash--{{ flash_kind }}" role="status">
       {{ flash }}

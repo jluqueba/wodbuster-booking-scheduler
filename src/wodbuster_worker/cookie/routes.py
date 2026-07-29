@@ -36,10 +36,10 @@ from fastapi.templating import Jinja2Templates
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
+from ..gyms.context import active_gym_account_id
 from ..heartbeat.alerts import close_open_cookie_expiring
 from ..persistence.cookie_store import CookieDecryptError, CookieStore
 from ..persistence.engine import get_session
-from ..persistence.gym_accounts import resolve_sole_gym_account_id
 from ..persistence.models import CookieCredential
 from ..security.cookie import CookieValidator, Rejected, Unknown, Valid
 
@@ -156,8 +156,7 @@ def _render_partial(
 def cookie_page(request: Request, operator_id: int = Depends(require_session)) -> Response:
     """Render the paste-and-validate page for the current operator."""
     templates = _templates(request)
-    with get_session() as session:
-        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+    gym_account_id = active_gym_account_id(request)
     context = _load_current_status(_store(request), gym_account_id)
     context["banner"] = None
     # The form on the full page carries a hidden ``_csrf`` field and
@@ -188,8 +187,7 @@ async def cookie_paste(
 
     verdict = validator.validate(cookie_value)
 
-    with get_session() as session:
-        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+    gym_account_id = active_gym_account_id(request)
     if gym_account_id is None:
         banner = {
             "level": "unknown",

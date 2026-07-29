@@ -32,10 +32,10 @@ from fastapi.templating import Jinja2Templates
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
+from ..gyms.context import active_gym_account_id
 from ..gyms.service import gym_client_factory, resolve_gym_client
 from ..i18n import lang_url, t
 from ..persistence.engine import get_session
-from ..persistence.gym_accounts import resolve_sole_gym_account_id
 from ..scheduler.rule_jobs import operator_timezone
 from . import vacation as vacation_service
 from .vacation import VacationNotFoundError, VacationRangeError
@@ -61,8 +61,8 @@ def vacation_list(
     """Render open windows + the enable form."""
     templates = _templates(request)
     tz = operator_timezone()
+    gym_account_id = active_gym_account_id(request)
     with get_session() as session:
-        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
         windows = vacation_service.list_open(session, gym_account_id) if gym_account_id else []
         rows = [_window_to_row(w, tz) for w in windows]
     return templates.TemplateResponse(
@@ -107,13 +107,13 @@ def vacation_enable(
             kind="error",
         )
 
+    gym_account_id = active_gym_account_id(request)
+    if gym_account_id is None:
+        return _redirect_with_flash(
+            t("flash.booking.service_unavailable"),
+            kind="error",
+        )
     with get_session() as session:
-        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
-        if gym_account_id is None:
-            return _redirect_with_flash(
-                t("flash.booking.service_unavailable"),
-                kind="error",
-            )
         resolved = resolve_gym_client(factory, session, gym_account_id)
         if resolved is None:
             return _redirect_with_flash(
@@ -151,11 +151,10 @@ def vacation_close(
     operator_id: int = Depends(require_session),
 ) -> Response:
     """End an open vacation window early."""
-    _ = request
+    gym_account_id = active_gym_account_id(request)
+    if gym_account_id is None:
+        raise HTTPException(status_code=404)
     with get_session() as session:
-        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
-        if gym_account_id is None:
-            raise HTTPException(status_code=404)
         try:
             vacation_service.close_early(
                 session,
