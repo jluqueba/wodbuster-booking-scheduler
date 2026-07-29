@@ -8,9 +8,9 @@ Two routes under ``/profile``:
 
 The profile row always exists for a signed-in operator (it is seeded
 together with the federated identity by the bootstrap command), so this
-surface only ever UPDATES; it never creates. Picture UPLOAD is a later
-task (T-UP-007, private Blob); this page only displays the current
-picture or a neutral placeholder.
+surface only ever UPDATES; it never creates. The profile picture is the
+photo the user already keeps in WodBuster (derived from the active gym's
+idu) and is shown READ-ONLY; changing it is done in WodBuster (T-UP-014).
 
 Auth-gated; the mutating route is CSRF-protected. All user-facing
 strings are localised through the i18n catalog so the page follows the
@@ -29,9 +29,11 @@ from fastapi.templating import Jinja2Templates
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
+from ..gyms.context import get_gym_nav
 from ..i18n import lang_url, t
 from ..persistence.engine import get_session
 from ..persistence.models import OperatorProfile
+from ..wodbuster_client.parsers import wodbuster_avatar_url
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 _log = structlog.get_logger(__name__)
@@ -56,33 +58,30 @@ def _redirect_with_flash(message: str, *, kind: str = "info") -> RedirectRespons
     return RedirectResponse(url=f"{lang_url('/profile')}?{query}", status_code=303)
 
 
-def _picture_url(profile_picture_ref: str | None) -> str | None:
-    """Return a directly usable image URL, or ``None`` for the placeholder.
+def _active_avatar_url(request: Request) -> str | None:
+    """WodBuster avatar of the active gym, or ``None`` for the placeholder.
 
-    Only absolute ``https`` URLs (provider avatars) render directly today;
-    a blob object path needs the proxy/SAS wiring that lands with the
-    upload task (T-UP-007), so it falls back to the placeholder for now.
+    The photo is owned and managed by the user in WodBuster; we only show
+    it read-only. Derived from the active gym account's ``idu`` (no upload,
+    no storage of our own).
     """
-    if profile_picture_ref and profile_picture_ref.startswith("https://"):
-        return profile_picture_ref
-    return None
+    active = get_gym_nav(request).active
+    return wodbuster_avatar_url(active.idu) if active is not None else None
 
 
 def nav_user(request: Request) -> dict[str, Any] | None:
-    """Return the signed-in operator's nav identity from the session.
+    """Return the signed-in operator's nav identity.
 
-    Reads session-cached fields (seeded at login and refreshed on profile
-    save) so the nav avatar needs no per-request database round trip.
-    Returns ``None`` for an anonymous request.
+    The name comes from the session (seeded at login, refreshed on save);
+    the avatar is the active gym's WodBuster photo. Returns ``None`` for an
+    anonymous request.
     """
     session = request.session
     if not isinstance(session.get("operator_id"), int):
         return None
-    display = str(session.get("display_name") or "")
-    picture_ref = session.get("profile_picture_ref")
     return {
-        "display_name": display,
-        "picture_url": _picture_url(picture_ref if isinstance(picture_ref, str) else None),
+        "display_name": str(session.get("display_name") or ""),
+        "picture_url": _active_avatar_url(request),
     }
 
 
@@ -108,7 +107,7 @@ def profile_view(
             "display_name": profile.display_name,
             "short_name": profile.short_name or "",
             "communication_language": profile.communication_language,
-            "picture_url": _picture_url(profile.profile_picture_ref),
+            "picture_url": _active_avatar_url(request),
         }
     return templates.TemplateResponse(
         request=request,

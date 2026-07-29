@@ -160,10 +160,9 @@ async def callback(provider: str, request: Request) -> Response:
     # Seed nav identity from the STORED profile (the editable source of
     # truth) so the avatar/greeting reflect the user's own edits, not the
     # raw provider fields. Fall back to the provider name on first login.
-    stored_name, stored_short, stored_picture = _load_profile_fields(operator_id)
+    stored_name, stored_short = _load_profile_fields(operator_id)
     request.session["display_name"] = stored_name or display_name
     request.session["short_name"] = stored_short
-    request.session["profile_picture_ref"] = stored_picture
     touch_session(request.session)
     csrf_token = issue_csrf_token(request)
 
@@ -235,8 +234,8 @@ async def _fetch_user_info(
     return dict(info) if info is not None else None
 
 
-def _load_profile_fields(operator_id: int) -> tuple[str, str, str]:
-    """Return ``(display_name, short_name, profile_picture_ref)`` for the operator.
+def _load_profile_fields(operator_id: int) -> tuple[str, str]:
+    """Return ``(display_name, short_name)`` for the operator.
 
     Read once at login to seed the session-cached nav identity. Empty
     strings stand in for null columns so the session only ever holds
@@ -245,8 +244,8 @@ def _load_profile_fields(operator_id: int) -> tuple[str, str, str]:
     with db_session() as session:
         profile = session.get(OperatorProfile, operator_id)
         if profile is None:  # pragma: no cover - FK guarantees a row exists
-            return ("", "", "")
-        return (profile.display_name, profile.short_name or "", profile.profile_picture_ref or "")
+            return ("", "")
+        return (profile.display_name, profile.short_name or "")
 
 
 def _lookup_operator(provider: str, subject_id: str) -> int | None:
