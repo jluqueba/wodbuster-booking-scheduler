@@ -60,6 +60,20 @@ def test_profile_page_renders_current_values(
     assert "Alice" in resp.text
 
 
+def test_profile_page_shows_wodbuster_avatar(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The picture is the active gym's WodBuster photo (derived from its idu)."""
+    _, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        resp = client.get("/profile")
+    assert resp.status_code == 200
+    assert "cdn.wodbuster.com/static/atletas" in resp.text
+
+
 def test_profile_save_persists_fields_and_language(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],

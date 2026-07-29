@@ -27,6 +27,7 @@ from wodbuster_worker.wodbuster_client.parsers import (
     parse_class_instance,
     parse_self_idu,
     read_target_enrollment,
+    wodbuster_avatar_url,
 )
 
 
@@ -298,6 +299,18 @@ def test_operator_idu_to_guid_is_idempotent_on_dashed_input() -> None:
 
 def test_operator_idu_to_guid_passes_through_non_hex() -> None:
     assert operator_idu_to_guid("Not-An-Idu") == "not-an-idu"
+
+
+def test_wodbuster_avatar_url_builds_sharded_cdn_path() -> None:
+    assert (
+        wodbuster_avatar_url("aae990e4fa584cfc894de204f0e37605")
+        == "https://cdn.wodbuster.com/static/atletas/a/a/e/"
+        "aae990e4-fa58-4cfc-894d-e204f0e37605.jpg"
+    )
+
+
+def test_wodbuster_avatar_url_none_for_malformed_idu() -> None:
+    assert wodbuster_avatar_url("not-an-idu") is None
 
 
 # ---------------------------------------------------------------------------

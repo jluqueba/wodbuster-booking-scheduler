@@ -247,6 +247,22 @@ def operator_idu_to_guid(idu: str) -> str:
     )
 
 
+def wodbuster_avatar_url(idu: str) -> str | None:
+    """Return the WodBuster CDN avatar URL for an ``idu``, or ``None``.
+
+    WodBuster serves each athlete's photo at
+    ``https://cdn.wodbuster.com/static/atletas/<c0>/<c1>/<c2>/<guid>.jpg``,
+    where ``guid`` is the dashed-lowercase form of the 32-hex ``idu`` and
+    ``c0..c2`` are its first three characters (directory sharding). The
+    user manages this photo in WodBuster; we only display it read-only.
+    Returns ``None`` when ``idu`` is not a well-formed 32-hex identifier.
+    """
+    guid = operator_idu_to_guid(idu)
+    if len(guid) != 36:
+        return None
+    return f"https://cdn.wodbuster.com/static/atletas/{guid[0]}/{guid[1]}/{guid[2]}/{guid}.jpg"
+
+
 def read_target_enrollment(
     payload: dict[str, Any], *, slot_id: int, operator_idu: str
 ) -> SlotEnrollment:
@@ -319,4 +335,5 @@ __all__ = [
     "parse_class_instance",
     "parse_self_idu",
     "read_target_enrollment",
+    "wodbuster_avatar_url",
 ]

@@ -33,6 +33,7 @@ class GymOption:
     id: int
     slug: str
     display_name: str
+    idu: str
 
 
 @dataclass(frozen=True)
@@ -68,11 +69,13 @@ def resolve_gym_nav(
     operator deactivates the gym they had selected).
     """
     rows = session.execute(
-        select(GymAccount.id, GymAccount.gym_slug, GymAccount.display_name)
+        select(GymAccount.id, GymAccount.gym_slug, GymAccount.display_name, GymAccount.idu)
         .where(GymAccount.user_id == user_id, GymAccount.active.is_(True))
         .order_by(func.lower(GymAccount.display_name), GymAccount.id)
     ).all()
-    options = [GymOption(id=r.id, slug=r.gym_slug, display_name=r.display_name) for r in rows]
+    options = [
+        GymOption(id=r.id, slug=r.gym_slug, display_name=r.display_name, idu=r.idu) for r in rows
+    ]
     valid_ids = {o.id for o in options}
 
     stored = web_session.get(SESSION_KEY)
