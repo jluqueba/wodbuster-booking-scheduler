@@ -19,7 +19,11 @@ from sqlalchemy.orm import Session
 
 from .models import GymAccount
 
-__all__ = ["list_active_gym_account_ids", "resolve_sole_gym_account_id"]
+__all__ = [
+    "list_active_gym_account_ids",
+    "list_user_gym_accounts",
+    "resolve_sole_gym_account_id",
+]
 
 
 def resolve_sole_gym_account_id(session: Session, user_id: int) -> int | None:
@@ -46,3 +50,19 @@ def list_active_gym_account_ids(session: Session) -> list[int]:
     independently.
     """
     return list(session.scalars(select(GymAccount.id).where(GymAccount.active.is_(True))).all())
+
+
+def list_user_gym_accounts(session: Session, user_id: int) -> list[GymAccount]:
+    """Return the user's active gym accounts, ordered by ``id``.
+
+    Telegram has no web session and therefore no nav switcher to pick an
+    active gym, so its read commands aggregate across every gym the user
+    owns rather than silently acting on the first one.
+    """
+    return list(
+        session.scalars(
+            select(GymAccount)
+            .where(GymAccount.user_id == user_id, GymAccount.active.is_(True))
+            .order_by(GymAccount.id)
+        ).all()
+    )

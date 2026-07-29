@@ -559,6 +559,126 @@ def test_next_lists_upcoming_granted_booking(
     assert f"#{booking_id}" in body
 
 
+def _seed_second_gym(engine: Engine, operator_id: int, *, slug: str, display_name: str) -> int:
+    """Add a second active gym account for ``operator_id``. Returns the id."""
+    with engine.begin() as conn:
+        return int(
+            conn.execute(
+                text(
+                    "INSERT INTO gym_account (user_id, gym_slug, display_name, idu) "
+                    "VALUES (:op, :slug, :name, :idu) RETURNING id"
+                ),
+                {
+                    "op": operator_id,
+                    "slug": slug,
+                    "name": display_name,
+                    "idu": f"idu-b-{operator_id}",
+                },
+            ).scalar_one()
+        )
+
+
+def _seed_booking_in_gym(
+    engine: Engine,
+    gym_account_id: int,
+    *,
+    target_class: str,
+    target_slot: datetime,
+    terminal_status: str = "granted",
+) -> int:
+    """Insert a booking outcome under an explicit gym account. Returns the id."""
+    with engine.begin() as conn:
+        return int(
+            conn.execute(
+                text(
+                    "INSERT INTO booking_outcome "
+                    "(gym_account_id, target_class, target_slot, terminal_status) "
+                    "VALUES (:ga, :cls, :slot, :status) RETURNING id"
+                ),
+                {
+                    "ga": gym_account_id,
+                    "cls": target_class,
+                    "slot": target_slot,
+                    "status": terminal_status,
+                },
+            ).scalar_one()
+        )
+
+
+def test_next_aggregates_across_all_gyms_for_multi_gym_operator(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A multi-gym operator sees every gym labelled in /next, not just the first."""
+    op_id, _ = seed_operator(display_name="First Box")
+    _bind_chat(postgres_engine, op_id, "424242")
+    gym_b = _seed_second_gym(
+        postgres_engine, op_id, slug="demo-gym-local", display_name="Second Box"
+    )
+    _seed_booking(
+        postgres_engine,
+        operator_id=op_id,
+        target_class="AlphaWOD",
+        target_slot=datetime.now(tz=UTC) + timedelta(days=1),
+    )
+    _seed_booking_in_gym(
+        postgres_engine,
+        gym_b,
+        target_class="BetaWOD",
+        target_slot=datetime.now(tz=UTC) + timedelta(days=2),
+    )
+    replies = _capture_replies(monkeypatch)
+
+    app = app_factory()
+    with TestClient(app) as client:
+        _override_after_lifespan(app, bind_store=TelegramBindStore(), bot_token="tok")
+        _post_command(client, chat_id=424242, text_body="/next")
+
+    assert replies
+    body = replies[-1]["text"]
+    # Both gyms' bookings and labels appear; the first is no longer silently dropped.
+    assert "First Box" in body
+    assert "Second Box" in body
+    assert "AlphaWOD" in body
+    assert "BetaWOD" in body
+
+
+def test_last_reports_most_recent_per_gym_for_multi_gym_operator(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A multi-gym operator sees the last booking of every gym in /last."""
+    op_id, _ = seed_operator(display_name="First Box")
+    _bind_chat(postgres_engine, op_id, "424242")
+    gym_b = _seed_second_gym(
+        postgres_engine, op_id, slug="demo-gym-local", display_name="Second Box"
+    )
+    _seed_booking(postgres_engine, operator_id=op_id, target_class="AlphaWOD")
+    _seed_booking_in_gym(
+        postgres_engine,
+        gym_b,
+        target_class="BetaWOD",
+        target_slot=datetime.now(tz=UTC) + timedelta(days=1),
+    )
+    replies = _capture_replies(monkeypatch)
+
+    app = app_factory()
+    with TestClient(app) as client:
+        _override_after_lifespan(app, bind_store=TelegramBindStore(), bot_token="tok")
+        _post_command(client, chat_id=424242, text_body="/last")
+
+    assert replies
+    body = replies[-1]["text"]
+    assert "First Box" in body
+    assert "Second Box" in body
+    assert "AlphaWOD" in body
+    assert "BetaWOD" in body
+
+
 def test_cancel_flips_booking_and_confirms(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],
