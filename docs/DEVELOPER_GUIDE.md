@@ -336,11 +336,13 @@ Rule create, edit, and delete are deliberately web-UI only. Rule-mutation verbs 
 
 Every page except the landing hero and `/health` is gated by an authenticated session (`require_session`). CSRF protection guards all state-mutating POSTs.
 
+Gym-scoped pages (rules, history, cookie, vacation) act on the operator's currently selected gym, resolved by `gyms/context.py` and surfaced as a switcher in the top navigation. There is no persisted default gym: a sole gym is auto-selected, and an operator who owns more than one must pick explicitly (a `POST /gyms/select` stores the choice in the session). Until a multi-gym operator picks one, those pages render a "choose a gym" prompt. Telegram, which has no web session, still resolves the operator's sole gym.
+
 | Path | Template | Contents |
 |------|----------|----------|
 | `/` | `landing.html` / `dashboard.html` | Landing hero for anonymous visitors; for a signed-in operator, a dashboard showing next booking, cookie health, and banners. |
 | `/auth/{provider}/login`, `/auth/{provider}/callback`, `/auth/logout` | (redirects) | OAuth sign-in and sign-out for Microsoft, GitHub, and Google. |
-| `/gyms`, `/gyms/{id}/cookie`, `/gyms/{id}/deactivate`, `/gyms/{id}/reactivate` | `gyms/list.html` | List and add gym accounts (allow-list validated, athlete `idu` auto-discovered); refresh one gym's cookie in isolation; deactivate or reactivate an account. Every gym-scoped POST asserts account ownership (404 otherwise). |
+| `/gyms`, `/gyms/select`, `/gyms/{id}/cookie`, `/gyms/{id}/deactivate`, `/gyms/{id}/reactivate` | `gyms/list.html` | List and add gym accounts (allow-list validated, athlete `idu` auto-discovered); select the active gym for the web session; refresh one gym's cookie in isolation; deactivate or reactivate an account. Every gym-scoped POST asserts account ownership (404 otherwise). |
 | `/cookie` | `cookie/` | Paste-and-validate the `.WBAuth` cookie for the gym account; shows the projected time-to-expiry countdown. |
 | `/rules`, `/rules/new`, `/rules/{id}` | `rules/` | List, create, edit, and delete scheduler rules; a class-picker helper reads available class types from WodBuster. |
 | `/history` | `history.html` | Booking attempt history with terminal statuses. |

@@ -16,6 +16,32 @@
     <span class="wb-nav__brand-short">WodBuster</span>
   </a>
   <ul class="wb-nav__links">
+    {% set gnav = gym_nav(request) %}
+    {% if gnav.options %}
+      <li class="wb-nav__gym">
+        {% if gnav.options | length == 1 %}
+          <span class="wb-nav__gym-current">{{ t("gym.context.label", name=gnav.options[0].display_name) }}</span>
+        {% else %}
+          <form method="post" action="{{ lang_url('/gyms/select') }}" class="wb-nav__gym-form">
+            <input type="hidden" name="_csrf" value="{{ nav_csrf(request) }}">
+            <input type="hidden" name="next" value="{{ request.url.path }}">
+            <select
+              name="gym_account_id"
+              class="wb-nav__gym-select"
+              aria-label="{{ t('nav.gym_switch') }}"
+              onchange="this.form.submit()"
+            >
+              {% if not gnav.active_id %}
+                <option value="" selected disabled>{{ t("nav.gym_choose") }}</option>
+              {% endif %}
+              {% for o in gnav.options %}
+                <option value="{{ o.id }}" {% if o.id == gnav.active_id %}selected{% endif %}>{{ o.display_name }}</option>
+              {% endfor %}
+            </select>
+          </form>
+        {% endif %}
+      </li>
+    {% endif %}
     <li>
       <a href="{{ lang_url('/') }}"
          {% if active_nav == "dashboard" %}aria-current="page"{% endif %}

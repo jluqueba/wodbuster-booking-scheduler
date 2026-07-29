@@ -67,6 +67,10 @@ EN: dict[str, str] = {
     "nav.telegram": "🤖 Telegram",
     "nav.faq": "❓ FAQ",
     "nav.logout": "👋 Log out",
+    "nav.gym_switch": "Switch gym",
+    "nav.gym_choose": "— Choose gym —",
+    "gym.context.label": "🏋️ {name}",
+    "gym.select.prompt": "Choose a gym from the selector above to manage it.",
     "modal.cancel": "🚫 Cancel",
     "modal.confirm": "✅ Confirm",
     # -- dashboard ---------------------------------------------------
@@ -595,6 +599,10 @@ ES: dict[str, str] = {
     "nav.telegram": "🤖 Telegram",
     "nav.faq": "❓ Ayuda",
     "nav.logout": "👋 Cerrar sesión",
+    "nav.gym_switch": "Cambiar gimnasio",
+    "nav.gym_choose": "— Elige gimnasio —",
+    "gym.context.label": "🏋️ {name}",
+    "gym.select.prompt": "Elige un gimnasio en el selector de arriba para gestionarlo.",
     "modal.cancel": "🚫 Cancelar",
     "modal.confirm": "✅ Confirmar",
     # -- dashboard ---------------------------------------------------

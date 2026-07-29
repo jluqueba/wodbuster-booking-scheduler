@@ -34,10 +34,10 @@ from ..booking.cancellation import (
     list_recent_bookings,
 )
 from ..booking.upcoming import UpcomingSlot, list_upcoming_slots
+from ..gyms.context import active_gym_account_id
 from ..gyms.service import gym_client_factory, resolve_gym_client
 from ..i18n import lang_url, t
 from ..persistence.engine import get_session
-from ..persistence.gym_accounts import resolve_sole_gym_account_id
 from ..persistence.models import BookingOutcome
 from ..scheduler.rule_jobs import operator_timezone
 
@@ -86,10 +86,10 @@ def history_list(
     templates = _templates(request)
     now = _utcnow()
     week_start = _current_week_start(now)
+    gym_account_id = active_gym_account_id(request)
     with get_session() as session:
         upcoming: list[UpcomingSlot] = []
         outcomes: list[BookingOutcome] = []
-        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
         if gym_account_id is not None:
             upcoming = list_upcoming_slots(session, gym_account_id, now=now)
             outcomes = list_recent_bookings(session, gym_account_id, since=week_start)
@@ -131,10 +131,10 @@ def booking_cancel(
             kind="error",
         )
 
+    gym_account_id = active_gym_account_id(request)
+    if gym_account_id is None:
+        raise HTTPException(status_code=404)
     with get_session() as session:
-        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
-        if gym_account_id is None:
-            raise HTTPException(status_code=404)
         resolved = resolve_gym_client(factory, session, gym_account_id)
         if resolved is None:
             raise HTTPException(status_code=404)

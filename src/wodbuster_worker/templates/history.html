@@ -80,6 +80,8 @@
   <h1 class="wb-page-title">{{ t("history.title") }}</h1>
   <p class="wb-page-subtitle">{{ t("history.subtitle") }}</p>
 
+  {% include "_gym_prompt.html" %}
+
   {% if flash %}
     <div class="wb-flash wb-flash--{{ flash_kind }}" role="status">
       {{ flash }}

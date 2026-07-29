@@ -42,6 +42,8 @@
     <a href="{{ lang_url('/rules') }}">{{ t("rules.back_to_rules") }}</a>
   </p>
 
+  {% include "_gym_prompt.html" %}
+
   <form class="wb-card" method="post" action="{{ action_url }}">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 

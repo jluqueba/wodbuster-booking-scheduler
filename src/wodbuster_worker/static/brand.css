@@ -200,6 +200,31 @@ hr {
   background: var(--wb-accent-soft);
 }
 
+.wb-nav__gym {
+  display: flex;
+  align-items: center;
+  margin-right: 0.35rem;
+  padding-right: 0.6rem;
+  border-right: 1px solid var(--wb-border);
+}
+.wb-nav__gym-current {
+  color: var(--wb-text);
+  font-size: 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.wb-nav__gym-form { margin: 0; }
+.wb-nav__gym-select {
+  background: var(--wb-bg-elevated);
+  color: var(--wb-text);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius-sm);
+  padding: 0.3rem 0.5rem;
+  font-size: 0.9rem;
+  max-width: 12rem;
+  cursor: pointer;
+}
+
 .wb-nav__spacer { flex-grow: 1; }
 
 .wb-nav form { justify-self: end; margin: 0; }

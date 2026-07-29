@@ -30,11 +30,11 @@ from fastapi.templating import Jinja2Templates
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
 from ..booking.executor import BookingExecutorProvider
+from ..gyms.context import active_gym_account_id
 from ..gyms.service import gym_client_factory, resolve_gym_client
 from ..i18n import lang_url
 from ..persistence.cookie_store import CookieStore
 from ..persistence.engine import get_session
-from ..persistence.gym_accounts import resolve_sole_gym_account_id
 from ..persistence.models import SchedulerRule
 from ..scheduler.rule_jobs import (
     next_window_open_for_rule,
@@ -174,8 +174,8 @@ def rules_list(request: Request, operator_id: int = Depends(require_session)) ->
     """Render the operator's rule list."""
     templates = _templates(request)
     now = datetime.now(tz=UTC)
+    gym_account_id = active_gym_account_id(request)
     with get_session() as session:
-        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
         rules = list_rules_for_operator(session, gym_account_id) if gym_account_id else []
         rows = [
             {
@@ -207,8 +207,7 @@ def rules_list(request: Request, operator_id: int = Depends(require_session)) ->
 @router.get("/new", name="rules_new")
 def rules_new(request: Request, operator_id: int = Depends(require_session)) -> Response:
     """Render an empty create form pre-seeded with the picker options."""
-    with get_session() as session:
-        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+    gym_account_id = active_gym_account_id(request)
     picker = _picker_or_none(request, gym_account_id)
     return _render_form(
         request,
@@ -227,8 +226,7 @@ async def rules_create(request: Request, operator_id: int = Depends(require_sess
     form_data = _str_only(dict(await request.form()))
     parsed = parse_create_rule_form(form_data)
 
-    with get_session() as session:
-        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+    gym_account_id = active_gym_account_id(request)
 
     if gym_account_id is None:
         # No gym account configured yet; nothing can be scheduled.
@@ -277,8 +275,7 @@ def rules_api_classes(request: Request, operator_id: int = Depends(require_sessi
     and available for future HTMX refreshes. Failure modes collapse
     to an empty payload so the client can render its fallback.
     """
-    with get_session() as session:
-        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
+    gym_account_id = active_gym_account_id(request)
     picker = _picker_or_none(request, gym_account_id)
     if picker is None:
         return JSONResponse({"class_types": [], "time_slots": [], "available": False})
@@ -321,10 +318,10 @@ def rules_api_classes_debug(
             }
         )
 
+    gym_account_id = active_gym_account_id(request)
+    if gym_account_id is None:
+        return JSONResponse({"stage": "no_cookie", "sources": {}, "result": None})
     with get_session() as session:
-        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
-        if gym_account_id is None:
-            return JSONResponse({"stage": "no_cookie", "sources": {}, "result": None})
         cookie_value = store.load(session, gym_account_id)
         resolved = resolve_gym_client(factory, session, gym_account_id)
     if cookie_value is None or resolved is None:
@@ -426,8 +423,8 @@ def rules_edit(
     operator_id: int = Depends(require_session),
 ) -> Response:
     """Render the edit form for an owned rule; 404 for anyone else's."""
+    gym_account_id = active_gym_account_id(request)
     with get_session() as session:
-        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
         rule = get_rule_for_operator(session, gym_account_id, rule_id) if gym_account_id else None
         if rule is None:
             raise HTTPException(status_code=404)
@@ -456,8 +453,8 @@ async def rules_update(
     form_data = _str_only(dict(await request.form()))
     parsed = parse_edit_rule_form(form_data)
 
+    gym_account_id = active_gym_account_id(request)
     with get_session() as session:
-        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
         rule = get_rule_for_operator(session, gym_account_id, rule_id) if gym_account_id else None
         if rule is None:
             raise HTTPException(status_code=404)
@@ -508,9 +505,8 @@ def rules_delete(
     operator_id: int = Depends(require_session),
 ) -> Response:
     """Delete a rule owned by the operator."""
-    _ = request  # signature parity with the other routes
+    gym_account_id = active_gym_account_id(request)
     with get_session() as session:
-        gym_account_id = resolve_sole_gym_account_id(session, operator_id)
         rule = get_rule_for_operator(session, gym_account_id, rule_id) if gym_account_id else None
         if rule is None:
             raise HTTPException(status_code=404)

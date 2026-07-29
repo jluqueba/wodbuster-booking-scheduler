@@ -1,0 +1,6 @@
+{# Gym-scoped pages include this near the top of their content. When the
+   operator owns more than one gym and has not picked one yet, it nudges
+   them to the nav switcher; otherwise it renders nothing. #}
+{% if gym_nav(request).needs_selection %}
+  <div class="wb-flash wb-flash--info" role="status">{{ t("gym.select.prompt") }}</div>
+{% endif %}

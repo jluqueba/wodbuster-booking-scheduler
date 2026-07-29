@@ -89,6 +89,8 @@
     <a href="{{ lang_url('/rules') }}">{{ t("rules.back_to_rules") }}</a>
   </p>
 
+  {% include "_gym_prompt.html" %}
+
   {% if errors.get('days_of_week') %}
     <p class="wb-form-error">{{ errors['days_of_week'] }}</p>
   {% endif %}

@@ -17,6 +17,8 @@
   <h1 class="wb-page-title">{{ t("rules.title") }}</h1>
   <p class="wb-page-subtitle">{{ t("rules.subtitle") }}</p>
 
+  {% include "_gym_prompt.html" %}
+
   <div class="wb-toolbar">
     <a href="{{ lang_url('/rules/new') }}" class="wb-btn wb-btn--primary">{{ t("rules.new_button") }}</a>
   </div>
