@@ -325,6 +325,29 @@ def list_upcoming_bookings(
     )
 
 
+def resolve_owner_gym_account(
+    session: Session,
+    *,
+    user_id: int,
+    booking_id: int,
+) -> int | None:
+    """Return the gym-account id that owns ``booking_id``, or ``None``.
+
+    Scoped to ``user_id``'s ACTIVE gym accounts so a Telegram ``/cancel``
+    resolves the owning gym across every gym the user has without
+    confirming existence for bookings the user does not own (CC-012).
+    """
+    return session.scalars(
+        select(BookingOutcome.gym_account_id)
+        .join(GymAccount, GymAccount.id == BookingOutcome.gym_account_id)
+        .where(
+            BookingOutcome.id == booking_id,
+            GymAccount.user_id == user_id,
+            GymAccount.active.is_(True),
+        )
+    ).first()
+
+
 __all__ = [
     "BookingAlreadyCancelledError",
     "BookingNotFoundError",
@@ -333,4 +356,5 @@ __all__ = [
     "cancel_booking",
     "list_recent_bookings",
     "list_upcoming_bookings",
+    "resolve_owner_gym_account",
 ]

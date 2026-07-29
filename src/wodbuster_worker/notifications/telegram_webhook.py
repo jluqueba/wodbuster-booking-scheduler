@@ -61,6 +61,7 @@ from ..booking.cancellation import (
     CancellationUpstreamError,
     cancel_booking,
     list_recent_bookings,
+    resolve_owner_gym_account,
 )
 from ..booking.upcoming import list_upcoming_slots
 from ..gyms.service import gym_client_factory, resolve_gym_client
@@ -68,7 +69,7 @@ from ..heartbeat.alerts import acknowledge_open_cookie_expiring
 from ..heartbeat.next_window import compute_next_booking
 from ..i18n import lang_url, t
 from ..persistence.engine import get_session
-from ..persistence.gym_accounts import resolve_sole_gym_account_id
+from ..persistence.gym_accounts import list_user_gym_accounts
 from ..persistence.models import OperatorProfile
 from ..scheduler.rule_jobs import operator_timezone
 from . import telegram as telegram_sender
@@ -463,23 +464,8 @@ def _render_status(request: Request, *, chat_id: str) -> str:
     )
 
 
-def _handle_next(request: Request, *, chat_id: str) -> str:
-    """TG.3: report the next scheduled booking and upcoming slots."""
-    now = datetime.now(tz=UTC)
-    tz = operator_timezone()
-    with get_session() as session:
-        operator = _operator_for_chat(session, chat_id)
-        if operator is None:
-            return _UNBOUND_REJECTION
-        gym_account_id = resolve_sole_gym_account_id(session, operator.id)
-        if gym_account_id is None:
-            return "Nothing scheduled. No active rules have a window on the horizon."
-        next_booking = compute_next_booking(session, gym_account_id, now)
-        upcoming = list_upcoming_slots(session, gym_account_id, now=now)
-
-    if next_booking is None and not upcoming:
-        return "Nothing scheduled. No active rules have a window on the horizon."
-
+def _next_section_lines(next_booking: Any, upcoming: Any, tz: Any) -> list[str]:
+    """Render one gym's next-booking + upcoming-slots block (may be empty)."""
     lines: list[str] = []
     if next_booking is not None:
         slot_local = next_booking.target_slot.astimezone(tz)
@@ -501,30 +487,75 @@ def _handle_next(request: Request, *, chat_id: str) -> str:
                 )
             else:
                 lines.append(f"- {slot_local:%a %d %b at %H:%M} {slot.target_class} (scheduled)")
-    return "\n".join(lines)
+    return lines
 
 
-def _handle_last(request: Request, *, chat_id: str) -> str:
-    """TG.3: report the most recent booking outcome."""
+def _handle_next(request: Request, *, chat_id: str) -> str:
+    """TG.3: report the next scheduled booking and upcoming slots.
+
+    Aggregates across every gym the operator owns; a multi-gym operator
+    sees each gym labelled, since Telegram has no gym switcher.
+    """
+    now = datetime.now(tz=UTC)
     tz = operator_timezone()
+    empty = "Nothing scheduled. No active rules have a window on the horizon."
     with get_session() as session:
         operator = _operator_for_chat(session, chat_id)
         if operator is None:
             return _UNBOUND_REJECTION
-        gym_account_id = resolve_sole_gym_account_id(session, operator.id)
-        if gym_account_id is None:
-            return "No bookings yet. Nothing has been attempted for this operator."
-        recent = list_recent_bookings(session, gym_account_id, limit=1)
+        gyms = list_user_gym_accounts(session, operator.id)
+        if not gyms:
+            return empty
+        multi = len(gyms) > 1
+        blocks: list[str] = []
+        any_content = False
+        for gym in gyms:
+            next_booking = compute_next_booking(session, gym.id, now)
+            upcoming = list_upcoming_slots(session, gym.id, now=now)
+            lines = _next_section_lines(next_booking, upcoming, tz)
+            if lines:
+                any_content = True
+                body = "\n".join(lines)
+            else:
+                body = empty
+            blocks.append(f"[{gym.display_name}]\n{body}" if multi else body)
+    if not any_content:
+        return empty
+    return "\n\n".join(blocks)
 
-    if not recent:
-        return "No bookings yet. Nothing has been attempted for this operator."
-    last = recent[0]
-    slot_local = last.target_slot.astimezone(tz)
-    attempted_local = last.attempted_at.astimezone(tz)
-    return (
-        f"Last booking #{last.id}: {last.target_class} on {slot_local:%a %d %b at %H:%M} "
-        f"— {last.terminal_status} (attempted {attempted_local:%a %d %b at %H:%M})."
-    )
+
+def _handle_last(request: Request, *, chat_id: str) -> str:
+    """TG.3: report the most recent booking outcome, per gym."""
+    tz = operator_timezone()
+    empty = "No bookings yet. Nothing has been attempted for this operator."
+    with get_session() as session:
+        operator = _operator_for_chat(session, chat_id)
+        if operator is None:
+            return _UNBOUND_REJECTION
+        gyms = list_user_gym_accounts(session, operator.id)
+        if not gyms:
+            return empty
+        multi = len(gyms) > 1
+        blocks: list[str] = []
+        any_content = False
+        for gym in gyms:
+            recent = list_recent_bookings(session, gym.id, limit=1)
+            if recent:
+                any_content = True
+                last = recent[0]
+                slot_local = last.target_slot.astimezone(tz)
+                attempted_local = last.attempted_at.astimezone(tz)
+                body = (
+                    f"Last booking #{last.id}: {last.target_class} on "
+                    f"{slot_local:%a %d %b at %H:%M} — {last.terminal_status} "
+                    f"(attempted {attempted_local:%a %d %b at %H:%M})."
+                )
+            else:
+                body = "No bookings yet."
+            blocks.append(f"[{gym.display_name}]\n{body}" if multi else body)
+    if not any_content:
+        return empty
+    return "\n\n".join(blocks)
 
 
 def _handle_cancel(request: Request, *, chat_id: str, argument: str) -> str:
@@ -547,7 +578,9 @@ def _handle_cancel(request: Request, *, chat_id: str, argument: str) -> str:
         operator = _operator_for_chat(session, chat_id)
         if operator is None:
             return _UNBOUND_REJECTION
-        gym_account_id = resolve_sole_gym_account_id(session, operator.id)
+        gym_account_id = resolve_owner_gym_account(
+            session, user_id=operator.id, booking_id=booking_id
+        )
         if gym_account_id is None:
             return f"Booking #{booking_id} not found for this operator."
         resolved = resolve_gym_client(factory, session, gym_account_id)
