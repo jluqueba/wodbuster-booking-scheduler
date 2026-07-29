@@ -99,6 +99,11 @@ EN: dict[str, str] = {
         "Enable a date range to bulk-cancel granted bookings and pause "
         "automatic booking until you're back."
     ),
+    "dashboard.cards.gyms.title": "🏢 Gyms",
+    "dashboard.cards.gyms.body": (
+        "Add and manage the WodBuster gyms you book at; refresh each "
+        "gym's cookie or deactivate one without affecting the others."
+    ),
     "dashboard.cards.telegram.title": "🤖 Telegram",
     "dashboard.cards.telegram.body": (
         "Bind your Telegram chat so booking outcomes, cookie-expiring "
@@ -351,6 +356,7 @@ EN: dict[str, str] = {
     ),
     "faq.section.getting_started": "Getting started",
     "faq.section.cookie": "Cookie",
+    "faq.section.gyms": "Gyms",
     "faq.section.rules": "Rules",
     "faq.section.history": "History & cancel",
     "faq.section.vacation": "Vacation mode",
@@ -389,6 +395,25 @@ EN: dict[str, str] = {
         "WodBuster refused the stored cookie mid-flight — usually because you logged out from "
         "the website, or the session was invalidated remotely. Grab a fresh cookie from the "
         "browser and paste it. The alert closes automatically on the next successful heartbeat."
+    ),
+    "faq.q.gyms_multiple": "Can I book at more than one gym?",
+    "faq.a.gyms_multiple": (
+        "Yes. The app supports several WodBuster gyms on the same account. Every gym you add "
+        "books, checks its own cookie, and raises its own alerts completely independently, so "
+        "a cookie problem at one gym never stops the others from booking."
+    ),
+    "faq.q.gyms_add": "How do I add a gym?",
+    "faq.a.gyms_add": (
+        "Open the <a href='{gyms_url}'>Gyms</a> page, choose a gym from the allowed list, and "
+        "paste that gym's <code>.WBAuth</code> cookie. The app validates the cookie against "
+        "that gym and discovers your athlete id automatically; nothing is saved unless both "
+        "steps succeed."
+    ),
+    "faq.q.gyms_deactivate": "How do I stop booking at a gym without losing its history?",
+    "faq.a.gyms_deactivate": (
+        "On the <a href='{gyms_url}'>Gyms</a> page, deactivate the gym. That halts all future "
+        "bookings and cookie checks for it while keeping its past bookings on record. "
+        "Reactivate it whenever you want automation to resume."
     ),
     "faq.q.what_is_rule": "What is a rule?",
     "faq.a.what_is_rule": (
@@ -606,6 +631,12 @@ ES: dict[str, str] = {
     "dashboard.cards.vacation.body": (
         "Activa un rango de fechas para cancelar en bloque las reservas "
         "concedidas y pausar la reserva automática hasta que vuelvas."
+    ),
+    "dashboard.cards.gyms.title": "🏢 Gimnasios",
+    "dashboard.cards.gyms.body": (
+        "Añade y gestiona los gimnasios de WodBuster en los que reservas; "
+        "actualiza la cookie de cada gimnasio o desactiva uno sin afectar "
+        "a los demás."
     ),
     "dashboard.cards.telegram.title": "🤖 Telegram",
     "dashboard.cards.telegram.body": (
@@ -872,6 +903,7 @@ ES: dict[str, str] = {
     ),
     "faq.section.getting_started": "Primeros pasos",
     "faq.section.cookie": "Cookie",
+    "faq.section.gyms": "Gimnasios",
     "faq.section.rules": "Reglas",
     "faq.section.history": "Historial y cancelaciones",
     "faq.section.vacation": "Modo vacaciones",
@@ -912,6 +944,27 @@ ES: dict[str, str] = {
         "cerraste sesión en la web o la sesión se invalidó de forma remota. Consigue una "
         "cookie nueva desde el navegador y pégala. La alerta se cierra sola en el siguiente "
         "latido correcto."
+    ),
+    "faq.q.gyms_multiple": "¿Puedo reservar en más de un gimnasio?",
+    "faq.a.gyms_multiple": (
+        "Sí. La aplicación admite varios gimnasios de WodBuster en la misma cuenta. Cada "
+        "gimnasio que añades reserva, comprueba su propia cookie y genera sus propias alertas "
+        "de forma totalmente independiente, así que un problema de cookie en un gimnasio nunca "
+        "impide reservar en los demás."
+    ),
+    "faq.q.gyms_add": "¿Cómo añado un gimnasio?",
+    "faq.a.gyms_add": (
+        "Abre la página de <a href='{gyms_url}'>Gimnasios</a>, elige un gimnasio de la lista "
+        "permitida y pega la cookie <code>.WBAuth</code> de ese gimnasio. La aplicación valida "
+        "la cookie contra ese gimnasio y descubre tu identificador de atleta automáticamente; "
+        "no se guarda nada salvo que ambos pasos tengan éxito."
+    ),
+    "faq.q.gyms_deactivate": "¿Cómo dejo de reservar en un gimnasio sin perder su historial?",
+    "faq.a.gyms_deactivate": (
+        "En la página de <a href='{gyms_url}'>Gimnasios</a>, desactiva el gimnasio. Eso detiene "
+        "todas las reservas futuras y las comprobaciones de cookie de ese gimnasio, pero "
+        "conserva sus reservas pasadas. Reactívalo cuando quieras que la automatización se "
+        "reanude."
     ),
     "faq.q.what_is_rule": "¿Qué es una regla?",
     "faq.a.what_is_rule": (

@@ -28,9 +28,11 @@ tagged ``rules.picker.*`` — invaluable when the operator reports
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import structlog
 
@@ -76,7 +78,7 @@ def fetch_available_classes(
     day (for example a Saturday-only ``Endurance`` session) are
     invisible unless the operator happens to open the form on that
     day. To make the picker day-independent we probe each day of the
-    current week (:func:`_week_ticks_utc`) and union the results.
+    current week (:func:`_current_week_ticks`) and union the results.
     ``LoadClass`` is an ordinary calendar read, not subject to the
     booking-attempt quota, and the form is opened infrequently, so
     the extra reads are cheap.
@@ -96,7 +98,7 @@ def fetch_available_classes(
     class_types: set[str] = set()
     time_slots: set[str] = set()
     days_probed = 0
-    for ticks in _week_ticks_utc():
+    for ticks in _current_week_ticks():
         try:
             loaded = client.load_class(cookie_value, ticks)
         except WodBusterAuthError as exc:
@@ -227,16 +229,27 @@ def _today_ticks_utc() -> int:
     return int(midnight.timestamp())
 
 
-def _week_ticks_utc() -> list[int]:
-    """Return midnight-UTC ticks for today and the next six days.
+def _operator_timezone() -> ZoneInfo:
+    """Timezone the gym runs on; mirrors the scheduler's rule clock."""
+    return ZoneInfo(os.environ.get("WORKER_TIMEZONE", "Europe/Madrid"))
 
-    A rolling seven-day window guarantees the next occurrence of every
-    weekday is probed exactly once, so day-specific classes surface
-    regardless of which day the operator opens the form.
+
+def _current_week_ticks() -> list[int]:
+    """Return midnight ticks for each day (Mon..Sun) of the current week.
+
+    The week is anchored to Monday in the operator's timezone (the gym's
+    local clock), so "this week" matches the calendar the operator sees
+    on WodBuster. Every weekday of the current week is probed exactly
+    once and the results are unioned, so the picker offers the sum of
+    every distinct class type that runs this week — including days that
+    have already passed — rather than a rolling seven-day window.
     """
-    now = datetime.now(tz=UTC)
-    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return [int((midnight + timedelta(days=offset)).timestamp()) for offset in range(7)]
+    tz = _operator_timezone()
+    now_local = datetime.now(tz=tz)
+    monday_local = (now_local - timedelta(days=now_local.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return [int((monday_local + timedelta(days=offset)).timestamp()) for offset in range(7)]
 
 
 __all__ = ["AvailableClasses", "extract_available_classes", "fetch_available_classes"]

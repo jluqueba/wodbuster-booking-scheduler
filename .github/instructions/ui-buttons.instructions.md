@@ -36,11 +36,14 @@ button, submit input, and link styled as a button (`.wb-btn`, `[role="button"]`)
 - The base rule (`button, .wb-btn, [role="button"]` in `brand.css`) is
   `display: inline-flex; width: auto; white-space: nowrap; gap: 0.35rem`, with no
   `min-width` and no stretch. Buttons are as wide as their content.
-- `width: auto` is load-bearing. Pico CSS (loaded before `brand.css`) sets
-  `<button>` to `width: 100%`, so every `<button type="submit">` inside a form
-  stretches full-width unless `brand.css` overrides `width`. Anchors styled as
-  buttons (`<a class="wb-btn">`) are not affected, which is why a row of Edit
-  (anchor) next to Delete (button) looked mismatched before the override.
+- `width: auto` is load-bearing. Pico CSS (loaded before `brand.css`) ships
+  `button[type=submit], input:not([type=checkbox],[type=radio]), select, textarea { width: 100% }`.
+  The `button[type=submit]` selector has specificity (0,1,1), which OUTRANKS a single
+  `.wb-btn` class (0,1,0). Since every action button is a `type="submit"`, a plain
+  `.wb-btn { width: auto }` does NOT win. The override must beat (0,1,1): brand.css uses
+  the doubled-class rule `.wb-btn.wb-btn { width: auto }` (specificity 0,2,0). Do not
+  downgrade it back to a single class. Anchors styled as buttons (`<a class="wb-btn">`)
+  are unaffected by Pico, but the doubled-class rule covers them too, harmlessly.
 - Inline and in-table action buttons use the compact selector
   `.wb-cell-actions .wb-btn` (padding `0.35rem 0.7rem`, font `0.82rem`).
 - Wrap a table-cell action button's `<form>` in `class="wb-inline-form"` so the

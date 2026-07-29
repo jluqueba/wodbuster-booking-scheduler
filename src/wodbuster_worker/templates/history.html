@@ -40,9 +40,9 @@
     border-color: var(--wb-info);
   }
   .wb-chip--vacation {
-    background: rgba(96, 165, 250, 0.12);
-    color: var(--wb-info);
-    border-color: var(--wb-info);
+    background: var(--wb-accent-soft);
+    color: var(--wb-accent);
+    border-color: rgba(248, 255, 64, 0.35);
   }
   .wb-upcoming__item--vacation {
     opacity: 0.72;
@@ -105,7 +105,9 @@
     {% else %}
       <div class="wb-upcoming__grid">
         {% for day in upcoming_days %}
-          <article class="wb-upcoming__day">
+          {% set day_kinds = day.rows | map(attribute="kind") | list %}
+          {% set day_kind = "granted" if "granted" in day_kinds else ("pending" if "pending" in day_kinds else "vacation") %}
+          <article class="wb-upcoming__day wb-upcoming__day--{{ day_kind }}">
             <header class="wb-upcoming__date">{{ wb_time(day.date_dt, "date", day.date_label) }}</header>
             <div class="wb-upcoming__list">
               {% for slot in day.rows %}
