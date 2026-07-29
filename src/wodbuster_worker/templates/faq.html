@@ -125,6 +125,29 @@
       </p>
     </details>
 
+    <h2 class="wb-faq__section-title">{{ t("faq.section.gyms") }}</h2>
+
+    <details>
+      <summary>{{ t("faq.q.gyms_multiple") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.gyms_multiple") | safe }}
+      </p>
+    </details>
+
+    <details>
+      <summary>{{ t("faq.q.gyms_add") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.gyms_add", gyms_url=lang_url('/gyms')) | safe }}
+      </p>
+    </details>
+
+    <details>
+      <summary>{{ t("faq.q.gyms_deactivate") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.gyms_deactivate", gyms_url=lang_url('/gyms')) | safe }}
+      </p>
+    </details>
+
     <h2 class="wb-faq__section-title">{{ t("faq.section.rules") }}</h2>
 
     <details>

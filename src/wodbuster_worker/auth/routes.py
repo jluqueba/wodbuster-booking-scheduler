@@ -25,6 +25,7 @@ from __future__ import annotations
 import secrets
 from typing import Any
 
+import structlog
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
@@ -39,6 +40,8 @@ from .oauth import SUPPORTED_PROVIDERS, extract_identity
 from .session import touch_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+log = structlog.get_logger(__name__)
 
 
 def _templates(request: Request) -> Jinja2Templates:
@@ -138,7 +141,15 @@ async def callback(provider: str, request: Request) -> Response:
         # Deny with no state change. The provider is on the allow-list
         # of *providers*, but this specific identity is not on the
         # allow-list of *operators*. Do NOT create an operator_profile
-        # here; that is the bootstrap command's job.
+        # here; that is the bootstrap command's job. Log the presented
+        # identity (server-side only; the denial page still leaks
+        # nothing per CC-011) so the operator can seed it via the
+        # bootstrap command.
+        log.warning(
+            "auth.denied.identity_not_allowlisted",
+            provider=provider,
+            subject_id=subject_id,
+        )
         return _render_denial(request)
 
     # Success: rotate the session (mitigate session-fixation), stamp

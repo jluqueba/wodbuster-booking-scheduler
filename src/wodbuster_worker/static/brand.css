@@ -503,10 +503,31 @@ button, .wb-btn, [role="button"] {
   white-space: nowrap;
   vertical-align: middle;
 }
+/* Fit every button to its label. Pico ships
+   ``button[type=submit]{width:100%}`` whose specificity (0,1,1)
+   outranks the single ``.wb-btn`` class (0,1,0) in the ``width: auto``
+   above, so every submit button (Cancel, End early, Deactivate, Save,
+   …) stretched to the full form width. The doubled class here (0,2,0)
+   beats Pico's rule and applies to every ``.wb-btn`` — buttons and
+   button-styled anchors alike. */
+.wb-btn.wb-btn {
+  width: auto;
+}
 button:hover:not(:disabled),
 .wb-btn:hover {
   border-color: var(--wb-border-focus);
   background: var(--wb-bg-card);
+}
+/* Action links styled as buttons (``<a class="wb-btn">`` — e.g. the
+   rules "Edit" link) must not pick up the global ``a:hover`` underline
+   (specificity 0,1,1) that would otherwise re-underline them on hover.
+   Scope a stronger reset (0,2,1) so button-styled anchors behave like
+   real buttons: background/border change on hover, never a text
+   underline. */
+a.wb-btn:hover,
+a.wb-btn:focus,
+a.wb-btn:focus-visible {
+  text-decoration: none;
 }
 button.wb-btn--primary,
 .wb-btn--primary {
@@ -568,7 +589,12 @@ form:not(.wb-nav form) label {
 input:not([type="checkbox"]):not([type="radio"]),
 textarea,
 select {
-  background: var(--wb-bg-inset);
+  /* ``background-color`` (not the ``background`` shorthand) so this rule
+     does not reset ``background-image`` to none. The time/date pickers
+     paint their leading clock/calendar icon via ``background-image`` on
+     ``.wb-time-picker__input`` / ``.wb-date-picker__input``; the
+     shorthand here has higher specificity and would otherwise wipe it. */
+  background-color: var(--wb-bg-inset);
   color: var(--wb-text);
   border: 1px solid var(--wb-border);
   border-radius: var(--wb-radius-sm);
@@ -872,6 +898,9 @@ fieldset legend {
     animation: none !important;
   }
   .wb-card--interactive {
+    transition: none;
+  }
+  .wb-upcoming__day {
     transition: none;
   }
 }
@@ -1257,6 +1286,41 @@ button.wb-confirm__cancel:focus-visible,
   background: var(--wb-bg-card);
   border: 1px solid var(--wb-border);
   border-radius: var(--wb-radius);
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+/* Same hover lift as the dashboard ``.wb-card--interactive`` tiles so the
+   upcoming-booking day cards feel identically interactive. */
+.wb-upcoming__day:hover {
+  transform: translateY(-2px);
+  border-color: var(--wb-border-strong);
+  box-shadow: var(--wb-shadow-lg);
+}
+
+/* State-coloured upcoming day tiles (History): the tile borrows the
+   colour of its bookings — green when already booked (granted), blue
+   when only scheduled (pending), yellow when it will be skipped for a
+   vacation window. The border carries the colour at rest and the hover
+   lift shadow matches it. */
+.wb-upcoming__day--granted {
+  border-color: rgba(74, 222, 128, 0.5);
+}
+.wb-upcoming__day--granted:hover {
+  border-color: var(--wb-success);
+  box-shadow: 0 10px 26px rgba(74, 222, 128, 0.28);
+}
+.wb-upcoming__day--pending {
+  border-color: rgba(96, 165, 250, 0.5);
+}
+.wb-upcoming__day--pending:hover {
+  border-color: var(--wb-info);
+  box-shadow: 0 10px 26px rgba(96, 165, 250, 0.28);
+}
+.wb-upcoming__day--vacation {
+  border-color: rgba(248, 255, 64, 0.5);
+}
+.wb-upcoming__day--vacation:hover {
+  border-color: var(--wb-accent);
+  box-shadow: 0 10px 26px rgba(248, 255, 64, 0.28);
 }
 
 .wb-upcoming__date {

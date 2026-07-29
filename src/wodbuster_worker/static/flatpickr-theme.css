@@ -12,7 +12,7 @@
 
 /* --- Input surface + leading clock icon ---------------------------------- */
 
-.wb-time-picker__input {
+.wb-time-picker input.wb-time-picker__input {
   padding-left: 2.25rem;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a3a3a3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'/><polyline points='12 6 12 12 16 14'/></svg>");
   background-repeat: no-repeat;
@@ -28,7 +28,7 @@
 
 /* --- Date picker input: same surface, calendar icon ---------------------- */
 
-.wb-date-picker__input {
+.wb-date-picker input.wb-date-picker__input {
   padding-left: 2.25rem;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a3a3a3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='4' width='18' height='18' rx='2' ry='2'/><line x1='16' y1='2' x2='16' y2='6'/><line x1='8' y1='2' x2='8' y2='6'/><line x1='3' y1='10' x2='21' y2='10'/></svg>");
   background-repeat: no-repeat;
@@ -87,3 +87,96 @@
   color: var(--wb-text-muted, #8a8f99);
   font-family: var(--wb-mono, ui-monospace, "Cascadia Mono", monospace);
 }
+
+/* --- Calendar day grid (dark-mode legibility) ----------------------------
+ *
+ * The ``.flatpickr-calendar`` override above paints the popover dark, but
+ * Flatpickr's stock theme leaves the month header, weekday labels, and day
+ * numbers in near-black. On a dark surface that renders the days almost
+ * invisible. These rules re-colour the whole grid to the design tokens.
+ */
+
+.flatpickr-months,
+.flatpickr-weekdays,
+.flatpickr-days,
+.flatpickr-innerContainer,
+.flatpickr-rContainer,
+.dayContainer {
+  background: transparent;
+}
+
+.flatpickr-months .flatpickr-month,
+.flatpickr-current-month,
+.flatpickr-current-month input.cur-year,
+.flatpickr-current-month .flatpickr-monthDropdown-months {
+  color: var(--wb-text, #e6e8ec);
+  fill: var(--wb-text, #e6e8ec);
+  background: transparent;
+}
+
+.flatpickr-current-month .flatpickr-monthDropdown-months .flatpickr-monthDropdown-month {
+  background: var(--wb-bg-card, #14181f);
+  color: var(--wb-text, #e6e8ec);
+}
+
+.flatpickr-prev-month svg,
+.flatpickr-next-month svg {
+  fill: var(--wb-text-muted, #8a8f99);
+}
+.flatpickr-prev-month:hover svg,
+.flatpickr-next-month:hover svg {
+  fill: var(--wb-accent, #f8ff40);
+}
+
+span.flatpickr-weekday {
+  color: var(--wb-text-muted, #8a8f99);
+  font-weight: 600;
+}
+
+.flatpickr-day {
+  color: var(--wb-text, #e6e8ec);
+  border-radius: 6px;
+}
+
+.flatpickr-day:hover,
+.flatpickr-day:focus {
+  background: rgba(248, 255, 64, 0.12);
+  border-color: transparent;
+  color: var(--wb-text, #e6e8ec);
+}
+
+.flatpickr-day.today {
+  border-color: var(--wb-accent, #f8ff40);
+}
+.flatpickr-day.today:hover {
+  background: rgba(248, 255, 64, 0.18);
+  color: var(--wb-text, #e6e8ec);
+}
+
+.flatpickr-day.selected,
+.flatpickr-day.selected:hover,
+.flatpickr-day.startRange,
+.flatpickr-day.endRange {
+  background: var(--wb-accent, #f8ff40);
+  border-color: var(--wb-accent, #f8ff40);
+  color: var(--wb-accent-ink, #0a0e14);
+}
+
+.flatpickr-day.inRange {
+  background: rgba(248, 255, 64, 0.14);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.flatpickr-day.flatpickr-disabled,
+.flatpickr-day.flatpickr-disabled:hover,
+.flatpickr-day.prevMonthDay,
+.flatpickr-day.nextMonthDay {
+  color: var(--wb-text-muted, #8a8f99);
+  opacity: 0.45;
+}
+.flatpickr-day.flatpickr-disabled,
+.flatpickr-day.flatpickr-disabled:hover {
+  cursor: not-allowed;
+}
+
