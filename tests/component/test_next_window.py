@@ -347,3 +347,95 @@ def test_compute_next_booking_none_when_no_active_rules(
     with session_factory() as session:
         gym_account_id = gym_account_id_for(session, op_id)
         assert compute_next_booking(session, gym_account_id, now) is None
+
+
+def _make_vacation(
+    engine: Engine,
+    operator_id: int,
+    *,
+    start: datetime,
+    end: datetime,
+) -> int:
+    """Insert an open vacation_window row covering ``[start, end]``."""
+    with engine.begin() as conn:
+        gym_account_id = gym_account_id_for(conn, operator_id)
+        return int(
+            conn.execute(
+                text(
+                    "INSERT INTO vacation_window "
+                    "(gym_account_id, start_date, end_date) "
+                    "VALUES (:ga, :s, :e) RETURNING id"
+                ),
+                {"ga": gym_account_id, "s": start, "e": end},
+            ).scalar_one()
+        )
+
+
+def test_compute_next_booking_skips_vacation_covered_target(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """A window whose target class falls in a vacation range is skipped;
+    the countdown rolls forward to the first target that will actually
+    be booked (mirrors the executor's US7.2 skip guard)."""
+    # 2026-07-29 is a Wednesday. Attend Saturday (5), opens 3 days
+    # before (Wednesday) at 22:40, class at 10:00. Trigger day =
+    # (5-3)%7 = 2 (Wednesday). First window: 2026-07-29 22:40, target
+    # class Sat 2026-08-01 10:00.
+    op_id = _make_operator(postgres_engine)
+    now = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
+    rule_id = _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=5,
+        booking_opens_days_before=3,
+        booking_opens_at="22:40",
+        class_time="10:00",
+    )
+    # Vacation Sat 2026-08-01 through Sat 2026-08-08 (inclusive; end
+    # stored at end-of-day like the vacation service does). Covers the
+    # first two Saturday targets (08-01, 08-08). The next uncovered
+    # target is Sat 2026-08-15 (window opens Wed 2026-08-12 22:40).
+    _make_vacation(
+        postgres_engine,
+        op_id,
+        start=datetime(2026, 8, 1, 0, 0, tzinfo=UTC),
+        end=datetime(2026, 8, 8, 23, 59, 59, 999999, tzinfo=UTC),
+    )
+
+    with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
+        result = compute_next_booking(session, gym_account_id, now)
+
+    assert result is not None
+    assert result.window_open == datetime(2026, 8, 12, 22, 40, tzinfo=UTC)
+    assert result.target_slot == datetime(2026, 8, 15, 10, 0, tzinfo=UTC)
+    assert result.rule_id == rule_id
+
+
+def test_compute_next_booking_none_when_every_target_on_vacation(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """When an open vacation window covers every target in the lookahead
+    horizon, there is no booking to count down to."""
+    op_id = _make_operator(postgres_engine)
+    now = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
+    _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=5,
+        booking_opens_days_before=3,
+        booking_opens_at="22:40",
+        class_time="10:00",
+    )
+    # A very long open vacation window swallowing well past the roll
+    # horizon: no target within view will ever be booked.
+    _make_vacation(
+        postgres_engine,
+        op_id,
+        start=datetime(2026, 7, 1, 0, 0, tzinfo=UTC),
+        end=datetime(2028, 1, 1, 0, 0, tzinfo=UTC),
+    )
+
+    with session_factory() as session:
+        gym_account_id = gym_account_id_for(session, op_id)
+        assert compute_next_booking(session, gym_account_id, now) is None
