@@ -1,11 +1,11 @@
 """Active-gym selection for the web UI (approach A: global switcher).
 
 There is no persisted default gym: the acting gym lives in the web
-session and is always changeable from the nav switcher. A user with a
-single active gym has it auto-selected; a user with several must pick
-one explicitly, and until they do the gym-scoped pages render a
-"choose a gym" prompt. Telegram (a channel with no web session) keeps
-using :func:`resolve_sole_gym_account_id` instead.
+session and is always changeable from the nav switcher. When nothing is
+selected yet, the switcher defaults to the first gym (alphabetical) so it
+is never left empty; the operator can switch at any time. Telegram (a
+channel with no web session) keeps using
+:func:`resolve_sole_gym_account_id` instead.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from collections.abc import MutableMapping
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
@@ -62,21 +62,24 @@ def resolve_gym_nav(
 ) -> GymNav:
     """Compute switcher state and persist the resolved active gym.
 
-    Auto-selects the sole active gym; keeps a still-valid stored choice;
-    drops a stored id that no longer maps to an active owned account (for
-    example after the operator deactivates the gym they had selected).
+    Keeps a still-valid stored choice; otherwise defaults to the first
+    gym (alphabetical) so the switcher is never empty. Drops a stored id
+    that no longer maps to an active owned account (for example after the
+    operator deactivates the gym they had selected).
     """
     rows = session.execute(
         select(GymAccount.id, GymAccount.gym_slug, GymAccount.display_name)
         .where(GymAccount.user_id == user_id, GymAccount.active.is_(True))
-        .order_by(GymAccount.id)
+        .order_by(func.lower(GymAccount.display_name), GymAccount.id)
     ).all()
     options = [GymOption(id=r.id, slug=r.gym_slug, display_name=r.display_name) for r in rows]
     valid_ids = {o.id for o in options}
 
     stored = web_session.get(SESSION_KEY)
     active_id = stored if isinstance(stored, int) and stored in valid_ids else None
-    if active_id is None and len(options) == 1:
+    if active_id is None and options:
+        # Default to the first gym (alphabetical) so the switcher never
+        # sits empty; the operator can still switch at any time.
         active_id = options[0].id
 
     if active_id is None:

@@ -207,6 +207,10 @@ hr {
   padding-right: 0.6rem;
   border-right: 1px solid var(--wb-border);
 }
+/* Empty when the user owns no gym yet: hide so no stray divider shows. */
+.wb-nav__gym:empty {
+  display: none;
+}
 .wb-nav__gym-current {
   color: var(--wb-text);
   font-size: 0.9rem;
@@ -215,14 +219,25 @@ hr {
 }
 .wb-nav__gym-form { margin: 0; }
 .wb-nav__gym-select {
-  background: var(--wb-bg-elevated);
+  /* Pill chip matching the account avatar trigger. Use background-color
+     (not the shorthand) so Pico's native select chevron is preserved. */
+  background-color: transparent;
   color: var(--wb-text);
   border: 1px solid var(--wb-border);
-  border-radius: var(--wb-radius-sm);
-  padding: 0.3rem 0.5rem;
+  border-radius: 999px;
+  padding: 0.3rem 1.9rem 0.3rem 0.85rem;
   font-size: 0.9rem;
   max-width: 12rem;
   cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.wb-nav__gym-select:hover {
+  border-color: var(--wb-border-strong);
+  background-color: var(--wb-bg-elevated);
+}
+.wb-nav__gym-select:focus-visible {
+  outline: 2px solid var(--wb-accent);
+  outline-offset: 2px;
 }
 
 .wb-nav__spacer { flex-grow: 1; }
@@ -242,6 +257,148 @@ hr {
 .wb-nav button.wb-nav__logout:hover {
   color: var(--wb-text);
   border-color: var(--wb-border-strong);
+}
+
+/* --------------------------------------------------------------------------
+   Account disclosure menu (avatar trigger -> Profile + Log out)
+   -------------------------------------------------------------------------- */
+.wb-usermenu {
+  position: relative;
+  justify-self: end;
+  /* Cancel Pico's `details { margin-bottom }`, which otherwise pushes the
+     pill up within the vertically-centered nav cell. */
+  margin: 0;
+}
+/* The <summary> is the disclosure trigger; strip its default marker so
+   only the avatar + name + caret show. */
+.wb-usermenu__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.6rem 0.25rem 0.3rem;
+  background: transparent;
+  border: 1px solid var(--wb-border);
+  border-radius: 999px;
+  color: var(--wb-text);
+  font-size: 0.9rem;
+  cursor: pointer;
+  list-style: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.wb-usermenu__trigger::-webkit-details-marker { display: none; }
+.wb-usermenu__trigger::marker { content: ""; }
+/* Pico paints its own chevron on every <summary> via ::after; suppress it
+   so only our single caret shows. */
+.wb-usermenu__trigger::after { display: none; }
+/* Pico adds margin-bottom to an open <details>' summary; keep the trigger
+   flush so opening the menu does not nudge the avatar. */
+.wb-usermenu[open] > .wb-usermenu__trigger { margin-bottom: 0; }
+.wb-usermenu__trigger:hover {
+  border-color: var(--wb-border-strong);
+  background: var(--wb-bg-elevated);
+}
+.wb-usermenu[open] .wb-usermenu__trigger {
+  border-color: var(--wb-accent);
+  background: var(--wb-accent-soft);
+}
+.wb-usermenu__trigger:focus-visible {
+  outline: 2px solid var(--wb-accent);
+  outline-offset: 2px;
+}
+.wb-usermenu__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--wb-bg-elevated);
+  border: 1px solid var(--wb-border);
+  font-size: 1rem;
+  line-height: 1;
+}
+.wb-usermenu__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.wb-usermenu__name {
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.wb-usermenu__caret {
+  font-size: 0.7rem;
+  color: var(--wb-text-muted);
+  transition: transform 0.18s ease;
+}
+.wb-usermenu[open] .wb-usermenu__caret { transform: rotate(180deg); }
+.wb-usermenu__panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.5rem);
+  min-width: 12rem;
+  padding: 0.4rem;
+  background: var(--wb-bg-card);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius);
+  box-shadow: var(--wb-shadow-lg);
+  z-index: 20;
+  animation: wb-usermenu-in 0.16s ease;
+}
+@keyframes wb-usermenu-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.wb-usermenu__header {
+  padding: 0.35rem 0.6rem 0.5rem;
+  margin-bottom: 0.35rem;
+  border-bottom: 1px solid var(--wb-border);
+}
+.wb-usermenu__header-name {
+  display: block;
+  font-weight: 600;
+  color: var(--wb-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-usermenu__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  border-radius: var(--wb-radius-sm);
+  background: transparent;
+  color: var(--wb-text);
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.wb-usermenu__item:hover {
+  background: var(--wb-bg-elevated);
+  color: var(--wb-text);
+  text-decoration: none;
+}
+.wb-usermenu__item:focus-visible {
+  outline: 2px solid var(--wb-accent);
+  outline-offset: -2px;
+}
+.wb-usermenu__item--danger { color: var(--wb-danger); }
+.wb-usermenu__item--danger:hover { color: var(--wb-danger); }
+.wb-usermenu__logout-form { margin: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .wb-usermenu__panel { animation: none; }
+  .wb-usermenu__caret { transition: none; }
 }
 
 /* --------------------------------------------------------------------------
@@ -1210,6 +1367,10 @@ button.wb-confirm__cancel:focus-visible,
   .wb-nav form {
     order: 2;
   }
+  .wb-usermenu {
+    order: 2;
+    justify-self: auto;
+  }
   .wb-nav__links {
     order: 3;
     flex-basis: 100%;
@@ -1418,4 +1579,33 @@ button.wb-confirm__cancel:focus-visible,
    left-aligns with the time and class above it. */
 .wb-upcoming__item--pending .wb-upcoming__chip {
   margin-left: 0;
+}
+
+/* Profile picture block (User Profile). Small avatar preview above the
+   editable fields; the placeholder is a neutral glyph until a custom
+   upload lands (T-UP-007). */
+.wb-profile-picture {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+.wb-profile-picture__img {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--wb-border);
+}
+.wb-profile-picture__placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  font-size: 2.5rem;
+  background: var(--wb-surface-2, rgba(148, 163, 184, 0.12));
+  border: 2px solid var(--wb-border);
 }

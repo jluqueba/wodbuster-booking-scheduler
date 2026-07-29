@@ -48,6 +48,8 @@ from .observability import configure_logging
 from .observability import telemetry as _telemetry
 from .persistence.cookie_store import CookieStore
 from .persistence.engine import get_session
+from .routes.profile import register_profile_globals
+from .routes.profile import router as profile_router
 from .routes.static_pages import router as static_pages_router
 from .rules.routes import router as rules_router
 from .scheduler.scheduler import (
@@ -212,6 +214,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
         register_jinja_globals(app.state.templates.env)
         register_gym_globals(app.state.templates.env)
+        register_profile_globals(app.state.templates.env)
     # Cookie stack: idempotent — respect pre-seeded state so tests can
     # inject fakes.
     if not hasattr(app.state, "cipher") or app.state.cipher is None:
@@ -345,6 +348,7 @@ def create_app(*, settings: Settings | None = None, secrets: Secrets | None = No
     app.state.templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
     register_jinja_globals(app.state.templates.env)
     register_gym_globals(app.state.templates.env)
+    register_profile_globals(app.state.templates.env)
     cipher, wb_client, validator, store = _build_cookie_stack(effective_settings, effective_secrets)
     app.state.cipher = cipher
     app.state.wodbuster_client = wb_client
@@ -402,6 +406,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(vacation_router)
     app.include_router(telegram_router)
     app.include_router(gyms_router)
+    app.include_router(profile_router)
     app.include_router(static_pages_router)
     app.add_api_route("/health", health, methods=["GET"])
     # Static assets (brand CSS, later JS / images). Mounted after

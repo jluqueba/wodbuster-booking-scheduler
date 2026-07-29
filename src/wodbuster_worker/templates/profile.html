@@ -1,0 +1,61 @@
+{# Profile view/edit page (User Profile T-UP-005). #}
+{% extends "base.html" %}
+
+{% block title %}{{ t("nav.profile") }} — WodBuster Booking Worker{% endblock %}
+
+{% block nav %}
+  {% set active_nav = "profile" %}
+  {% include "_nav.html" %}
+{% endblock %}
+
+{% block content %}
+  <h1 class="wb-page-title">{{ t("profile.title") }}</h1>
+  <p class="wb-page-subtitle">{{ t("profile.subtitle") }}</p>
+
+  {% if flash %}
+    <div class="wb-flash wb-flash--{{ flash_kind }}" role="status">{{ flash }}</div>
+  {% endif %}
+
+  <form class="wb-card" method="post" action="{{ lang_url('/profile') }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+    <div class="wb-profile-picture">
+      {% if picture_url %}
+        <img class="wb-profile-picture__img" src="{{ picture_url }}" alt="{{ t('profile.picture.alt') }}" referrerpolicy="no-referrer">
+      {% else %}
+        <span class="wb-profile-picture__placeholder" aria-hidden="true">👤</span>
+      {% endif %}
+      <p class="wb-muted wb-note">{{ t("profile.picture.note") }}</p>
+    </div>
+
+    <label for="display-name">{{ t("profile.display_name_label") }}</label>
+    <input
+      type="text"
+      id="display-name"
+      name="display_name"
+      value="{{ display_name }}"
+      maxlength="200"
+      autocomplete="name"
+      required
+    >
+
+    <label for="short-name">{{ t("profile.short_name_label") }}</label>
+    <input
+      type="text"
+      id="short-name"
+      name="short_name"
+      value="{{ short_name }}"
+      maxlength="100"
+      autocomplete="off"
+      placeholder="{{ t('profile.short_name_placeholder') }}"
+    >
+
+    <label for="communication-language">{{ t("profile.language_label") }}</label>
+    <select id="communication-language" name="communication_language" required>
+      <option value="en" {% if communication_language == "en" %}selected{% endif %}>{{ t("profile.lang.en") }}</option>
+      <option value="es" {% if communication_language == "es" %}selected{% endif %}>{{ t("profile.lang.es") }}</option>
+    </select>
+
+    <button type="submit" class="wb-btn wb-btn--primary">{{- t("profile.save") -}}</button>
+  </form>
+{% endblock %}
