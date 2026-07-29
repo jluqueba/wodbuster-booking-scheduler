@@ -1419,3 +1419,32 @@ button.wb-confirm__cancel:focus-visible,
 .wb-upcoming__item--pending .wb-upcoming__chip {
   margin-left: 0;
 }
+
+/* Profile picture block (User Profile). Small avatar preview above the
+   editable fields; the placeholder is a neutral glyph until a custom
+   upload lands (T-UP-007). */
+.wb-profile-picture {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+.wb-profile-picture__img {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--wb-border);
+}
+.wb-profile-picture__placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  font-size: 2.5rem;
+  background: var(--wb-surface-2, rgba(148, 163, 184, 0.12));
+  border: 2px solid var(--wb-border);
+}

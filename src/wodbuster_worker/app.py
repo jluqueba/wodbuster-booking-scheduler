@@ -48,6 +48,7 @@ from .observability import configure_logging
 from .observability import telemetry as _telemetry
 from .persistence.cookie_store import CookieStore
 from .persistence.engine import get_session
+from .routes.profile import router as profile_router
 from .routes.static_pages import router as static_pages_router
 from .rules.routes import router as rules_router
 from .scheduler.scheduler import (
@@ -402,6 +403,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(vacation_router)
     app.include_router(telegram_router)
     app.include_router(gyms_router)
+    app.include_router(profile_router)
     app.include_router(static_pages_router)
     app.add_api_route("/health", health, methods=["GET"])
     # Static assets (brand CSS, later JS / images). Mounted after

@@ -78,6 +78,11 @@
       >{{ t("nav.telegram") }}</a>
     </li>
     <li>
+      <a href="{{ lang_url('/profile') }}"
+         {% if active_nav == "profile" %}aria-current="page"{% endif %}
+      >{{ t("nav.profile") }}</a>
+    </li>
+    <li>
       <a href="{{ lang_url('/faq') }}"
          {% if active_nav == "faq" %}aria-current="page"{% endif %}
       >{{ t("nav.faq") }}</a>
