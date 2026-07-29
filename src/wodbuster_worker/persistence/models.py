@@ -80,6 +80,9 @@ _ALERT_KINDS = (
     "heartbeat_anomaly",
 )
 _NOTIFICATION_KINDS = ("telegram", "banner")
+# Communication language for the operator (User Profile, ADR-0008). Governs
+# Telegram message rendering and the signed-in web default.
+_LANGUAGES = ("es", "en")
 
 
 class OperatorProfile(Base):
@@ -95,6 +98,17 @@ class OperatorProfile(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Optional shorter label the operator sets; falls back to display_name.
+    short_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Provider avatar URL or a private-blob object path; null renders the
+    # neutral placeholder (User Profile FR-008).
+    profile_picture_ref: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Governs Telegram rendering and the signed-in web default (ADR-0008).
+    communication_language: Mapped[str] = mapped_column(
+        Enum(*_LANGUAGES, name="language_enum", native_enum=True),
+        nullable=False,
+        server_default="en",
+    )
     # Optional until the operator binds Telegram via /start (US-007).
     telegram_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

@@ -38,6 +38,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import DataError
 
 EXPECTED_TABLES: frozenset[str] = frozenset(
     {
@@ -157,6 +158,40 @@ def test_alert_partial_unique_index_present(migrated_engine: Engine) -> None:
     names = {ix["name"] for ix in insp.get_indexes("alert", schema=schema)}
 
     assert "uq_alert_open_gym_account_kind" in names
+
+
+def test_operator_profile_has_profile_columns(migrated_engine: Engine) -> None:
+    """User Profile columns exist with the right defaults and enum guard."""
+    with migrated_engine.begin() as conn:
+        op_id = conn.execute(
+            text("INSERT INTO operator_profile (display_name) VALUES (:n) RETURNING id"),
+            {"n": "Profiled"},
+        ).scalar_one()
+        # communication_language defaults to 'en'; the new columns are null.
+        row = conn.execute(
+            text(
+                "SELECT short_name, profile_picture_ref, communication_language "
+                "FROM operator_profile WHERE id = :id"
+            ),
+            {"id": op_id},
+        ).one()
+    assert row.short_name is None
+    assert row.profile_picture_ref is None
+    assert row.communication_language == "en"
+
+    # 'es' is accepted by the enum.
+    with migrated_engine.begin() as conn:
+        conn.execute(
+            text("UPDATE operator_profile SET communication_language = 'es' WHERE id = :id"),
+            {"id": op_id},
+        )
+
+    # A value outside the enum is rejected by the type.
+    with pytest.raises(DataError), migrated_engine.begin() as conn:
+        conn.execute(
+            text("UPDATE operator_profile SET communication_language = 'fr' WHERE id = :id"),
+            {"id": op_id},
+        )
 
 
 def test_minimal_rows_round_trip_through_every_table(
