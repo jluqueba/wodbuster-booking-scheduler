@@ -15,33 +15,28 @@
     <span class="wb-nav__brand-full">WodBuster Booking Scheduler</span>
     <span class="wb-nav__brand-short">WodBuster</span>
   </a>
+  {% set gnav = gym_nav(request) %}
   <ul class="wb-nav__links">
-    {% set gnav = gym_nav(request) %}
-    {% if gnav.options %}
-      <li class="wb-nav__gym">
-        {% if gnav.options | length == 1 %}
-          <span class="wb-nav__gym-current">{{ t("gym.context.label", name=gnav.options[0].display_name) }}</span>
-        {% else %}
-          <form method="post" action="{{ lang_url('/gyms/select') }}" class="wb-nav__gym-form">
-            <input type="hidden" name="_csrf" value="{{ nav_csrf(request) }}">
-            <input type="hidden" name="next" value="{{ request.url.path }}">
-            <select
-              name="gym_account_id"
-              class="wb-nav__gym-select"
-              aria-label="{{ t('nav.gym_switch') }}"
-              onchange="this.form.submit()"
-            >
-              {% if not gnav.active_id %}
-                <option value="" selected disabled>{{ t("nav.gym_choose") }}</option>
-              {% endif %}
-              {% for o in gnav.options %}
-                <option value="{{ o.id }}" {% if o.id == gnav.active_id %}selected{% endif %}>{{ o.display_name }}</option>
-              {% endfor %}
-            </select>
-          </form>
-        {% endif %}
-      </li>
-    {% endif %}
+    <li class="wb-nav__gym">{%- if gnav.options -%}
+      {% if gnav.options | length == 1 %}
+        <span class="wb-nav__gym-current">{{ t("gym.context.label", name=gnav.options[0].display_name) }}</span>
+      {% else %}
+        <form method="post" action="{{ lang_url('/gyms/select') }}" class="wb-nav__gym-form">
+          <input type="hidden" name="_csrf" value="{{ nav_csrf(request) }}">
+          <input type="hidden" name="next" value="{{ request.url.path }}">
+          <select
+            name="gym_account_id"
+            class="wb-nav__gym-select"
+            aria-label="{{ t('nav.gym_switch') }}"
+            onchange="this.form.submit()"
+          >
+            {% for o in gnav.options %}
+              <option value="{{ o.id }}" {% if o.id == gnav.active_id %}selected{% endif %}>{{ t("gym.context.label", name=o.display_name) }}</option>
+            {% endfor %}
+          </select>
+        </form>
+      {% endif %}
+    {%- endif -%}</li>
     <li>
       <a href="{{ lang_url('/') }}"
          {% if active_nav == "dashboard" %}aria-current="page"{% endif %}
@@ -78,18 +73,39 @@
       >{{ t("nav.telegram") }}</a>
     </li>
     <li>
-      <a href="{{ lang_url('/profile') }}"
-         {% if active_nav == "profile" %}aria-current="page"{% endif %}
-      >{{ t("nav.profile") }}</a>
-    </li>
-    <li>
       <a href="{{ lang_url('/faq') }}"
          {% if active_nav == "faq" %}aria-current="page"{% endif %}
       >{{ t("nav.faq") }}</a>
     </li>
   </ul>
-  <form method="post" action="{{ lang_url('/auth/logout') }}">
-    <input type="hidden" name="_csrf" value="{{ csrf_token | default('') }}">
-    <button type="submit" class="wb-nav__logout">{{- t("nav.logout") -}}</button>
-  </form>
+  {# Account disclosure: avatar trigger opens a Profile + Log out panel.
+     Native disclosure element so it works without JS; static/wb-usermenu.js
+     adds close-on-Escape and close-on-outside-click (WAI-ARIA disclosure
+     pattern). #}
+  {% set nav_u = nav_user(request) %}
+  <details class="wb-usermenu" data-wb-usermenu>
+    <summary class="wb-usermenu__trigger" aria-haspopup="true" aria-label="{{ t('nav.account') }}">
+      <span class="wb-usermenu__avatar">
+        {% if nav_u and nav_u.picture_url %}
+          <img src="{{ nav_u.picture_url }}" alt="" referrerpolicy="no-referrer">
+        {% else %}
+          <span aria-hidden="true">👤</span>
+        {% endif %}
+      </span>
+      <span class="wb-usermenu__name">{{ nav_u.display_name if nav_u else "" }}</span>
+      <span class="wb-usermenu__caret" aria-hidden="true">▾</span>
+    </summary>
+    <div class="wb-usermenu__panel">
+      {% if nav_u %}
+        <div class="wb-usermenu__header">
+          <span class="wb-usermenu__header-name">{{ nav_u.display_name }}</span>
+        </div>
+      {% endif %}
+      <a href="{{ lang_url('/profile') }}" class="wb-usermenu__item">{{ t("nav.profile") }}</a>
+      <form method="post" action="{{ lang_url('/auth/logout') }}" class="wb-usermenu__logout-form">
+        <input type="hidden" name="_csrf" value="{{ nav_csrf(request) }}">
+        <button type="submit" class="wb-usermenu__item wb-usermenu__item--danger">{{- t("nav.logout") -}}</button>
+      </form>
+    </div>
+  </details>
 </nav>

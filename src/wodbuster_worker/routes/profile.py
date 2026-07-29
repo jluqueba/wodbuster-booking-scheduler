@@ -19,6 +19,7 @@ URL-prefix language like the rest of the app.
 
 from __future__ import annotations
 
+from typing import Any
 from urllib.parse import urlencode
 
 import structlog
@@ -65,6 +66,29 @@ def _picture_url(profile_picture_ref: str | None) -> str | None:
     if profile_picture_ref and profile_picture_ref.startswith("https://"):
         return profile_picture_ref
     return None
+
+
+def nav_user(request: Request) -> dict[str, Any] | None:
+    """Return the signed-in operator's nav identity from the session.
+
+    Reads session-cached fields (seeded at login and refreshed on profile
+    save) so the nav avatar needs no per-request database round trip.
+    Returns ``None`` for an anonymous request.
+    """
+    session = request.session
+    if not isinstance(session.get("operator_id"), int):
+        return None
+    display = str(session.get("display_name") or "")
+    picture_ref = session.get("profile_picture_ref")
+    return {
+        "display_name": display,
+        "picture_url": _picture_url(picture_ref if isinstance(picture_ref, str) else None),
+    }
+
+
+def register_profile_globals(env: Any) -> None:
+    """Attach the nav-user helper to a Jinja2 environment."""
+    env.globals["nav_user"] = nav_user
 
 
 @router.get("", name="profile_view")
@@ -127,8 +151,9 @@ def profile_save(
 
     # Keep the nav/greeting in sync within the same session.
     request.session["display_name"] = name
+    request.session["short_name"] = short
     _log.info("profile.saved", operator_id=operator_id)
     return _redirect_with_flash(t("profile.flash.saved"), kind="info")
 
 
-__all__ = ["router"]
+__all__ = ["nav_user", "register_profile_globals", "router"]

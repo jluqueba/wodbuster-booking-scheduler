@@ -99,7 +99,7 @@ def test_single_gym_shows_label_without_switcher(
     assert "/gyms/select" not in response.text
 
 
-def test_two_gyms_render_switcher_and_prompt(
+def test_two_gyms_render_switcher_with_default_preselected(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],
     postgres_engine: Engine,
@@ -107,6 +107,7 @@ def test_two_gyms_render_switcher_and_prompt(
 ) -> None:
     op_id, subject = seed_operator(display_name="Multi Op")
     _add_gym(postgres_engine, op_id, slug="secondgym", display_name="Second Gym")
+    gym1 = _sole_gym_id(postgres_engine, op_id)
     app = app_factory()
     with _sign_in(app, subject, "Multi Op", monkeypatch) as client:
         response = client.get("/rules")
@@ -114,8 +115,10 @@ def test_two_gyms_render_switcher_and_prompt(
     assert 'name="gym_account_id"' in response.text
     assert "/gyms/select" in response.text
     assert "Second Gym" in response.text
-    # No selection yet -> the choose-a-gym prompt is shown.
-    assert "Choose a gym from the selector above" in response.text
+    # No explicit choice yet -> the first gym (alphabetical) is preselected,
+    # so the switcher is never empty and the choose-a-gym prompt is gone.
+    assert f'value="{gym1}" selected' in response.text
+    assert "Choose a gym from the selector above" not in response.text
 
 
 def test_select_gym_scopes_pages_and_clears_prompt(

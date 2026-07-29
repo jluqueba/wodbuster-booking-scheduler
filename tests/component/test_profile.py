@@ -155,3 +155,23 @@ def test_profile_requires_auth(
     resp = client.get("/profile")
     assert resp.status_code == 302
     assert "/auth/microsoft/login" in resp.headers["location"]
+
+
+def test_nav_renders_account_menu_with_profile_and_logout(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The nav shows the avatar disclosure with Profile + Log out inside."""
+    _, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        resp = client.get("/")
+    assert resp.status_code == 200
+    body = resp.text
+    # The disclosure container and its two actions render.
+    assert "data-wb-usermenu" in body
+    assert "/profile" in body
+    assert "/auth/logout" in body
+    # The signed-in name appears in the trigger/header.
+    assert "Alice" in body

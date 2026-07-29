@@ -75,6 +75,7 @@ EN: dict[str, str] = {
     "modal.confirm": "✅ Confirm",
     # -- profile -----------------------------------------------------
     "nav.profile": "🙋 Profile",
+    "nav.account": "Account menu",
     "profile.title": "Your profile",
     "profile.subtitle": "Manage how you appear and the language of your notifications.",
     "profile.display_name_label": "Display name",
@@ -624,6 +625,7 @@ ES: dict[str, str] = {
     "modal.confirm": "✅ Confirmar",
     # -- profile -----------------------------------------------------
     "nav.profile": "🙋 Perfil",
+    "nav.account": "Menú de cuenta",
     "profile.title": "Tu perfil",
     "profile.subtitle": "Gestiona cómo apareces y el idioma de tus notificaciones.",
     "profile.display_name_label": "Nombre visible",
