@@ -687,6 +687,10 @@ def test_cancel_flips_booking_and_confirms(
 ) -> None:
     """US6.3: /cancel <id> cancels the booking via WodBuster and the
     bot confirms."""
+    # Pin the operator zone to UTC so the seeded UTC ``target_slot`` matches
+    # the WodBuster local wall clock returned by the stub. The timezone
+    # conversion itself is covered in test_history_and_cancel.
+    monkeypatch.setenv("WORKER_TIMEZONE", "UTC")
     op_id, _ = seed_operator()
     _bind_chat(postgres_engine, op_id, "424242")
     booking_id = _seed_booking(

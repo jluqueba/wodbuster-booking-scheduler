@@ -535,12 +535,16 @@ def test_cancel_granted_booking_flips_row_and_enqueues_outbox(
     postgres_engine: Engine,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # WodBuster reports class times in the gym's local wall clock. A 21:30
+    # Europe/Madrid class (CEST, +2 in July) is stored as 19:30 UTC, so the
+    # cancel path must convert target_slot back to local before matching.
+    monkeypatch.setenv("WORKER_TIMEZONE", "Europe/Madrid")
     op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
     booking_id = _seed_booking(
         postgres_engine,
         operator_id=op_id,
         target_class="WOD",
-        target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC),
+        target_slot=datetime(2026, 7, 15, 19, 30, tzinfo=UTC),
     )
 
     fake_client = _FakeWodBusterClient(
