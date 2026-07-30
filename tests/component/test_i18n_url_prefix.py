@@ -149,6 +149,77 @@ def test_english_dashboard_nav_has_no_prefix(
     assert "Rules" in body
 
 
+def test_signed_in_spanish_user_renders_spanish_without_prefix(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR-0008: a signed-in Spanish user renders Spanish at the prefix-free root."""
+    del postgres_engine
+    _, subject = seed_operator(display_name="Sofia")
+    app = app_factory()
+    with _sign_in(app, subject, "Sofia", monkeypatch) as client:
+        csrf = client.cookies["wodbuster_csrf"]
+        saved = client.post(
+            "/profile",
+            data={
+                "display_name": "Sofia",
+                "short_name": "",
+                "communication_language": "es",
+                "_csrf": csrf,
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert saved.status_code == 303
+        resp = client.get("/")
+
+    # Stored language renders in place (no redirect) and links carry /es.
+    assert resp.status_code == 200
+    assert 'href="/es/rules"' in resp.text
+    assert "Reglas" in resp.text
+    assert "Cerrar sesión" in resp.text
+    assert "Log out" not in resp.text
+
+
+def test_switching_back_to_english_from_es_url_drops_the_prefix(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Saving English while browsing under /es must redirect prefix-free.
+
+    Regression: the redirect used the request URL language (es) instead
+    of the just-saved one, pinning the site to Spanish via the /es prefix.
+    """
+    del postgres_engine
+    _, subject = seed_operator(display_name="Leo")
+    app = app_factory()
+    with _sign_in(app, subject, "Leo", monkeypatch) as client:
+        csrf = client.cookies["wodbuster_csrf"]
+        # Save English from the Spanish-prefixed profile URL.
+        saved = client.post(
+            "/es/profile",
+            data={
+                "display_name": "Leo",
+                "short_name": "",
+                "communication_language": "en",
+                "_csrf": csrf,
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert saved.status_code == 303
+        # Redirect lands on the prefix-free profile, not /es/profile.
+        assert saved.headers["location"].startswith("/profile?")
+        resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert 'href="/rules"' in resp.text
+    assert 'href="/es/rules"' not in resp.text
+    assert "Rules" in resp.text
+
+
 def test_language_picker_removed_from_nav(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],

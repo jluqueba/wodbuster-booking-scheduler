@@ -30,7 +30,7 @@ from fastapi.templating import Jinja2Templates
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
 from ..gyms.context import get_gym_nav
-from ..i18n import lang_url, t
+from ..i18n import lang_url, set_language, t
 from ..persistence.engine import get_session
 from ..persistence.models import OperatorProfile
 from ..wodbuster_client.parsers import wodbuster_avatar_url
@@ -148,9 +148,15 @@ def profile_save(
         profile.communication_language = communication_language
         session.commit()
 
-    # Keep the nav/greeting in sync within the same session.
+    # Keep the nav/greeting and the middleware language in sync within
+    # the same session (ADR-0008: refresh-on-edit, no DB on the hot path).
     request.session["display_name"] = name
     request.session["short_name"] = short
+    request.session["lang"] = communication_language
+    # Redirect in the just-saved language so the flash text and the URL
+    # prefix land the user on the new language instead of the old one
+    # carried by the current (prefixed) request URL.
+    set_language(communication_language)
     _log.info("profile.saved", operator_id=operator_id)
     return _redirect_with_flash(t("profile.flash.saved"), kind="info")
 
