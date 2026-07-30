@@ -571,6 +571,45 @@ EN: dict[str, str] = {
         "Temporary Telegram error: {reason}. Try again in a moment."
     ),
     "flash.language.updated": "Language updated.",
+    # -- telegram message bodies (rendered at send time in the
+    #    recipient's language; every message carries the gym name and,
+    #    when it references a booking, its #id, with one date format) --
+    "tg.booking.granted": "\u2705 [{gym}] Booked #{id}: {klass} \u2014 {when}.",
+    "tg.booking.full": (
+        "\u26a0\ufe0f [{gym}] Couldn't book #{id}: {klass} \u2014 {when}. Class was full."
+    ),
+    "tg.booking.class_not_visible": (
+        "\u26a0\ufe0f [{gym}] Couldn't book #{id}: {klass} \u2014 {when}. "
+        "Class never appeared on the schedule."
+    ),
+    "tg.booking.cookie_invalid": (
+        "\U0001f512 [{gym}] Booking #{id} skipped: {klass} \u2014 {when}. "
+        "WodBuster cookie is invalid or missing \u2014 paste a fresh one to resume."
+    ),
+    "tg.booking.upstream_unavailable": (
+        "\u26a0\ufe0f [{gym}] Booking #{id} failed: {klass} \u2014 {when}. "
+        "WodBuster response was unexpected; check the worker logs."
+    ),
+    "tg.booking.skipped": (
+        "\U0001f3d6\ufe0f [{gym}] Booking #{id} skipped: {klass} \u2014 {when}. "
+        "Vacation mode is on for this date."
+    ),
+    "tg.booking.cancelled": "\U0001f6ab [{gym}] Cancelled #{id}: {klass} \u2014 {when}.",
+    "tg.booking.unknown": ("\u2139\ufe0f [{gym}] Booking #{id}: {klass} \u2014 {when} ({status})."),
+    "tg.alert.cookie_expiring": (
+        "\u23f0 [{gym}] WodBuster cookie expires before the next booking window "
+        "({when}). Refresh it to keep bookings running."
+    ),
+    "tg.alert.cookie_invalid": (
+        "\U0001f512 [{gym}] WodBuster cookie was rejected. Bookings are paused "
+        "until you paste a fresh cookie."
+    ),
+    "tg.alert.anomaly.one": (
+        "\u2757 [{gym}] Anomaly: no outcome recorded for {klass} \u2014 {when}. Check the worker."
+    ),
+    "tg.alert.anomaly.many": (
+        "\u2757 [{gym}] Anomaly: {count} scheduled bookings produced no outcome. Check the worker."
+    ),
 }
 
 
@@ -1147,6 +1186,49 @@ ES: dict[str, str] = {
         "Error temporal de Telegram: {reason}. Inténtalo de nuevo en un momento."
     ),
     "flash.language.updated": "Idioma actualizado.",
+    # -- cuerpos de mensajes de Telegram (se renderizan al enviar en el
+    #    idioma del destinatario; cada mensaje lleva el nombre del
+    #    gimnasio y, si referencia una reserva, su #id, con un
+    #    \u00fanico formato de fecha) --
+    "tg.booking.granted": "\u2705 [{gym}] Reservado #{id}: {klass} \u2014 {when}.",
+    "tg.booking.full": (
+        "\u26a0\ufe0f [{gym}] No se pudo reservar #{id}: {klass} \u2014 {when}. "
+        "La clase estaba completa."
+    ),
+    "tg.booking.class_not_visible": (
+        "\u26a0\ufe0f [{gym}] No se pudo reservar #{id}: {klass} \u2014 {when}. "
+        "La clase no apareció en el horario."
+    ),
+    "tg.booking.cookie_invalid": (
+        "\U0001f512 [{gym}] Reserva #{id} omitida: {klass} \u2014 {when}. "
+        "La cookie de WodBuster no es válida o falta \u2014 pega una nueva para reanudar."
+    ),
+    "tg.booking.upstream_unavailable": (
+        "\u26a0\ufe0f [{gym}] Reserva #{id} fallida: {klass} \u2014 {when}. "
+        "Respuesta inesperada de WodBuster; revisa los registros del worker."
+    ),
+    "tg.booking.skipped": (
+        "\U0001f3d6\ufe0f [{gym}] Reserva #{id} omitida: {klass} \u2014 {when}. "
+        "El modo vacaciones está activo para esta fecha."
+    ),
+    "tg.booking.cancelled": "\U0001f6ab [{gym}] Cancelada #{id}: {klass} \u2014 {when}.",
+    "tg.booking.unknown": ("\u2139\ufe0f [{gym}] Reserva #{id}: {klass} \u2014 {when} ({status})."),
+    "tg.alert.cookie_expiring": (
+        "\u23f0 [{gym}] La cookie de WodBuster caduca antes de la próxima ventana "
+        "de reserva ({when}). Renuévala para que las reservas sigan funcionando."
+    ),
+    "tg.alert.cookie_invalid": (
+        "\U0001f512 [{gym}] WodBuster rechazó la cookie. Las reservas están en "
+        "pausa hasta que pegues una cookie nueva."
+    ),
+    "tg.alert.anomaly.one": (
+        "\u2757 [{gym}] Anomalía: no se registró resultado para {klass} \u2014 "
+        "{when}. Revisa el worker."
+    ),
+    "tg.alert.anomaly.many": (
+        "\u2757 [{gym}] Anomalía: {count} reservas programadas no produjeron "
+        "resultado. Revisa el worker."
+    ),
 }
 
 

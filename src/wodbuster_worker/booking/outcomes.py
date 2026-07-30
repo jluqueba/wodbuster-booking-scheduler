@@ -97,6 +97,8 @@ def persist_outcome(
         gym_account_id=gym_account_id,
         outcome_id=int(outcome.id),
         terminal_status=terminal_status,
+        target_class=target_class,
+        target_slot=target_slot,
         text=telegram_text,
         now=_now,
     )
@@ -113,6 +115,8 @@ def _enqueue_outbox_rows(
     gym_account_id: int,
     outcome_id: int,
     terminal_status: str,
+    target_class: str,
+    target_slot: datetime,
     text: str,
     now: datetime,
 ) -> None:
@@ -123,11 +127,17 @@ def _enqueue_outbox_rows(
     row is skipped when the user has not registered a chat id (US-007
     wires that later); a row with an empty target would only churn the
     dispatcher until it exhausted retries.
+
+    ``class_type`` and ``target_slot`` are stored structured so the
+    dispatcher can render the Telegram body in the recipient's language
+    at send time (ADR-0008); ``text`` is kept as a pre-rendered fallback.
     """
     payload: dict[str, Any] = {
         "kind": "booking_result",
         "terminal_status": terminal_status,
         "outcome_id": outcome_id,
+        "class_type": target_class,
+        "target_slot": target_slot.astimezone(UTC).isoformat(),
         "text": text,
     }
 
