@@ -121,6 +121,25 @@ def t(key: str, **format_args: Any) -> str:
     return value
 
 
+def t_lang(lang: str, key: str, **format_args: Any) -> str:
+    """Localise ``key`` in an explicit ``lang`` without reading the contextvar.
+
+    For rendering outside a web request (Telegram dispatch, bot
+    replies) where the language is the recipient's stored preference
+    rather than the request URL. Same fallback chain as :func:`t`.
+    """
+    catalog = CATALOGS.get(normalize_language(lang)) or CATALOGS[DEFAULT_LANG]
+    value = catalog.get(key)
+    if value is None:
+        value = CATALOGS[DEFAULT_LANG].get(key, key)
+    if format_args:
+        try:
+            return value.format(**format_args)
+        except (KeyError, IndexError):
+            return value
+    return value
+
+
 def register_jinja_globals(env: Any) -> None:
     """Attach the i18n helpers to a Jinja2 environment.
 
@@ -150,4 +169,5 @@ __all__ = [
     "register_jinja_globals",
     "set_language",
     "t",
+    "t_lang",
 ]

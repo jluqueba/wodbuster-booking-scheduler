@@ -43,8 +43,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..observability import telemetry
-from ..persistence.models import NotificationOutbox, OperatorProfile
-from . import telegram
+from ..persistence.models import GymAccount, NotificationOutbox, OperatorProfile
+from . import messages, telegram
 
 _log = structlog.get_logger(__name__)
 
@@ -181,12 +181,34 @@ class NotificationDispatcher:
             raise telegram.TransientTelegramError("bot token not configured")
 
         chat_id = self._resolve_chat_id(session, row)
-        text = _render_telegram_text(row.payload)
+        text = self._render_body(session, row)
         self._telegram_sender(
             bot_token=self._bot_token,
             chat_id=chat_id,
             text=text,
         )
+
+    def _render_body(self, session: Session, row: NotificationOutbox) -> str:
+        """Render the Telegram body in the recipient's language (ADR-0008).
+
+        The language is the recipient operator's stored
+        ``communication_language`` and the gym name comes from the
+        row's ``gym_account_id`` so every message is uniform (one date
+        format, the gym name, and the booking ``#id`` when relevant).
+        Falls back to any pre-rendered ``text`` for unknown kinds.
+        """
+        operator = session.get(OperatorProfile, row.user_id)
+        lang = (operator.communication_language if operator else None) or "en"
+        body = messages.render(row.payload, lang=lang, gym_name=self._gym_name(session, row))
+        if body:
+            return body
+        return _render_telegram_text(row.payload)
+
+    def _gym_name(self, session: Session, row: NotificationOutbox) -> str:
+        if row.gym_account_id is None:
+            return ""
+        gym = session.get(GymAccount, row.gym_account_id)
+        return gym.display_name if gym and gym.display_name else ""
 
     def _resolve_chat_id(self, session: Session, row: NotificationOutbox) -> str:
         """Return the chat id to send to.

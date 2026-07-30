@@ -162,7 +162,7 @@ def test_telegram_row_marks_dispatched_and_calls_sender_once(
     assert call["bot_token"] == "secret"
     assert call["chat_id"] == "tg-1"
     # The rendered text mentions the alert kind so it is human-readable.
-    assert "expiring" in call["text"].lower()
+    assert "expires before the next booking window" in call["text"].lower()
 
 
 def test_banner_row_marks_dispatched_without_invoking_sender(
@@ -207,14 +207,26 @@ def test_tick_processes_rows_in_id_order(postgres_engine: Engine, session_factor
         operator_id=op_id,
         kind="telegram",
         target="tg-1",
-        payload={"kind": "cookie_expiring", "next_window_at": "first"},
+        payload={
+            "kind": "booking_result",
+            "terminal_status": "granted",
+            "outcome_id": 101,
+            "class_type": "WOD",
+            "target_slot": "2026-07-10T18:30+00:00",
+        },
     )
     id_second = _seed_outbox(
         postgres_engine,
         operator_id=op_id,
         kind="telegram",
         target="tg-1",
-        payload={"kind": "cookie_expiring", "next_window_at": "second"},
+        payload={
+            "kind": "booking_result",
+            "terminal_status": "granted",
+            "outcome_id": 102,
+            "class_type": "WOD",
+            "target_slot": "2026-07-10T18:30+00:00",
+        },
     )
     sender = _RecordingSender(script=[None, None])
     dispatcher = NotificationDispatcher(
@@ -225,8 +237,67 @@ def test_tick_processes_rows_in_id_order(postgres_engine: Engine, session_factor
 
     assert id_first < id_second
     assert len(sender.calls) == 2
-    assert "first" in sender.calls[0]["text"]
-    assert "second" in sender.calls[1]["text"]
+    assert "#101" in sender.calls[0]["text"]
+    assert "#102" in sender.calls[1]["text"]
+
+
+def test_telegram_body_uses_recipient_language_and_gym_name(
+    postgres_engine: Engine, session_factory
+) -> None:
+    with postgres_engine.begin() as conn:
+        op_id = int(
+            conn.execute(
+                text(
+                    "INSERT INTO operator_profile "
+                    "(display_name, telegram_chat_id, communication_language) "
+                    "VALUES ('Sofia', 'tg-es', 'es') RETURNING id"
+                )
+            ).scalar_one()
+        )
+        gym_id = int(
+            conn.execute(
+                text(
+                    "INSERT INTO gym_account (user_id, gym_slug, display_name, idu) "
+                    "VALUES (:op, 'antwork', 'Ant Work', 'idu-1') RETURNING id"
+                ),
+                {"op": op_id},
+            ).scalar_one()
+        )
+        row_id = int(
+            conn.execute(
+                text(
+                    "INSERT INTO notification_outbox "
+                    "(user_id, gym_account_id, kind, target, payload) "
+                    "VALUES (:op, :gym, 'telegram', 'tg-es', CAST(:p AS jsonb)) RETURNING id"
+                ),
+                {
+                    "op": op_id,
+                    "gym": gym_id,
+                    "p": _to_json(
+                        {
+                            "kind": "booking_result",
+                            "terminal_status": "granted",
+                            "outcome_id": 55,
+                            "class_type": "WOD",
+                            "target_slot": "2026-07-10T18:30+00:00",
+                        }
+                    ),
+                },
+            ).scalar_one()
+        )
+    sender = _RecordingSender()
+    dispatcher = NotificationDispatcher(
+        bot_token="secret", session_factory=session_factory, telegram_sender=sender
+    )
+
+    dispatcher.tick()
+
+    body = sender.calls[0]["text"]
+    assert "[Ant Work]" in body  # gym name resolved from gym_account_id
+    assert "#55" in body  # referenced booking id
+    assert "Reservado" in body  # rendered in the recipient's stored language (es)
+    row = _fetch_row(session_factory, row_id)
+    assert row.dispatched_at is not None
 
 
 # --- Failure modes -----------------------------------------------------

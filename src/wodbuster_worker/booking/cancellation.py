@@ -224,6 +224,8 @@ def _enqueue_cancel_outbox(
         "kind": "booking_result",
         "terminal_status": "cancelled",
         "outcome_id": int(booking.id),
+        "class_type": booking.target_class,
+        "target_slot": booking.target_slot.astimezone(UTC).isoformat(),
         "text": text,
     }
     session.add(
