@@ -43,6 +43,15 @@ def session_factory(postgres_engine: Engine) -> sessionmaker[Session]:
     )
 
 
+@pytest.fixture(autouse=True)
+def _utc_worker_timezone(monkeypatch: pytest.MonkeyPatch) -> None:
+    # These tests seed ``target_slot`` values in UTC and expect the stub's
+    # ``HoraComienzo`` (a local wall clock) to match. Pin the operator zone
+    # to UTC so the two are directly comparable; the timezone conversion in
+    # cancellation is covered explicitly in test_history_and_cancel.
+    monkeypatch.setenv("WORKER_TIMEZONE", "UTC")
+
+
 # ---------------------------------------------------------------------------
 # Test doubles
 # ---------------------------------------------------------------------------

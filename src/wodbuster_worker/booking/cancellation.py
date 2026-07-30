@@ -258,7 +258,14 @@ def _midnight_utc_ticks(target_slot: datetime) -> int:
 
 
 def _hhmm_from_datetime(target_slot: datetime) -> str:
-    return target_slot.astimezone(UTC).strftime("%H:%M")
+    # WodBuster's ``HoraComienzo`` and the booked ``rule.class_time`` are
+    # the gym's local wall clock (Europe/Madrid by default). ``target_slot``
+    # is stored in UTC, so render it back in the operator's timezone before
+    # matching — using UTC here shifts the time by the offset (2h in summer)
+    # and the class is never found ("no longer visible").
+    from ..scheduler.rule_jobs import operator_timezone
+
+    return target_slot.astimezone(operator_timezone()).strftime("%H:%M")
 
 
 def _format_slot(target_slot: datetime) -> str:
