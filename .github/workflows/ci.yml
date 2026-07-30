@@ -1,9 +1,10 @@
 name: ci
 
 on:
+  # Runs once per pull request (the branch-protection required check via
+  # `ci-gate`). No `push` trigger on `main`: a merge lands the exact tree the
+  # PR already validated, so re-running CI post-merge would be redundant.
   pull_request:
-  push:
-    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
