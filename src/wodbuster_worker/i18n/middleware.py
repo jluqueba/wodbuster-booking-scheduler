@@ -1,24 +1,27 @@
-"""ASGI middleware that maps URL prefix to request language.
+"""ASGI middleware that resolves the request language (ADR-0008).
 
-Rules:
+Precedence (highest first):
 
-- Paths under ``/es`` (``/es``, ``/es/``, ``/es/rules``) render in
-  Spanish. The middleware strips the prefix from ``scope["path"]``
-  before downstream routers see it, so route handlers stay
-  language agnostic.
-- Any other path renders in English (the default).
-- A GET on ``/`` (no prefix) whose ``Accept-Language`` header
-  prefers a supported non-default language 302-redirects to that
-  language's root (``/es``). This only runs on the exact root and
-  only for browsers that did not already type the English root
-  explicitly, so it never loops.
+- An explicit ``/es`` prefix (``/es``, ``/es/``, ``/es/rules``) renders
+  Spanish for that request. The middleware strips the prefix from
+  ``scope["path"]`` before downstream routers see it, so route handlers
+  stay language agnostic.
+- Otherwise, a signed-in user's stored ``communication_language`` (cached
+  on the session at login, refreshed on profile edit) decides. The value
+  is read only; the URL is never rewritten for a signed-in user.
+- Otherwise (anonymous), a GET on ``/`` whose ``Accept-Language`` header
+  prefers a supported non-default language 302-redirects once to that
+  language's root (``/es``); it never loops.
+- Otherwise English (the default).
 
-The middleware sits inside ``SessionMiddleware`` in
-:func:`app.create_app`, so ``request.session`` is still available
-downstream but is no longer used for language preference.
+Runs inside ``SessionMiddleware`` (see :func:`app.create_app`), so the
+signed-in ``operator_id`` and cached ``lang`` are available on
+``scope["session"]``.
 """
 
 from __future__ import annotations
+
+from collections.abc import MutableMapping
 
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -47,17 +50,22 @@ class LanguageMiddleware:
         method: str = scope.get("method", "GET")
         lang, new_path = _match_prefix(raw_path)
 
-        if lang == DEFAULT_LANG and method == "GET" and raw_path == "/":
-            # Landing hit with no explicit language choice. Steer
-            # browsers that prefer a supported non-default language
-            # over to their prefixed root once, so the URL matches
-            # the language they will actually see.
-            preferred = _preferred_supported_language(Headers(scope=scope))
-            if preferred != DEFAULT_LANG:
-                await _redirect(send, location=f"/{preferred}")
-                return
-
-        set_language(lang)
+        if lang != DEFAULT_LANG:
+            # 1. An explicit URL prefix (``/es``) wins for this request.
+            set_language(lang)
+        elif _is_signed_in(scope.get("session")):
+            # 2. No explicit prefix: a signed-in user's stored language is
+            # authoritative (ADR-0008). Read-only; the URL is never rewritten.
+            set_language(_session_language(scope.get("session")))
+        else:
+            # 3. Anonymous: steer a browser that prefers a supported
+            # non-default language to its prefixed root once, 4. else default.
+            if method == "GET" and raw_path == "/":
+                preferred = _preferred_supported_language(Headers(scope=scope))
+                if preferred != DEFAULT_LANG:
+                    await _redirect(send, location=f"/{preferred}")
+                    return
+            set_language(DEFAULT_LANG)
 
         if new_path != raw_path:
             # Rewrite the scope so downstream routing matches the
@@ -67,6 +75,22 @@ class LanguageMiddleware:
             scope["raw_path"] = new_path.encode("utf-8")
 
         await self.app(scope, receive, send)
+
+
+def _is_signed_in(session: object) -> bool:
+    """True when the ASGI session carries an authenticated ``operator_id``."""
+    return isinstance(session, MutableMapping) and isinstance(session.get("operator_id"), int)
+
+
+def _session_language(session: object) -> str:
+    """Return the signed-in user's cached language (validated enum) or default.
+
+    The value is seeded at login and refreshed on profile-language edit, so
+    the hot path never hits the database. Anything not in
+    :data:`SUPPORTED_LANGUAGES` collapses to :data:`DEFAULT_LANG` (SEC-009).
+    """
+    lang = session.get("lang") if isinstance(session, MutableMapping) else None
+    return lang if isinstance(lang, str) and lang in SUPPORTED_LANGUAGES else DEFAULT_LANG
 
 
 def _match_prefix(path: str) -> tuple[str, str]:
