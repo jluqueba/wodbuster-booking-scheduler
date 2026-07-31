@@ -530,6 +530,40 @@ def test_last_reports_most_recent_outcome(
     assert "#" in body
 
 
+def test_bot_replies_render_in_the_operator_language(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    op_id, _ = seed_operator()
+    with postgres_engine.begin() as conn:
+        conn.execute(
+            text("UPDATE operator_profile SET communication_language = 'es' WHERE id = :id"),
+            {"id": op_id},
+        )
+    _bind_chat(postgres_engine, op_id, "424242")
+    _seed_booking(
+        postgres_engine, operator_id=op_id, target_class="LastWOD", terminal_status="granted"
+    )
+    replies = _capture_replies(monkeypatch)
+
+    app = app_factory()
+    with TestClient(app) as client:
+        _override_after_lifespan(app, bind_store=TelegramBindStore(), bot_token="tok")
+        _post_command(client, chat_id=424242, text_body="/last")
+        _post_command(client, chat_id=424242, text_body="/help")
+
+    last_body = replies[-2]["text"]
+    help_body = replies[-1]["text"]
+    # /last renders the Spanish template, keeping the #id and class.
+    assert "Última reserva" in last_body
+    assert "#" in last_body
+    assert "LastWOD" in last_body
+    # /help renders the Spanish command list.
+    assert "Comandos:" in help_body
+
+
 def test_next_lists_upcoming_granted_booking(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],

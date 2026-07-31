@@ -67,12 +67,12 @@ from ..booking.upcoming import list_upcoming_slots
 from ..gyms.service import gym_client_factory, resolve_gym_client
 from ..heartbeat.alerts import acknowledge_open_cookie_expiring
 from ..heartbeat.next_window import compute_next_booking
-from ..i18n import lang_url, t
+from ..i18n import get_language, lang_url, set_language, t
 from ..persistence.engine import get_session
 from ..persistence.gym_accounts import list_user_gym_accounts
 from ..persistence.models import OperatorProfile
-from ..scheduler.rule_jobs import operator_timezone
 from . import telegram as telegram_sender
+from .messages import format_slot
 from .telegram_bind import TelegramBindStore
 
 _log = structlog.get_logger(__name__)
@@ -307,6 +307,8 @@ async def telegram_webhook(
 
 def _handle_command(request: Request, *, chat_id: str, text: str) -> str | None:
     """Dispatch on ``text``. Returns the reply body or ``None``."""
+    # Replies render in the bound operator's language (ADR-0008).
+    set_language(_reply_language(chat_id))
     parts = text.split(maxsplit=1)
     command = parts[0].lower()
     argument = parts[1] if len(parts) > 1 else ""
@@ -329,16 +331,9 @@ def _handle_command(request: Request, *, chat_id: str, text: str) -> str | None:
     if route == "rule_mutation":
         # US5.6 / CC-009: rule create/update/delete is web-UI only.
         # Reject with an explanation and change no state.
-        return (
-            "Rules can't be changed from Telegram. Open the web UI "
-            "(Rules page) to create, edit, or delete a scheduling rule. "
-            "This chat is for status checks and one-off actions only."
-        )
+        return t("tg.cmd.rule_mutation")
     # Any other command: helpful nudge, no state change.
-    return (
-        "Unknown command. Send /help to see what I can do, or /start "
-        "<token> with the token from the web UI to bind this chat."
-    )
+    return t("tg.cmd.unknown")
 
 
 def _route(command: str) -> str:
@@ -388,11 +383,8 @@ _RULE_MUTATION_COMMANDS = frozenset(
 
 # Shared no-data-leak rejection for stateful commands on an unbound
 # chat (FR-031): never surface another operator's data or confirm a
-# chat's binding state beyond "not bound".
-_UNBOUND_REJECTION = (
-    "This chat is not bound. Open the web UI (Telegram page) and click "
-    "'Generate link' to bind it before using this command."
-)
+# chat's binding state beyond "not bound". Rendered via ``t("tg.cmd.unbound")``
+# in the recipient's language at call time.
 
 
 def _operator_for_chat(session: Session, chat_id: str) -> OperatorProfile | None:
@@ -406,87 +398,77 @@ def _operator_for_chat(session: Session, chat_id: str) -> OperatorProfile | None
     ).scalar_one_or_none()
 
 
+def _reply_language(chat_id: str) -> str:
+    """Language for replies to ``chat_id``: the bound operator's, else ``en``."""
+    with get_session() as session:
+        operator = _operator_for_chat(session, chat_id)
+        return (operator.communication_language if operator else None) or "en"
+
+
 def _handle_help() -> str:
     """TG.4: list the supported commands."""
-    return (
-        "Commands:\n"
-        "/status — is this chat bound?\n"
-        "/next — next scheduled booking and upcoming slots (with ids)\n"
-        "/last — most recent booking outcome\n"
-        "/cancel <booking-id> — cancel a booking\n"
-        "/ack — acknowledge the cookie-expiring warning\n"
-        "Rules are managed in the web UI, not here."
-    )
+    return t("tg.cmd.help")
 
 
 def _handle_start(request: Request, *, chat_id: str, token: str) -> str:
     if not token:
-        return (
-            "Missing token. Open the web UI (Telegram page) and click "
-            "'Generate link' to get a one-shot binding URL."
-        )
+        return t("tg.cmd.start.missing_token")
     store = _bind_store(request)
     operator_id = store.consume(token)
     if operator_id is None:
-        return (
-            "Token invalid or expired. Open the web UI (Telegram page) "
-            "and generate a fresh link — tokens live 10 minutes and "
-            "can only be used once."
-        )
+        return t("tg.cmd.start.invalid_token")
     with get_session() as session:
         operator = session.get(OperatorProfile, operator_id)
         if operator is None:
-            return "Operator profile not found. Contact the deployment owner."
+            return t("tg.cmd.start.no_operator")
         operator.telegram_chat_id = chat_id
+        # Now that the chat is bound, answer in the operator's language.
+        set_language(operator.communication_language or "en")
         session.commit()
     _log.info(
         "telegram.bind.ok",
         operator_id=operator_id,
         chat_id=chat_id,
     )
-    return (
-        "Bound. This chat will now receive booking outcomes, "
-        "cookie-expiring warnings, and anomaly alerts."
-    )
+    return t("tg.cmd.start.bound")
 
 
 def _render_status(request: Request, *, chat_id: str) -> str:
     with get_session() as session:
         row = _operator_for_chat(session, chat_id)
     if row is None:
-        return (
-            "This chat is not bound. Open the web UI (Telegram page) "
-            "and click 'Generate link' to bind."
-        )
-    return (
-        f"Bound to operator {row.display_name or f'#{row.id}'}. "
-        "You will receive booking outcomes and alerts here."
-    )
+        return t("tg.cmd.status.unbound")
+    return t("tg.cmd.status.bound", operator=row.display_name or f"#{row.id}")
 
 
-def _next_section_lines(next_booking: Any, upcoming: Any, tz: Any) -> list[str]:
+def _next_section_lines(next_booking: Any, upcoming: Any) -> list[str]:
     """Render one gym's next-booking + upcoming-slots block (may be empty)."""
+    lang = get_language()
     lines: list[str] = []
     if next_booking is not None:
-        slot_local = next_booking.target_slot.astimezone(tz)
-        opens_local = next_booking.window_open.astimezone(tz)
         lines.append(
-            "Next booking: "
-            f"{slot_local:%a %d %b at %H:%M} "
-            f"(window opens {opens_local:%a %d %b at %H:%M})."
+            t(
+                "tg.cmd.next.line",
+                slot=format_slot(next_booking.target_slot, lang),
+                opens=format_slot(next_booking.window_open, lang),
+            )
         )
     if upcoming:
-        lines.append("Upcoming slots:")
+        lines.append(t("tg.cmd.next.upcoming_header"))
         for slot in upcoming[:5]:
-            slot_local = slot.target_slot.astimezone(tz)
+            when = format_slot(slot.target_slot, lang)
             if slot.kind == "granted":
                 # Granted slots are cancellable; surface the id /cancel needs.
                 lines.append(
-                    f"- #{slot.booking_id} {slot_local:%a %d %b at %H:%M} "
-                    f"{slot.target_class} (granted)"
+                    t(
+                        "tg.cmd.next.slot_granted",
+                        id=slot.booking_id,
+                        when=when,
+                        klass=slot.target_class,
+                    )
                 )
             else:
-                lines.append(f"- {slot_local:%a %d %b at %H:%M} {slot.target_class} (scheduled)")
+                lines.append(t("tg.cmd.next.slot_scheduled", when=when, klass=slot.target_class))
     return lines
 
 
@@ -497,12 +479,11 @@ def _handle_next(request: Request, *, chat_id: str) -> str:
     sees each gym labelled, since Telegram has no gym switcher.
     """
     now = datetime.now(tz=UTC)
-    tz = operator_timezone()
-    empty = "Nothing scheduled. No active rules have a window on the horizon."
+    empty = t("tg.cmd.next.empty")
     with get_session() as session:
         operator = _operator_for_chat(session, chat_id)
         if operator is None:
-            return _UNBOUND_REJECTION
+            return t("tg.cmd.unbound")
         gyms = list_user_gym_accounts(session, operator.id)
         if not gyms:
             return empty
@@ -512,7 +493,7 @@ def _handle_next(request: Request, *, chat_id: str) -> str:
         for gym in gyms:
             next_booking = compute_next_booking(session, gym.id, now)
             upcoming = list_upcoming_slots(session, gym.id, now=now)
-            lines = _next_section_lines(next_booking, upcoming, tz)
+            lines = _next_section_lines(next_booking, upcoming)
             if lines:
                 any_content = True
                 body = "\n".join(lines)
@@ -526,12 +507,11 @@ def _handle_next(request: Request, *, chat_id: str) -> str:
 
 def _handle_last(request: Request, *, chat_id: str) -> str:
     """TG.3: report the most recent booking outcome, per gym."""
-    tz = operator_timezone()
-    empty = "No bookings yet. Nothing has been attempted for this operator."
+    empty = t("tg.cmd.last.empty")
     with get_session() as session:
         operator = _operator_for_chat(session, chat_id)
         if operator is None:
-            return _UNBOUND_REJECTION
+            return t("tg.cmd.unbound")
         gyms = list_user_gym_accounts(session, operator.id)
         if not gyms:
             return empty
@@ -543,15 +523,17 @@ def _handle_last(request: Request, *, chat_id: str) -> str:
             if recent:
                 any_content = True
                 last = recent[0]
-                slot_local = last.target_slot.astimezone(tz)
-                attempted_local = last.attempted_at.astimezone(tz)
-                body = (
-                    f"Last booking #{last.id}: {last.target_class} on "
-                    f"{slot_local:%a %d %b at %H:%M} — {last.terminal_status} "
-                    f"(attempted {attempted_local:%a %d %b at %H:%M})."
+                lang = get_language()
+                body = t(
+                    "tg.cmd.last.line",
+                    id=last.id,
+                    klass=last.target_class,
+                    when=format_slot(last.target_slot, lang),
+                    status=last.terminal_status,
+                    attempted=format_slot(last.attempted_at, lang),
                 )
             else:
-                body = "No bookings yet."
+                body = t("tg.cmd.last.none")
             blocks.append(f"[{gym.display_name}]\n{body}" if multi else body)
     if not any_content:
         return empty
@@ -562,30 +544,29 @@ def _handle_cancel(request: Request, *, chat_id: str, argument: str) -> str:
     """US6.3 / CC-015: idempotent cancel of a booking by id."""
     booking_id_text = argument.strip()
     if not booking_id_text:
-        return "Usage: /cancel <booking-id>. Find the id in /next, /last, or the web UI."
+        return t("tg.cmd.cancel.usage")
     try:
         booking_id = int(booking_id_text)
     except ValueError:
-        return "Booking id must be a number. Usage: /cancel <booking-id>."
+        return t("tg.cmd.cancel.nan")
 
     factory = gym_client_factory(request.app.state)
     cookie_store = getattr(request.app.state, "cookie_store", None)
     if factory is None or cookie_store is None:
-        return "Cancellation is temporarily unavailable. Try again shortly."
+        return t("tg.cmd.cancel.unavailable")
 
-    tz = operator_timezone()
     with get_session() as session:
         operator = _operator_for_chat(session, chat_id)
         if operator is None:
-            return _UNBOUND_REJECTION
+            return t("tg.cmd.unbound")
         gym_account_id = resolve_owner_gym_account(
             session, user_id=operator.id, booking_id=booking_id
         )
         if gym_account_id is None:
-            return f"Booking #{booking_id} not found for this operator."
+            return t("tg.cmd.cancel.not_found", id=booking_id)
         resolved = resolve_gym_client(factory, session, gym_account_id)
         if resolved is None:
-            return f"Booking #{booking_id} not found for this operator."
+            return t("tg.cmd.cancel.not_found", id=booking_id)
         client, _idu = resolved
         try:
             outcome = cancel_booking(
@@ -596,17 +577,17 @@ def _handle_cancel(request: Request, *, chat_id: str, argument: str) -> str:
                 cookie_store=cookie_store,
             )
         except BookingNotFoundError:
-            return f"Booking #{booking_id} not found for this operator."
+            return t("tg.cmd.cancel.not_found", id=booking_id)
         except BookingAlreadyCancelledError:
             # CC-015: idempotent — no WodBuster call was issued.
-            return f"Booking #{booking_id} is already cancelled. Nothing to do."
+            return t("tg.cmd.cancel.already", id=booking_id)
         except CancellationUpstreamError:
-            return f"Couldn't reach WodBuster to cancel #{booking_id}. Try again in a moment."
+            return t("tg.cmd.cancel.upstream", id=booking_id)
         # Capture display values before commit expires the attributes.
         target_class = outcome.target_class
-        slot_local = outcome.target_slot.astimezone(tz)
+        when = format_slot(outcome.target_slot, get_language())
         session.commit()
-    return f"Cancelled #{booking_id}: {target_class} on {slot_local:%a %d %b at %H:%M}."
+    return t("tg.cmd.cancel.ok", id=booking_id, klass=target_class, when=when)
 
 
 def _handle_ack(request: Request, *, chat_id: str) -> str:
@@ -615,12 +596,12 @@ def _handle_ack(request: Request, *, chat_id: str) -> str:
     with get_session() as session:
         operator = _operator_for_chat(session, chat_id)
         if operator is None:
-            return _UNBOUND_REJECTION
+            return t("tg.cmd.unbound")
         alert_id = acknowledge_open_cookie_expiring(session, operator.id, now=now)
         if alert_id is None:
-            return "No open cookie-expiring warning to acknowledge."
+            return t("tg.cmd.ack.none")
         session.commit()
-    return "Acknowledged. I'll stop nagging about the cookie for this cycle."
+    return t("tg.cmd.ack.ok")
 
 
 def _send_reply(request: Request, *, chat_id: str, text: str) -> None:
