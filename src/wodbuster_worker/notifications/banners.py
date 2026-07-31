@@ -22,7 +22,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..i18n import get_language, t
 from ..persistence.models import Alert, GymAccount
+from .messages import format_slot
 
 
 @dataclass(frozen=True)
@@ -80,47 +82,47 @@ def _to_banner_item(alert: Alert) -> BannerItem:
 def _render(kind: str, payload: dict[str, Any]) -> tuple[str, str, str]:
     """Return ``(heading, body, severity)`` for one alert kind.
 
-    Severity vocabulary: ``warning`` (something to act on) or
-    ``error`` (worker paused / degraded). The design-system CSS in
-    ``brand.css`` styles both.
+    Rendered in the operator's web language (``t``) with one date
+    format (``format_slot``, gym timezone). Severity vocabulary:
+    ``warning`` (something to act on) or ``error`` (worker paused /
+    degraded). The design-system CSS in ``brand.css`` styles both.
     """
     if kind == "cookie_expiring":
-        window = payload.get("next_window_at", "the next window")
         return (
-            "Cookie expiring soon",
-            (
-                "Your WodBuster cookie is projected to expire before "
-                f"{window}. Paste a fresh cookie on the Cookie page to "
-                "keep bookings running."
-            ),
+            t("banner.cookie_expiring.heading"),
+            t("banner.cookie_expiring.body", when=_format_window(payload.get("next_window_at"))),
             "warning",
         )
     if kind == "cookie_invalid":
         return (
-            "Cookie rejected",
-            (
-                "WodBuster rejected the stored cookie. Bookings are "
-                "paused until you paste a fresh one."
-            ),
+            t("banner.cookie_invalid.heading"),
+            t("banner.cookie_invalid.body"),
             "error",
         )
     if kind == "heartbeat_anomaly":
-        window = payload.get("window_close_expected", "the last window")
         return (
-            "Silent-run detected",
-            (
-                "No booking outcome was recorded for the window that "
-                f"should have closed by {window}. Check the worker."
-            ),
+            t("banner.anomaly.heading"),
+            t("banner.anomaly.body"),
             "error",
         )
     # Unknown kind — surface as a generic warning so the operator at
     # least sees that something happened.
     return (
-        f"Alert: {kind}",
-        "See logs for details.",
+        t("banner.unknown.heading", kind=kind),
+        t("banner.unknown.body"),
         "warning",
     )
+
+
+def _format_window(value: Any) -> str:
+    """Localised gym-tz label for an ISO window instant, or a fallback phrase."""
+    if not value:
+        return t("banner.window_fallback")
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return t("banner.window_fallback")
+    return format_slot(parsed, get_language())
 
 
 __all__ = ["BannerItem", "load_banners_for_operator"]

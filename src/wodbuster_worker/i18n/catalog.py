@@ -674,6 +674,29 @@ EN: dict[str, str] = {
         "Unknown command. Send /help to see what I can do, or /start <token> with "
         "the token from the web UI to bind this chat."
     ),
+    "tg.test.message": (
+        "\U0001f9ea Test message from WodBuster Booking Scheduler. "
+        "If you see this, notifications are working."
+    ),
+    # -- dashboard alert banners (rendered server-side in the operator's
+    #    web language; one date format via format_slot, gym timezone) --
+    "banner.aria_label": "System alerts",
+    "banner.window_fallback": "the next window",
+    "banner.cookie_expiring.heading": "Cookie expiring soon",
+    "banner.cookie_expiring.body": (
+        "Your WodBuster cookie is projected to expire before {when}. Paste a fresh "
+        "cookie on the Cookie page to keep bookings running."
+    ),
+    "banner.cookie_invalid.heading": "Cookie rejected",
+    "banner.cookie_invalid.body": (
+        "WodBuster rejected the stored cookie. Bookings are paused until you paste a fresh one."
+    ),
+    "banner.anomaly.heading": "Silent-run detected",
+    "banner.anomaly.body": (
+        "No booking outcome was recorded for a window that should have closed. Check the worker."
+    ),
+    "banner.unknown.heading": "Alert: {kind}",
+    "banner.unknown.body": "See logs for details.",
 }
 
 
@@ -1366,6 +1389,31 @@ ES: dict[str, str] = {
         "Comando desconocido. Envía /help para ver qué puedo hacer, o /start <token> "
         "con el token de la web para vincular este chat."
     ),
+    "tg.test.message": (
+        "\U0001f9ea Mensaje de prueba de WodBuster Booking Scheduler. "
+        "Si ves esto, las notificaciones funcionan."
+    ),
+    # -- banners de alerta del panel (renderizados en el servidor en el
+    #    idioma web del operador; un formato de fecha vía format_slot) --
+    "banner.aria_label": "Alertas del sistema",
+    "banner.window_fallback": "la próxima ventana",
+    "banner.cookie_expiring.heading": "La cookie caduca pronto",
+    "banner.cookie_expiring.body": (
+        "Se prevé que tu cookie de WodBuster caduque antes de {when}. Pega una cookie "
+        "nueva en la página de Cookie para que las reservas sigan funcionando."
+    ),
+    "banner.cookie_invalid.heading": "Cookie rechazada",
+    "banner.cookie_invalid.body": (
+        "WodBuster rechazó la cookie almacenada. Las reservas están en pausa hasta que "
+        "pegues una nueva."
+    ),
+    "banner.anomaly.heading": "Ejecución silenciosa detectada",
+    "banner.anomaly.body": (
+        "No se registró ningún resultado de reserva para una ventana que debería "
+        "haberse cerrado. Revisa el worker."
+    ),
+    "banner.unknown.heading": "Alerta: {kind}",
+    "banner.unknown.body": "Consulta los registros para más detalles.",
 }
 
 
