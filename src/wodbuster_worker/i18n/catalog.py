@@ -610,6 +610,70 @@ EN: dict[str, str] = {
     "tg.alert.anomaly.many": (
         "\u2757 [{gym}] Anomaly: {count} scheduled bookings produced no outcome. Check the worker."
     ),
+    # -- telegram bot command replies (rendered in the bound operator's
+    #    language; same date format, gym name, and #id as the alerts) --
+    "tg.cmd.help": (
+        "Commands:\n"
+        "/status \u2014 is this chat bound?\n"
+        "/next \u2014 next scheduled booking and upcoming slots (with ids)\n"
+        "/last \u2014 most recent booking outcome\n"
+        "/cancel <booking-id> \u2014 cancel a booking\n"
+        "/ack \u2014 acknowledge the cookie-expiring warning\n"
+        "Rules are managed in the web UI, not here."
+    ),
+    "tg.cmd.start.missing_token": (
+        "Missing token. Open the web UI (Telegram page) and click "
+        "'Generate link' to get a one-shot binding URL."
+    ),
+    "tg.cmd.start.invalid_token": (
+        "Token invalid or expired. Open the web UI (Telegram page) and "
+        "generate a fresh link \u2014 tokens live 10 minutes and can only be used once."
+    ),
+    "tg.cmd.start.no_operator": "Operator profile not found. Contact the deployment owner.",
+    "tg.cmd.start.bound": (
+        "Bound. This chat will now receive booking outcomes, cookie-expiring "
+        "warnings, and anomaly alerts."
+    ),
+    "tg.cmd.status.unbound": (
+        "This chat is not bound. Open the web UI (Telegram page) and click 'Generate link' to bind."
+    ),
+    "tg.cmd.status.bound": (
+        "Bound to operator {operator}. You will receive booking outcomes and alerts here."
+    ),
+    "tg.cmd.unbound": (
+        "This chat is not bound. Open the web UI (Telegram page) and click "
+        "'Generate link' to bind it before using this command."
+    ),
+    "tg.cmd.next.empty": "Nothing scheduled. No active rules have a window on the horizon.",
+    "tg.cmd.next.line": "Next booking: {slot} (window opens {opens}).",
+    "tg.cmd.next.upcoming_header": "Upcoming slots:",
+    "tg.cmd.next.slot_granted": "- #{id} {when} {klass} (granted)",
+    "tg.cmd.next.slot_scheduled": "- {when} {klass} (scheduled)",
+    "tg.cmd.last.empty": "No bookings yet. Nothing has been attempted for this operator.",
+    "tg.cmd.last.none": "No bookings yet.",
+    "tg.cmd.last.line": (
+        "Last booking #{id}: {klass} on {when} \u2014 {status} (attempted {attempted})."
+    ),
+    "tg.cmd.cancel.usage": (
+        "Usage: /cancel <booking-id>. Find the id in /next, /last, or the web UI."
+    ),
+    "tg.cmd.cancel.nan": "Booking id must be a number. Usage: /cancel <booking-id>.",
+    "tg.cmd.cancel.unavailable": "Cancellation is temporarily unavailable. Try again shortly.",
+    "tg.cmd.cancel.not_found": "Booking #{id} not found for this operator.",
+    "tg.cmd.cancel.already": "Booking #{id} is already cancelled. Nothing to do.",
+    "tg.cmd.cancel.upstream": "Couldn't reach WodBuster to cancel #{id}. Try again in a moment.",
+    "tg.cmd.cancel.ok": "Cancelled #{id}: {klass} on {when}.",
+    "tg.cmd.ack.none": "No open cookie-expiring warning to acknowledge.",
+    "tg.cmd.ack.ok": "Acknowledged. I'll stop nagging about the cookie for this cycle.",
+    "tg.cmd.rule_mutation": (
+        "Rules can't be changed from Telegram. Open the web UI (Rules page) to "
+        "create, edit, or delete a scheduling rule. This chat is for status checks "
+        "and one-off actions only."
+    ),
+    "tg.cmd.unknown": (
+        "Unknown command. Send /help to see what I can do, or /start <token> with "
+        "the token from the web UI to bind this chat."
+    ),
 }
 
 
@@ -1228,6 +1292,79 @@ ES: dict[str, str] = {
     "tg.alert.anomaly.many": (
         "\u2757 [{gym}] Anomalía: {count} reservas programadas no produjeron "
         "resultado. Revisa el worker."
+    ),
+    # -- respuestas del bot de Telegram (en el idioma del operador
+    #    vinculado; mismo formato de fecha, nombre de gimnasio y #id) --
+    "tg.cmd.help": (
+        "Comandos:\n"
+        "/status \u2014 ¿está vinculado este chat?\n"
+        "/next \u2014 próxima reserva programada y huecos próximos (con ids)\n"
+        "/last \u2014 resultado de la última reserva\n"
+        "/cancel <id-reserva> \u2014 cancelar una reserva\n"
+        "/ack \u2014 confirmar el aviso de cookie a punto de caducar\n"
+        "Las reglas se gestionan en la web, no aquí."
+    ),
+    "tg.cmd.start.missing_token": (
+        "Falta el token. Abre la web (página de Telegram) y pulsa "
+        "'Generar enlace' para obtener una URL de vinculación de un solo uso."
+    ),
+    "tg.cmd.start.invalid_token": (
+        "Token no válido o caducado. Abre la web (página de Telegram) y genera "
+        "un enlace nuevo \u2014 los tokens duran 10 minutos y solo se pueden usar una vez."
+    ),
+    "tg.cmd.start.no_operator": (
+        "No se encontró el perfil de operador. Contacta con el responsable del despliegue."
+    ),
+    "tg.cmd.start.bound": (
+        "Vinculado. Este chat recibirá los resultados de reservas, avisos de cookie "
+        "a punto de caducar y alertas de anomalías."
+    ),
+    "tg.cmd.status.unbound": (
+        "Este chat no está vinculado. Abre la web (página de Telegram) y pulsa "
+        "'Generar enlace' para vincularlo."
+    ),
+    "tg.cmd.status.bound": (
+        "Vinculado al operador {operator}. Recibirás aquí los resultados de reservas y las alertas."
+    ),
+    "tg.cmd.unbound": (
+        "Este chat no está vinculado. Abre la web (página de Telegram) y pulsa "
+        "'Generar enlace' para vincularlo antes de usar este comando."
+    ),
+    "tg.cmd.next.empty": (
+        "Nada programado. Ninguna regla activa tiene una ventana en el horizonte."
+    ),
+    "tg.cmd.next.line": "Próxima reserva: {slot} (la ventana abre {opens}).",
+    "tg.cmd.next.upcoming_header": "Próximos huecos:",
+    "tg.cmd.next.slot_granted": "- #{id} {when} {klass} (concedida)",
+    "tg.cmd.next.slot_scheduled": "- {when} {klass} (programada)",
+    "tg.cmd.last.empty": "Aún no hay reservas. No se ha intentado nada para este operador.",
+    "tg.cmd.last.none": "Aún no hay reservas.",
+    "tg.cmd.last.line": (
+        "Última reserva #{id}: {klass} el {when} \u2014 {status} (intentada {attempted})."
+    ),
+    "tg.cmd.cancel.usage": (
+        "Uso: /cancel <id-reserva>. Encuentra el id en /next, /last o en la web."
+    ),
+    "tg.cmd.cancel.nan": "El id de reserva debe ser un número. Uso: /cancel <id-reserva>.",
+    "tg.cmd.cancel.unavailable": (
+        "La cancelación no está disponible temporalmente. Inténtalo en breve."
+    ),
+    "tg.cmd.cancel.not_found": "Reserva #{id} no encontrada para este operador.",
+    "tg.cmd.cancel.already": "La reserva #{id} ya está cancelada. Nada que hacer.",
+    "tg.cmd.cancel.upstream": (
+        "No se pudo contactar con WodBuster para cancelar #{id}. Inténtalo de nuevo en un momento."
+    ),
+    "tg.cmd.cancel.ok": "Cancelada #{id}: {klass} el {when}.",
+    "tg.cmd.ack.none": "No hay ningún aviso de cookie a punto de caducar que confirmar.",
+    "tg.cmd.ack.ok": "Confirmado. Dejaré de insistir con la cookie este ciclo.",
+    "tg.cmd.rule_mutation": (
+        "Las reglas no se pueden cambiar desde Telegram. Abre la web (página de Reglas) "
+        "para crear, editar o eliminar una regla de programación. Este chat es solo para "
+        "consultar el estado y acciones puntuales."
+    ),
+    "tg.cmd.unknown": (
+        "Comando desconocido. Envía /help para ver qué puedo hacer, o /start <token> "
+        "con el token de la web para vincular este chat."
     ),
 }
 
