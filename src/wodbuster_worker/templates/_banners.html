@@ -12,7 +12,7 @@
    by passing the same variable and including the same partial.
 #}
 {% if banners %}
-  <section class="wb-banner-stack" role="region" aria-label="System alerts">
+  <section class="wb-banner-stack" role="region" aria-label="{{ t('banner.aria_label') }}">
     {% for banner in banners %}
       <article class="wb-banner wb-banner--{{ banner.severity }}"
                data-alert-kind="{{ banner.kind }}">

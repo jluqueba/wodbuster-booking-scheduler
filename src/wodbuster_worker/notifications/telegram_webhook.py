@@ -67,7 +67,7 @@ from ..booking.upcoming import list_upcoming_slots
 from ..gyms.service import gym_client_factory, resolve_gym_client
 from ..heartbeat.alerts import acknowledge_open_cookie_expiring
 from ..heartbeat.next_window import compute_next_booking
-from ..i18n import get_language, lang_url, set_language, t
+from ..i18n import get_language, lang_url, set_language, t, t_lang
 from ..persistence.engine import get_session
 from ..persistence.gym_accounts import list_user_gym_accounts
 from ..persistence.models import OperatorProfile
@@ -227,9 +227,9 @@ def telegram_test(
         telegram_sender.send_message(
             bot_token=bot_token,
             chat_id=chat_id,
-            text=(
-                "🧪 Test message from WodBuster Booking Scheduler. "
-                "If you see this, notifications are working."
+            text=t_lang(
+                (operator.communication_language if operator else None) or "en",
+                "tg.test.message",
             ),
         )
     except telegram_sender.PermanentTelegramError as exc:

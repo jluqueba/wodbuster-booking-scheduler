@@ -116,7 +116,36 @@ def test_dashboard_renders_cookie_expiring_banner(
     assert 'class="wb-banner-stack"' in response.text
     assert 'data-alert-kind="cookie_expiring"' in response.text
     assert "Cookie expiring soon" in response.text
-    assert "2026-07-15T21:30:00+00:00" in response.text
+    # The window instant is formatted in the gym timezone, not a raw ISO string.
+    assert "15 Jul" in response.text
+    assert "2026-07-15T21:30:00+00:00" not in response.text
+
+
+def test_dashboard_banner_renders_in_spanish_under_es_prefix(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    op_id, subject = seed_operator(provider="microsoft", display_name="Ana")
+    _open_alert(
+        postgres_engine,
+        operator_id=op_id,
+        kind="cookie_expiring",
+        payload={
+            "kind": "cookie_expiring",
+            "next_window_at": "2026-07-15T21:30:00+00:00",
+        },
+    )
+    app = app_factory()
+
+    with _sign_in(app, subject, "Ana", monkeypatch) as client:
+        response = client.get("/es")
+
+    assert response.status_code == 200
+    assert 'data-alert-kind="cookie_expiring"' in response.text
+    assert "La cookie caduca pronto" in response.text  # Spanish heading
+    assert "15 jul" in response.text  # Spanish, gym-tz date format
 
 
 def test_closed_alerts_are_not_shown(
