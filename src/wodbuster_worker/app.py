@@ -35,6 +35,7 @@ from .booking.vacation_routes import router as vacation_router
 from .config import Settings, get_settings
 from .cookie.routes import router as cookie_router
 from .gyms.context import active_gym_account_id, register_gym_globals
+from .gyms.discovery import discover_gyms
 from .gyms.routes import router as gyms_router
 from .heartbeat.next_window import compute_next_booking
 from .heartbeat.probe import HeartbeatProbe
@@ -225,6 +226,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.cookie_store = store
     if not hasattr(app.state, "gym_discovery_factory") or app.state.gym_discovery_factory is None:
         app.state.gym_discovery_factory = _default_gym_discovery_factory
+    if not hasattr(app.state, "gym_selector") or app.state.gym_selector is None:
+        app.state.gym_selector = discover_gyms
     if not hasattr(app.state, "heartbeat_probe") or app.state.heartbeat_probe is None:
         app.state.heartbeat_probe = _build_heartbeat_probe(
             settings, app.state.cookie_store, app.state.cookie_validator
@@ -276,7 +279,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # Booking wiring: only when the cookie store is live. Each
             # rule's attempt resolves a per-gym-account client + idu via
             # the executor provider (ADR-0007), so no global gym is
-            # required — a gym account added through the /gyms flow books
+            # required — a gym account discovered from WodBuster books
             # against its own subdomain.
             if app.state.cookie_store is not None:
                 client_factory = getattr(app.state, "booking_client_factory", None)
@@ -355,6 +358,7 @@ def create_app(*, settings: Settings | None = None, secrets: Secrets | None = No
     app.state.cookie_validator = validator
     app.state.cookie_store = store
     app.state.gym_discovery_factory = _default_gym_discovery_factory
+    app.state.gym_selector = discover_gyms
     app.state.heartbeat_probe = _build_heartbeat_probe(effective_settings, store, validator)
     # The scheduler itself is built lazily inside the lifespan hook
     # so tests that construct an app without entering its lifespan

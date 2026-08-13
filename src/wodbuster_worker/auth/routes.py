@@ -31,10 +31,19 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
+from ..gyms.discovery import GymSelectorError
+from ..gyms.service import add_discovered_gym_accounts
 from ..i18n import lang_prefix
+from ..persistence.cookie_store import CookieDecryptError
 from ..persistence.engine import get_session as db_session
-from ..persistence.models import FederatedIdentity, OperatorProfile
+from ..persistence.models import FederatedIdentity, GymAccount, OperatorProfile
+from ..wodbuster_client.client import (
+    WodBusterAuthError,
+    WodBusterProtocolError,
+    WodBusterTransportError,
+)
 from .csrf import CSRF_COOKIE_NAME, issue_csrf_token, verify_csrf
 from .oauth import SUPPORTED_PROVIDERS, extract_identity
 from .session import touch_session
@@ -68,6 +77,57 @@ def _oauth(request: Request) -> OAuth:
 def _reject_unknown_provider(provider: str) -> None:
     if provider not in SUPPORTED_PROVIDERS:
         raise HTTPException(status_code=404, detail="unknown provider")
+
+
+def _refresh_accessible_gyms(request: Request, operator_id: int) -> None:
+    """Discover the gyms this identity can access right after sign-in.
+
+    A single ``.WBAuth`` authenticates every accessible gym, so an existing
+    stored cookie is enough to refresh the list and surface newly accessible
+    gyms in the switcher. Best-effort: a missing cookie, a selector failure,
+    or a gym error must never block the login, so all such failures are
+    logged and swallowed.
+    """
+    cookie_store = getattr(request.app.state, "cookie_store", None)
+    selector = getattr(request.app.state, "gym_selector", None)
+    factory = getattr(request.app.state, "gym_discovery_factory", None)
+    if cookie_store is None or selector is None or factory is None:
+        return
+    try:
+        with db_session() as session:
+            account_ids = session.scalars(
+                select(GymAccount.id)
+                .where(GymAccount.user_id == operator_id)
+                .order_by(GymAccount.id)
+            ).all()
+            cookie_value: str | None = None
+            for account_id in account_ids:
+                try:
+                    cookie_value = cookie_store.load(session, int(account_id))
+                except CookieDecryptError:
+                    continue
+                if cookie_value:
+                    break
+            if not cookie_value:
+                return
+            add_discovered_gym_accounts(
+                session,
+                user_id=operator_id,
+                gyms=selector(cookie_value),
+                cookie_value=cookie_value,
+                cookie_store=cookie_store,
+                client_factory=factory,
+            )
+            session.commit()
+    except (
+        GymSelectorError,
+        WodBusterAuthError,
+        WodBusterProtocolError,
+        WodBusterTransportError,
+        ValueError,
+        SQLAlchemyError,
+    ):
+        log.warning("auth.gym_refresh_failed", operator_id=operator_id)
 
 
 @router.get("/{provider}/login", name="auth_login")
@@ -168,6 +228,10 @@ async def callback(provider: str, request: Request) -> Response:
     request.session["lang"] = stored_lang
     touch_session(request.session)
     csrf_token = issue_csrf_token(request)
+
+    # Refresh the gyms this identity can access so new ones show up in the
+    # switcher. Best-effort: never block or fail sign-in.
+    _refresh_accessible_gyms(request, operator_id)
 
     response = RedirectResponse(url=f"{prefix}/", status_code=302)
     # Non-HttpOnly CSRF cookie so HTMX JS can read it and echo the
