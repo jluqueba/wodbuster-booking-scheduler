@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from wodbuster_worker.config import Settings, is_valid_gym_slug_syntax
+from wodbuster_worker.config import Settings
 
 _ENV_VARS = (
     "WODBUSTER_ENV",
@@ -22,7 +22,6 @@ _ENV_VARS = (
     "POSTGRES_DB",
     "POSTGRES_USER",
     "POSTGRES_PASSWORD",
-    "GYM_ALLOWLIST",
 )
 
 
@@ -100,67 +99,3 @@ def test_prod_mode_constructs_without_touching_keyvault(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="APP_BASE_URL"):
         settings.require_app_base_url()
-
-
-# --- Gym allow-list and slug validation (T001, SEC-001, FR-012) -------------
-
-
-def test_default_allowlist_contains_the_original_gym() -> None:
-    settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    assert settings.known_gym_slugs() == frozenset({"antworktrainingcenter"})
-
-
-def test_allowlist_parses_comma_separated_env_override() -> None:
-    settings = Settings(_env_file=None, gym_allowlist="adwork, antworktrainingcenter , ")  # type: ignore[call-arg]
-    assert settings.known_gym_slugs() == frozenset({"adwork", "antworktrainingcenter"})
-
-
-@pytest.mark.parametrize(
-    "slug",
-    [
-        "antworktrainingcenter",
-        "adwork",
-        "gym-1",
-        "a",
-        "a" * 63,
-    ],
-)
-def test_valid_slug_syntax_accepts_dns_labels(slug: str) -> None:
-    assert is_valid_gym_slug_syntax(slug) is True
-
-
-@pytest.mark.parametrize(
-    "slug",
-    [
-        "evil.com#",
-        "x.wodbuster.com.attacker.com",
-        "gym@evil",
-        "gym/evil",
-        "gym:evil",
-        ".leadingdot",
-        "UPPER",
-        "with space",
-        "trailing-newline\n",
-        "",
-        "a" * 64,
-    ],
-)
-def test_invalid_slug_syntax_rejects_crafted_values(slug: str) -> None:
-    assert is_valid_gym_slug_syntax(slug) is False
-
-
-def test_validate_gym_slug_accepts_known_member() -> None:
-    settings = Settings(_env_file=None, gym_allowlist="adwork,antworktrainingcenter")  # type: ignore[call-arg]
-    assert settings.validate_gym_slug("adwork") == "adwork"
-
-
-def test_validate_gym_slug_rejects_off_allowlist_slug() -> None:
-    settings = Settings(_env_file=None, gym_allowlist="antworktrainingcenter")  # type: ignore[call-arg]
-    with pytest.raises(ValueError, match="allow-list"):
-        settings.validate_gym_slug("adwork")
-
-
-def test_validate_gym_slug_rejects_malformed_before_membership() -> None:
-    settings = Settings(_env_file=None, gym_allowlist="antworktrainingcenter")  # type: ignore[call-arg]
-    with pytest.raises(ValueError, match="syntax"):
-        settings.validate_gym_slug("x.wodbuster.com.attacker.com")

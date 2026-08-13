@@ -30,20 +30,30 @@ from __future__ import annotations
 
 from typing import Annotated
 
+import structlog
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_session
 from ..gyms.context import active_gym_account_id
-from ..heartbeat.alerts import close_open_cookie_expiring
+from ..gyms.discovery import GymSelectorError
+from ..gyms.service import add_discovered_gym_accounts, store_cookie_for_all_gyms
 from ..persistence.cookie_store import CookieDecryptError, CookieStore
 from ..persistence.engine import get_session
-from ..persistence.models import CookieCredential
+from ..persistence.models import CookieCredential, GymAccount
 from ..security.cookie import CookieValidator, Rejected, Unknown, Valid
+from ..wodbuster_client.client import (
+    WodBusterAuthError,
+    WodBusterProtocolError,
+    WodBusterTransportError,
+)
 
 router = APIRouter(tags=["cookie"])
+_log = structlog.get_logger(__name__)
 
 _STATUS_PARTIAL = "cookie/_status.html"
 _PAGE = "cookie/page.html"
@@ -170,51 +180,89 @@ def cookie_page(request: Request, operator_id: int = Depends(require_session)) -
     )
 
 
+def _discover_gyms_best_effort(
+    request: Request, session: Session, operator_id: int, cookie_value: str
+) -> None:
+    """Add any newly accessible gyms in the current transaction.
+
+    Best-effort: a selector or gym failure is logged and swallowed so the
+    cookie is still stored on the gyms already on file. The same ``.WBAuth``
+    authenticates every accessible gym, so discovery reuses the pasted value.
+    """
+    selector = getattr(request.app.state, "gym_selector", None)
+    factory = getattr(request.app.state, "gym_discovery_factory", None)
+    cookie_store = getattr(request.app.state, "cookie_store", None)
+    if selector is None or factory is None or cookie_store is None:
+        return
+    try:
+        add_discovered_gym_accounts(
+            session,
+            user_id=operator_id,
+            gyms=selector(cookie_value),
+            cookie_value=cookie_value,
+            cookie_store=cookie_store,
+            client_factory=factory,
+        )
+    except (
+        GymSelectorError,
+        WodBusterAuthError,
+        WodBusterProtocolError,
+        WodBusterTransportError,
+        ValueError,
+    ):
+        _log.warning("cookie.discover.failed")
+
+
 @router.post("/cookie", name="cookie_paste", dependencies=[Depends(verify_csrf)])
 async def cookie_paste(
     request: Request,
     cookie_value: Annotated[str, Form()] = "",
     operator_id: int = Depends(require_session),
 ) -> Response:
-    """Validate and persist the pasted cookie.
+    """Validate and persist the pasted cookie for every gym.
 
-    Returns the status-card partial with a per-verdict banner. HTMX
-    swaps the ``#cookie-status`` region and the operator sees the new
-    state without a page reload.
+    A single ``.WBAuth`` session authenticates every WodBuster gym the
+    identity can access, so a valid paste is stored on all of the user's
+    gyms and triggers discovery of any new ones. Returns the status-card
+    partial with a per-verdict banner (HTMX swaps ``#cookie-status``).
     """
     validator = _validator(request)
     store = _store(request)
 
     verdict = validator.validate(cookie_value)
 
-    gym_account_id = active_gym_account_id(request)
-    if gym_account_id is None:
-        banner = {
-            "level": "unknown",
-            "message": "⚠️ Add a gym account before storing a cookie.",
-        }
-        return _render_partial(request, None, banner=banner)
-
     if isinstance(verdict, Valid):
         with get_session() as session:
-            store.save(
+            # Store on the gyms already on file first, then discover new ones
+            # (discovery stores their cookie itself), so a gym is never
+            # written twice in the same transaction.
+            store_cookie_for_all_gyms(
                 session,
-                gym_account_id,
-                cookie_value,
-                validated_at=verdict.probed_at,
+                user_id=operator_id,
+                cookie_value=cookie_value,
+                cookie_store=store,
+                now=verdict.probed_at,
             )
-            # Clear-on-refresh (US4.4): a successful paste means the
-            # operator has dealt with the underlying condition; close
-            # any open ``cookie_expiring`` alert in the same
-            # transaction so the banner disappears immediately rather
-            # than at the next heartbeat.
-            close_open_cookie_expiring(session, gym_account_id, now=verdict.probed_at)
+            _discover_gyms_best_effort(request, session, operator_id, cookie_value)
+            first_id = session.scalars(
+                select(GymAccount.id)
+                .where(GymAccount.user_id == operator_id)
+                .order_by(GymAccount.id)
+            ).first()
+            session.commit()
+        if first_id is None:
+            banner = {
+                "level": "unknown",
+                "message": "⚠️ No WodBuster gym is linked to your account yet.",
+            }
+            return _render_partial(request, None, banner=banner)
         banner = {
             "level": "valid",
-            "message": "✅ Cookie validated and stored.",
+            "message": "✅ Cookie validated and stored for all your gyms.",
         }
-        return _render_partial(request, gym_account_id, banner=banner)
+        return _render_partial(request, int(first_id), banner=banner)
 
+    gym_account_id = active_gym_account_id(request)
     if isinstance(verdict, Rejected):
         banner = {
             "level": "rejected",

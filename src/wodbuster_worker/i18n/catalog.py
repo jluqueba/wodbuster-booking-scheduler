@@ -63,14 +63,12 @@ EN: dict[str, str] = {
     "nav.history": "📜 History",
     "nav.vacation": "🏖️ Vacation",
     "nav.cookie": "🍪 Cookie",
-    "nav.gyms": "🏢 Gyms",
     "nav.telegram": "🤖 Telegram",
     "nav.faq": "❓ FAQ",
     "nav.logout": "👋 Log out",
     "nav.gym_switch": "Switch gym",
-    "nav.gym_choose": "— Choose gym —",
     "gym.context.label": "🏋️ {name}",
-    "gym.select.prompt": "Choose a gym from the selector above to manage it.",
+    "gym.select.prompt": "Choose a gym from the selector above to act on it.",
     "modal.cancel": "🚫 Cancel",
     "modal.confirm": "✅ Confirm",
     # -- profile -----------------------------------------------------
@@ -120,11 +118,6 @@ EN: dict[str, str] = {
     "dashboard.cards.vacation.body": (
         "Enable a date range to bulk-cancel granted bookings and pause "
         "automatic booking until you're back."
-    ),
-    "dashboard.cards.gyms.title": "🏢 Gyms",
-    "dashboard.cards.gyms.body": (
-        "Add and manage the WodBuster gyms you book at; refresh each "
-        "gym's cookie or deactivate one without affecting the others."
     ),
     "dashboard.cards.telegram.title": "🤖 Telegram",
     "dashboard.cards.telegram.body": (
@@ -218,6 +211,10 @@ EN: dict[str, str] = {
         "against WodBuster. The worker encrypts it at rest and probes it "
         "hourly."
     ),
+    "cookie.all_gyms_note": (
+        "One cookie covers every gym you can access on WodBuster. Pasting it "
+        "here applies it to all your gyms and refreshes the list automatically."
+    ),
     "cookie.paste.title": "Paste a fresh cookie",
     "cookie.hint": ("Extract it in devtools: Application → Cookies → .wodbuster.com → .WBAuth."),
     "cookie.paste_button": "💾 Validate and save",
@@ -230,48 +227,6 @@ EN: dict[str, str] = {
     "cookie.status.valid": "valid",
     "cookie.status.rejected": "rejected",
     "cookie.status.unknown": "unknown",
-    # -- gyms --------------------------------------------------------
-    "gyms.title": "🏢 Your gyms",
-    "gyms.subtitle": "Add and manage the WodBuster gyms you book at.",
-    "gyms.table.gym": "Gym",
-    "gyms.table.slug": "Slug",
-    "gyms.table.status": "Status",
-    "gyms.table.cookie": "Cookie",
-    "gyms.table.activation": "Activation",
-    "gyms.status.active": "Active",
-    "gyms.status.inactive": "Inactive",
-    "gyms.actions.deactivate": "🚫 Deactivate",
-    "gyms.actions.reactivate": "✅ Reactivate",
-    "gyms.refresh.summary": "Refresh cookie",
-    "gyms.refresh.label": "New .WBAuth cookie for {name}",
-    "gyms.refresh.button": "🔄 Refresh cookie",
-    "gyms.empty": "No gyms yet. Add one below.",
-    "gyms.add.gym_label": "Gym",
-    "gyms.add.display_name_label": "Display name (optional)",
-    "gyms.add.display_name_placeholder": "e.g. Adwork",
-    "gyms.add.cookie_label": ".WBAuth cookie for this gym",
-    "gyms.add.note": (
-        "Paste the .WBAuth cookie value from a signed-in browser session at that gym. "
-        "We validate it and detect your athlete id automatically."
-    ),
-    "gyms.add.button": "➕ Add gym",
-    "gyms.all_added": "You have added every gym on the allow-list.",
-    "gyms.flash.unavailable": "Gym management is temporarily unavailable. Try again shortly.",
-    "gyms.flash.not_allowlisted": "That gym is not on the allow-list.",
-    "gyms.flash.duplicate": "You already added that gym.",
-    "gyms.flash.cookie_rejected": (
-        "That cookie was rejected. Re-copy the .WBAuth value from a signed-in "
-        "browser session and try again."
-    ),
-    "gyms.flash.unreachable": "Could not reach that gym right now. Try again in a minute.",
-    "gyms.flash.added": "Added gym '{slug}'.",
-    "gyms.flash.cookie_blank": "Paste the .WBAuth cookie value before submitting.",
-    "gyms.flash.cookie_refreshed": "Cookie refreshed.",
-    "gyms.flash.gone": "That gym no longer exists.",
-    "gyms.flash.deactivated": (
-        "Gym deactivated. It will not book or probe until you reactivate it."
-    ),
-    "gyms.flash.reactivated": "Gym reactivated.",
     # -- vacation ----------------------------------------------------
     "vacation.eyebrow": "Automation",
     "vacation.title": "🏖️ Vacation mode",
@@ -355,9 +310,9 @@ EN: dict[str, str] = {
     ),
     "landing.cards.gyms.title": "🏢 Multiple gyms",
     "landing.cards.gyms.body": (
-        "Book at more than one WodBuster gym from a single account. Each "
-        "gym has its own login and books independently, so a cookie "
-        "problem at one never affects the others."
+        "Book at more than one WodBuster gym from a single account. Your "
+        "gyms appear automatically and one login covers them all, each "
+        "booking independently."
     ),
     # -- auth --------------------------------------------------------
     "auth.landing.title": "WodBuster Booking Scheduler",
@@ -420,22 +375,15 @@ EN: dict[str, str] = {
     ),
     "faq.q.gyms_multiple": "Can I book at more than one gym?",
     "faq.a.gyms_multiple": (
-        "Yes. The app supports several WodBuster gyms on the same account. Every gym you add "
-        "books, checks its own cookie, and raises its own alerts completely independently, so "
-        "a cookie problem at one gym never stops the others from booking."
+        "Yes. Every WodBuster gym your account can access appears automatically in the gym "
+        "selector, and one cookie authenticates all of them. Each gym still books, checks the "
+        "shared cookie, and raises its own alerts independently."
     ),
-    "faq.q.gyms_add": "How do I add a gym?",
-    "faq.a.gyms_add": (
-        "Open the <a href='{gyms_url}'>Gyms</a> page, choose a gym from the allowed list, and "
-        "paste that gym's <code>.WBAuth</code> cookie. The app validates the cookie against "
-        "that gym and discovers your athlete id automatically; nothing is saved unless both "
-        "steps succeed."
-    ),
-    "faq.q.gyms_deactivate": "How do I stop booking at a gym without losing its history?",
-    "faq.a.gyms_deactivate": (
-        "On the <a href='{gyms_url}'>Gyms</a> page, deactivate the gym. That halts all future "
-        "bookings and cookie checks for it while keeping its past bookings on record. "
-        "Reactivate it whenever you want automation to resume."
+    "faq.q.gyms_appear": "How do gyms get added?",
+    "faq.a.gyms_appear": (
+        "Automatically. When you paste a cookie on the <a href='{cookie_url}'>Cookie</a> page, "
+        "and each time you sign in, the app asks WodBuster which gyms your account can access "
+        "and adds any new ones. Switch between them from the selector in the top navigation."
     ),
     "faq.q.what_is_rule": "What is a rule?",
     "faq.a.what_is_rule": (
@@ -739,14 +687,12 @@ ES: dict[str, str] = {
     "nav.history": "📜 Historial",
     "nav.vacation": "🏖️ Vacaciones",
     "nav.cookie": "🍪 Cookie",
-    "nav.gyms": "🏢 Gimnasios",
     "nav.telegram": "🤖 Telegram",
     "nav.faq": "❓ Ayuda",
     "nav.logout": "👋 Cerrar sesión",
     "nav.gym_switch": "Cambiar gimnasio",
-    "nav.gym_choose": "— Elige gimnasio —",
     "gym.context.label": "🏋️ {name}",
-    "gym.select.prompt": "Elige un gimnasio en el selector de arriba para gestionarlo.",
+    "gym.select.prompt": "Elige un gimnasio en el selector de arriba para actuar sobre él.",
     "modal.cancel": "🚫 Cancelar",
     "modal.confirm": "✅ Confirmar",
     # -- profile -----------------------------------------------------
@@ -801,12 +747,6 @@ ES: dict[str, str] = {
     "dashboard.cards.vacation.body": (
         "Activa un rango de fechas para cancelar en bloque las reservas "
         "concedidas y pausar la reserva automática hasta que vuelvas."
-    ),
-    "dashboard.cards.gyms.title": "🏢 Gimnasios",
-    "dashboard.cards.gyms.body": (
-        "Añade y gestiona los gimnasios de WodBuster en los que reservas; "
-        "actualiza la cookie de cada gimnasio o desactiva uno sin afectar "
-        "a los demás."
     ),
     "dashboard.cards.telegram.title": "🤖 Telegram",
     "dashboard.cards.telegram.body": (
@@ -901,6 +841,11 @@ ES: dict[str, str] = {
         "autenticarse contra WodBuster. Se guarda cifrada y se comprueba "
         "cada hora."
     ),
+    "cookie.all_gyms_note": (
+        "Una sola cookie sirve para todos los gimnasios a los que puedes acceder "
+        "en WodBuster. Al pegarla aquí se aplica a todos tus gimnasios y se "
+        "actualiza la lista automáticamente."
+    ),
     "cookie.paste.title": "Pega una cookie nueva",
     "cookie.hint": ("Cópiala desde devtools: Application → Cookies → .wodbuster.com → .WBAuth."),
     "cookie.paste_button": "💾 Validar y guardar",
@@ -913,53 +858,6 @@ ES: dict[str, str] = {
     "cookie.status.valid": "válida",
     "cookie.status.rejected": "rechazada",
     "cookie.status.unknown": "desconocido",
-    # -- gyms --------------------------------------------------------
-    "gyms.title": "🏢 Tus gimnasios",
-    "gyms.subtitle": "Añade y gestiona los gimnasios de WodBuster en los que reservas.",
-    "gyms.table.gym": "Gimnasio",
-    "gyms.table.slug": "Slug",
-    "gyms.table.status": "Estado",
-    "gyms.table.cookie": "Cookie",
-    "gyms.table.activation": "Activación",
-    "gyms.status.active": "Activo",
-    "gyms.status.inactive": "Inactivo",
-    "gyms.actions.deactivate": "🚫 Desactivar",
-    "gyms.actions.reactivate": "✅ Reactivar",
-    "gyms.refresh.summary": "Actualizar cookie",
-    "gyms.refresh.label": "Nueva cookie .WBAuth para {name}",
-    "gyms.refresh.button": "🔄 Actualizar cookie",
-    "gyms.empty": "Aún no hay gimnasios. Añade uno debajo.",
-    "gyms.add.gym_label": "Gimnasio",
-    "gyms.add.display_name_label": "Nombre para mostrar (opcional)",
-    "gyms.add.display_name_placeholder": "p.ej. Adwork",
-    "gyms.add.cookie_label": "Cookie .WBAuth para este gimnasio",
-    "gyms.add.note": (
-        "Pega el valor de la cookie .WBAuth desde una sesión iniciada en el navegador "
-        "en ese gimnasio. La validamos y detectamos tu identificador de atleta "
-        "automáticamente."
-    ),
-    "gyms.add.button": "➕ Añadir gimnasio",
-    "gyms.all_added": "Ya has añadido todos los gimnasios de la lista permitida.",
-    "gyms.flash.unavailable": (
-        "La gestión de gimnasios no está disponible ahora mismo. Inténtalo de nuevo en un momento."
-    ),
-    "gyms.flash.not_allowlisted": "Ese gimnasio no está en la lista permitida.",
-    "gyms.flash.duplicate": "Ya has añadido ese gimnasio.",
-    "gyms.flash.cookie_rejected": (
-        "La cookie fue rechazada. Vuelve a copiar el valor .WBAuth desde una sesión "
-        "iniciada en el navegador e inténtalo de nuevo."
-    ),
-    "gyms.flash.unreachable": (
-        "No se pudo contactar con ese gimnasio ahora mismo. Inténtalo de nuevo en un minuto."
-    ),
-    "gyms.flash.added": "Gimnasio '{slug}' añadido.",
-    "gyms.flash.cookie_blank": "Pega el valor de la cookie .WBAuth antes de enviar.",
-    "gyms.flash.cookie_refreshed": "Cookie actualizada.",
-    "gyms.flash.gone": "Ese gimnasio ya no existe.",
-    "gyms.flash.deactivated": (
-        "Gimnasio desactivado. No reservará ni comprobará hasta que lo reactives."
-    ),
-    "gyms.flash.reactivated": "Gimnasio reactivado.",
     # -- vacation ----------------------------------------------------
     "vacation.eyebrow": "Automatización",
     "vacation.title": "🏖️ Modo vacaciones",
@@ -1047,9 +945,8 @@ ES: dict[str, str] = {
     "landing.cards.gyms.title": "🏢 Varios gimnasios",
     "landing.cards.gyms.body": (
         "Reserva en más de un gimnasio de WodBuster desde una sola cuenta. "
-        "Cada gimnasio tiene su propio acceso y reserva de forma "
-        "independiente, así que un problema con la cookie de uno nunca "
-        "afecta a los demás."
+        "Tus gimnasios aparecen automáticamente y un solo acceso vale para "
+        "todos, reservando cada uno de forma independiente."
     ),
     # -- auth --------------------------------------------------------
     "auth.landing.title": "WodBuster Booking Scheduler",
@@ -1117,24 +1014,17 @@ ES: dict[str, str] = {
     ),
     "faq.q.gyms_multiple": "¿Puedo reservar en más de un gimnasio?",
     "faq.a.gyms_multiple": (
-        "Sí. La aplicación admite varios gimnasios de WodBuster en la misma cuenta. Cada "
-        "gimnasio que añades reserva, comprueba su propia cookie y genera sus propias alertas "
-        "de forma totalmente independiente, así que un problema de cookie en un gimnasio nunca "
-        "impide reservar en los demás."
+        "Sí. Todos los gimnasios de WodBuster a los que tu cuenta puede acceder aparecen "
+        "automáticamente en el selector de gimnasios, y una sola cookie autentica a todos. "
+        "Cada gimnasio reserva, comprueba la cookie compartida y genera sus propias alertas "
+        "de forma independiente."
     ),
-    "faq.q.gyms_add": "¿Cómo añado un gimnasio?",
-    "faq.a.gyms_add": (
-        "Abre la página de <a href='{gyms_url}'>Gimnasios</a>, elige un gimnasio de la lista "
-        "permitida y pega la cookie <code>.WBAuth</code> de ese gimnasio. La aplicación valida "
-        "la cookie contra ese gimnasio y descubre tu identificador de atleta automáticamente; "
-        "no se guarda nada salvo que ambos pasos tengan éxito."
-    ),
-    "faq.q.gyms_deactivate": "¿Cómo dejo de reservar en un gimnasio sin perder su historial?",
-    "faq.a.gyms_deactivate": (
-        "En la página de <a href='{gyms_url}'>Gimnasios</a>, desactiva el gimnasio. Eso detiene "
-        "todas las reservas futuras y las comprobaciones de cookie de ese gimnasio, pero "
-        "conserva sus reservas pasadas. Reactívalo cuando quieras que la automatización se "
-        "reanude."
+    "faq.q.gyms_appear": "¿Cómo se añaden los gimnasios?",
+    "faq.a.gyms_appear": (
+        "Automáticamente. Al pegar una cookie en la página de <a href='{cookie_url}'>Cookie</a>, "
+        "y cada vez que inicias sesión, la aplicación pregunta a WodBuster a qué gimnasios puede "
+        "acceder tu cuenta y añade los nuevos. Cambia entre ellos desde el selector de la barra "
+        "de navegación."
     ),
     "faq.q.what_is_rule": "¿Qué es una regla?",
     "faq.a.what_is_rule": (

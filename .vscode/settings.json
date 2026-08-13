@@ -1,4 +1,9 @@
 {
+  // Only Python auto-formats on save (via Ruff, below). Everything else
+  // (HTML templates, CSS, Markdown, JSON) is left untouched so a user-level
+  // format-on-save with a different formatter cannot rewrite files the repo
+  // does not format in CI, which would produce spurious diffs on every save.
+  "editor.formatOnSave": false,
   // Python: use ruff for lint + format so the editor agrees with CI.
   // The user-level setting points at `ms-python.black-formatter`
   // (88 columns), which conflicts with this repo's `ruff.toml`

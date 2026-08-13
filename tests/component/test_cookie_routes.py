@@ -174,7 +174,7 @@ def test_post_valid_cookie_persists_and_returns_success_banner(
     assert response.status_code == 200
     body = response.text
     assert "banner banner-valid" in body
-    assert "Cookie validated and stored." in body
+    assert "Cookie validated and stored for all your gyms." in body
     # The Last-probe chip renders green (wb-chip--success) for a valid probe.
     assert "wb-chip--success" in body
     assert validator is not None

@@ -648,9 +648,7 @@ def test_next_aggregates_across_all_gyms_for_multi_gym_operator(
     """A multi-gym operator sees every gym labelled in /next, not just the first."""
     op_id, _ = seed_operator(display_name="First Box")
     _bind_chat(postgres_engine, op_id, "424242")
-    gym_b = _seed_second_gym(
-        postgres_engine, op_id, slug="demo-gym-local", display_name="Second Box"
-    )
+    gym_b = _seed_second_gym(postgres_engine, op_id, slug="elitefitness", display_name="Second Box")
     _seed_booking(
         postgres_engine,
         operator_id=op_id,
@@ -688,9 +686,7 @@ def test_last_reports_most_recent_per_gym_for_multi_gym_operator(
     """A multi-gym operator sees the last booking of every gym in /last."""
     op_id, _ = seed_operator(display_name="First Box")
     _bind_chat(postgres_engine, op_id, "424242")
-    gym_b = _seed_second_gym(
-        postgres_engine, op_id, slug="demo-gym-local", display_name="Second Box"
-    )
+    gym_b = _seed_second_gym(postgres_engine, op_id, slug="elitefitness", display_name="Second Box")
     _seed_booking(postgres_engine, operator_id=op_id, target_class="AlphaWOD")
     _seed_booking_in_gym(
         postgres_engine,
