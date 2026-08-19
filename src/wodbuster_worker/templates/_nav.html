@@ -96,6 +96,9 @@
           <span class="wb-usermenu__header-name">{{ nav_u.display_name }}</span>
         </div>
       {% endif %}
+      {% if request.session.get('is_admin') %}
+        <a href="{{ lang_url('/admin/users') }}" class="wb-usermenu__item">{{ t("nav.admin") }}</a>
+      {% endif %}
       <a href="{{ lang_url('/profile') }}" class="wb-usermenu__item">{{ t("nav.profile") }}</a>
       <form method="post" action="{{ lang_url('/auth/logout') }}" class="wb-usermenu__logout-form">
         <input type="hidden" name="_csrf" value="{{ nav_csrf(request) }}">

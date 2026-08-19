@@ -32,9 +32,7 @@ def upgrade() -> None:
     # ``IF NOT EXISTS`` keeps the migration idempotent — safe to
     # re-apply on a partially-migrated database (e.g. a rolled-back
     # transaction that already committed the enum change).
-    op.execute(
-        "ALTER TYPE booking_terminal_status_enum ADD VALUE IF NOT EXISTS 'skipped'"
-    )
+    op.execute("ALTER TYPE booking_terminal_status_enum ADD VALUE IF NOT EXISTS 'skipped'")
 
 
 def downgrade() -> None:

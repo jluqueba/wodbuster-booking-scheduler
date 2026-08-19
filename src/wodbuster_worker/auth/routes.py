@@ -23,6 +23,7 @@ operator data leaked).
 from __future__ import annotations
 
 import secrets
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -35,17 +36,19 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ..gyms.discovery import GymSelectorError
 from ..gyms.service import add_discovered_gym_accounts
-from ..i18n import lang_prefix
+from ..i18n import lang_prefix, t_lang
+from ..notifications.telegram import TelegramError, send_message
 from ..persistence.cookie_store import CookieDecryptError
 from ..persistence.engine import get_session as db_session
 from ..persistence.models import FederatedIdentity, GymAccount, OperatorProfile
+from ..persistence.users import ban_is_active
 from ..wodbuster_client.client import (
     WodBusterAuthError,
     WodBusterProtocolError,
     WodBusterTransportError,
 )
 from .csrf import CSRF_COOKIE_NAME, issue_csrf_token, verify_csrf
-from .oauth import SUPPORTED_PROVIDERS, extract_identity
+from .oauth import SUPPORTED_PROVIDERS, extract_email, extract_identity
 from .session import touch_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -196,21 +199,35 @@ async def callback(provider: str, request: Request) -> Response:
     except ValueError:
         return _render_denial(request)
 
-    operator_id = _lookup_operator(provider, subject_id)
-    if operator_id is None:
-        # Deny with no state change. The provider is on the allow-list
-        # of *providers*, but this specific identity is not on the
-        # allow-list of *operators*. Do NOT create an operator_profile
-        # here; that is the bootstrap command's job. Log the presented
-        # identity (server-side only; the denial page still leaks
-        # nothing per CC-011) so the operator can seed it via the
-        # bootstrap command.
-        log.warning(
-            "auth.denied.identity_not_allowlisted",
-            provider=provider,
-            subject_id=subject_id,
-        )
-        return _render_denial(request)
+    email = extract_email(user_info)
+    lookup = _lookup_operator(provider, subject_id)
+    if lookup is None:
+        # A new identity: create a pending signup and show the pending page.
+        # The admin approves it before the user gains access (ADR-0010).
+        new_id = _create_pending_signup(provider, subject_id, display_name, email)
+        log.info("auth.signup.pending", provider=provider, operator_id=new_id)
+        _notify_admins_new_request(request, display_name)
+        return _render_pending(request)
+
+    operator_id, status = lookup
+    if status == "rejected":
+        # A rejected user can re-request simply by signing in again: re-open
+        # the request as pending and re-notify the admin (ADR-0010). This makes
+        # a mistaken rejection recoverable instead of locking the user out.
+        _reopen_rejected_request(operator_id)
+        _store_login_email(operator_id, email)
+        log.info("auth.signup.reopened", provider=provider, operator_id=operator_id)
+        _notify_admins_new_request(request, display_name)
+        return _render_pending(request)
+    if status == "pending":
+        _store_login_email(operator_id, email)
+        return _render_pending(request)
+
+    # status == 'active': block a banned user, else capture email and seat.
+    if _operator_is_banned(operator_id):
+        log.info("auth.login.banned", provider=provider, operator_id=operator_id)
+        return _render_banned(request)
+    _store_login_email(operator_id, email)
 
     # Success: rotate the session (mitigate session-fixation), stamp
     # timestamps, and set the CSRF token.
@@ -226,6 +243,9 @@ async def callback(provider: str, request: Request) -> Response:
     # Cache the language so LanguageMiddleware resolves it without a
     # per-request DB round trip (ADR-0008).
     request.session["lang"] = stored_lang
+    # Cache the admin flag so admin-only UI (nav link, banner) renders
+    # without a per-request query (ADR-0010).
+    request.session["is_admin"] = _operator_is_admin(operator_id)
     touch_session(request.session)
     csrf_token = issue_csrf_token(request)
 
@@ -246,6 +266,12 @@ async def callback(provider: str, request: Request) -> Response:
         path="/",
     )
     return response
+
+
+@router.get("/suspended", name="auth_suspended")
+def suspended(request: Request) -> Response:
+    """Public page a banned session is bounced to (ADR-0010)."""
+    return _render_banned(request)
 
 
 @router.post("/logout", name="auth_logout", dependencies=[Depends(verify_csrf)])
@@ -301,6 +327,26 @@ async def _fetch_user_info(
     return dict(info) if info is not None else None
 
 
+def _operator_is_admin(operator_id: int) -> bool:
+    """Return whether the operator has the admin flag (ADR-0010)."""
+    with db_session() as session:
+        flag = session.scalars(
+            select(OperatorProfile.is_admin).where(OperatorProfile.id == operator_id)
+        ).first()
+    return bool(flag)
+
+
+def _store_login_email(operator_id: int, email: str | None) -> None:
+    """Persist the OAuth email on the profile when present and changed."""
+    if not email:
+        return
+    with db_session() as session:
+        profile = session.get(OperatorProfile, operator_id)
+        if profile is not None and profile.email != email:
+            profile.email = email
+            session.commit()
+
+
 def _load_profile_fields(operator_id: int) -> tuple[str, str, str]:
     """Return ``(display_name, short_name, communication_language)``.
 
@@ -319,20 +365,111 @@ def _load_profile_fields(operator_id: int) -> tuple[str, str, str]:
         )
 
 
-def _lookup_operator(provider: str, subject_id: str) -> int | None:
-    """Return the ``operator_id`` bound to ``(provider, subject_id)``.
+def _lookup_operator(provider: str, subject_id: str) -> tuple[int, str] | None:
+    """Return ``(operator_id, status)`` bound to ``(provider, subject_id)``.
 
-    Returns ``None`` when the tuple is absent from
-    ``federated_identity``, which the caller treats as a hard deny
-    without side effects.
+    ``None`` means the identity is unknown, which the caller treats as a
+    new signup (a pending profile) rather than a denial (ADR-0010).
     """
     with db_session() as session:
-        stmt = select(FederatedIdentity.operator_id).where(
-            FederatedIdentity.provider == provider,
-            FederatedIdentity.subject_id == subject_id,
+        stmt = (
+            select(FederatedIdentity.operator_id, OperatorProfile.status)
+            .join(OperatorProfile, OperatorProfile.id == FederatedIdentity.operator_id)
+            .where(
+                FederatedIdentity.provider == provider,
+                FederatedIdentity.subject_id == subject_id,
+            )
         )
-        result = session.execute(stmt).scalar_one_or_none()
-    return int(result) if result is not None else None
+        row = session.execute(stmt).first()
+    return (int(row[0]), str(row[1])) if row is not None else None
+
+
+def _create_pending_signup(
+    provider: str, subject_id: str, display_name: str, email: str | None
+) -> int:
+    """Create a pending profile + federated identity for a new signup.
+
+    Returns the new ``operator_id``. Only reached when the identity is
+    unknown, so the ``(provider, subject_id)`` unique key is not violated.
+    """
+    with db_session() as session:
+        profile = OperatorProfile(
+            display_name=display_name or subject_id,
+            email=email,
+            status="pending",
+        )
+        session.add(profile)
+        session.flush()
+        session.add(
+            FederatedIdentity(
+                operator_id=int(profile.id),
+                provider=provider,
+                subject_id=subject_id,
+                display_name=display_name or None,
+            )
+        )
+        session.commit()
+        return int(profile.id)
+
+
+def _notify_admins_new_request(request: Request, display_name: str) -> None:
+    """Best-effort Telegram ping to bound admins about a new signup (ADR-0010).
+
+    Sends to every admin who has bound Telegram, rendered in that admin's
+    language. Any send failure is logged and swallowed so signup never fails.
+    """
+    bot_token = getattr(request.app.state, "telegram_bot_token", None)
+    if not bot_token:
+        return
+    with db_session() as session:
+        admins = session.execute(
+            select(
+                OperatorProfile.telegram_chat_id,
+                OperatorProfile.communication_language,
+            ).where(
+                OperatorProfile.is_admin.is_(True),
+                OperatorProfile.telegram_chat_id.is_not(None),
+            )
+        ).all()
+    for chat_id, lang in admins:
+        message = t_lang(lang, "admin.notify.new_request", name=display_name)
+        try:
+            send_message(bot_token=bot_token, chat_id=str(chat_id), text=message)
+        except TelegramError:
+            log.warning("admin.notify.telegram_failed")
+
+
+def _reopen_rejected_request(operator_id: int) -> None:
+    """Flip a rejected profile back to pending so the user can re-request."""
+    with db_session() as session:
+        profile = session.get(OperatorProfile, operator_id)
+        if profile is not None and profile.status == "rejected":
+            profile.status = "pending"
+            session.commit()
+
+
+def _operator_is_banned(operator_id: int) -> bool:
+    """Return whether the operator currently has an active ban (ADR-0010)."""
+    with db_session() as session:
+        row = session.execute(
+            select(OperatorProfile.banned_until).where(OperatorProfile.id == operator_id)
+        ).first()
+    return row is not None and ban_is_active(row[0], datetime.now(tz=UTC))
+
+
+def _render_pending(request: Request) -> Response:
+    """Render the "request received" page with status 200.
+
+    Shown to a signed-in-with-the-provider identity that is not yet
+    approved. No session is seated and the body carries no operator data.
+    """
+    templates = _templates(request)
+    return templates.TemplateResponse(
+        request=request,
+        name="auth/pending.html",
+        context={},
+        status_code=200,
+    )
 
 
 def _render_denial(request: Request) -> Response:
@@ -347,4 +484,15 @@ def _render_denial(request: Request) -> Response:
         name="auth/denied.html",
         context={},
         status_code=403,
+    )
+
+
+def _render_banned(request: Request) -> Response:
+    """Render the "access suspended" page shown to a banned user (ADR-0010)."""
+    templates = _templates(request)
+    return templates.TemplateResponse(
+        request=request,
+        name="auth/banned.html",
+        context={},
+        status_code=200,
     )

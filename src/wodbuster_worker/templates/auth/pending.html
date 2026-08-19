@@ -1,0 +1,16 @@
+{# Access request received — pending admin approval. #}
+{% extends "base.html" %}
+
+{% block title %}{{ t("auth.pending.title") }} — WodBuster Booking Worker{% endblock %}
+{% block body_class %}wb-body--denied{% endblock %}
+
+{% block content %}
+  <div class="wb-denied">
+    <h1>{{ t("auth.pending.title") }}</h1>
+    <p>{{ t("auth.pending.body") }}</p>
+    <p>{{ t("auth.pending.hint") }}</p>
+    <p class="wb-hero-note">
+      <a href="{{ lang_url('/') }}" class="wb-btn">{{ t("auth.pending.back") }}</a>
+    </p>
+  </div>
+{% endblock %}

@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware import Middleware as _StarletteMiddleware
 
+from .admin.routes import router as admin_router
 from .auth.csrf import get_csrf_token
 from .auth.deps import AuthRedirectRequired
 from .auth.oauth import build_oauth
@@ -49,6 +50,7 @@ from .observability import configure_logging
 from .observability import telemetry as _telemetry
 from .persistence.cookie_store import CookieStore
 from .persistence.engine import get_session
+from .persistence.users import count_pending_signups
 from .routes.profile import register_profile_globals
 from .routes.profile import router as profile_router
 from .routes.static_pages import router as static_pages_router
@@ -404,6 +406,7 @@ def health() -> dict[str, str]:
 def _register_routes(app: FastAPI) -> None:
     """Register the built-in routes (health, dashboard) and mount ``/auth``."""
     app.include_router(auth_router)
+    app.include_router(admin_router)
     app.include_router(cookie_router)
     app.include_router(rules_router)
     app.include_router(history_router)
@@ -448,6 +451,9 @@ def _register_routes(app: FastAPI) -> None:
                     if active_gym_id is not None
                     else None
                 )
+                pending_requests = (
+                    count_pending_signups(session) if request.session.get("is_admin") else 0
+                )
             next_window_iso = (
                 next_booking.window_open.isoformat() if next_booking is not None else None
             )
@@ -463,6 +469,7 @@ def _register_routes(app: FastAPI) -> None:
                     "banners": banners,
                     "next_window_iso": next_window_iso,
                     "target_slot_iso": target_slot_iso,
+                    "pending_requests": pending_requests,
                     "csrf_token": get_csrf_token(request) or "",
                 },
             )

@@ -74,6 +74,39 @@ EN: dict[str, str] = {
     # -- profile -----------------------------------------------------
     "nav.profile": "🙋 Profile",
     "nav.account": "Account menu",
+    "nav.admin": "🛡️ Users",
+    "admin.users.title": "🛡️ Users",
+    "admin.users.subtitle": "Approve new users and manage access.",
+    "admin.users.pending_title": "Pending requests",
+    "admin.users.pending_empty": "No pending requests.",
+    "admin.users.active_title": "Users",
+    "admin.users.col.user": "User",
+    "admin.users.col.email": "Email",
+    "admin.users.col.provider": "Provider",
+    "admin.users.col.role": "Role",
+    "admin.users.col.status": "Status",
+    "admin.users.col.access": "Access",
+    "admin.users.col.remove": "Remove",
+    "admin.users.approve": "✅ Approve",
+    "admin.users.reject": "🚫 Reject",
+    "admin.users.role.admin": "Admin",
+    "admin.users.role.user": "User",
+    "admin.users.you": "you",
+    "admin.users.no_action": "",
+    "admin.users.status.active": "Active",
+    "admin.users.status.banned_indefinite": "Suspended (indefinite)",
+    "admin.users.status.banned_until": "Suspended until",
+    "admin.users.ban.duration_label": "Ban duration",
+    "admin.users.ban.duration.1d": "1 day",
+    "admin.users.ban.duration.7d": "7 days",
+    "admin.users.ban.duration.30d": "30 days",
+    "admin.users.ban.duration.indefinite": "Indefinite",
+    "admin.users.ban.button": "🚫 Ban",
+    "admin.users.unban.button": "✅ Un-ban",
+    "admin.users.delete.button": "🗑️ Delete",
+    "admin.users.ban_confirm": ("Ban this user? They will lose access until the ban expires."),
+    "admin.users.delete_confirm": ("Delete this user and all their data? This cannot be undone."),
+    "admin.notify.new_request": "🛡️ New access request from {name}. Review it in the app.",
     "profile.title": "Your profile",
     "profile.subtitle": "Manage how you appear and the language of your notifications.",
     "profile.display_name_label": "Display name",
@@ -98,6 +131,7 @@ EN: dict[str, str] = {
         "when, the cookie proves who, the heartbeat catches issues "
         "before they become a missed class."
     ),
+    "dashboard.pending_requests": "You have {count} access request(s) to review.",
     "dashboard.countdown.label": "Next booking window opens in",
     "dashboard.countdown.firing": (
         "Firing now — refresh in a few seconds to see the outcome on History."
@@ -322,6 +356,13 @@ EN: dict[str, str] = {
         "If you believe this is a mistake, contact the operator who set up this deployment."
     ),
     "auth.denied.back": "⬅️ Back to sign-in",
+    "auth.pending.title": "⏳ Request received",
+    "auth.pending.body": "Your access request is awaiting approval by the administrator.",
+    "auth.pending.hint": "You will be able to sign in here once it is approved.",
+    "auth.pending.back": "⬅️ Back to sign-in",
+    "auth.suspended.title": "⛔ Access suspended",
+    "auth.suspended.body": "Your access has been suspended by the administrator.",
+    "auth.suspended.back": "⬅️ Back to sign-in",
     "auth.signin.with_microsoft": "🪟 Sign in with Microsoft",
     "auth.signin.with_github": "🐙 Sign in with GitHub",
     "auth.signin.with_google": "🌐 Sign in with Google",
@@ -698,6 +739,45 @@ ES: dict[str, str] = {
     # -- profile -----------------------------------------------------
     "nav.profile": "🙋 Perfil",
     "nav.account": "Menú de cuenta",
+    "nav.admin": "🛡️ Usuarios",
+    "admin.users.title": "🛡️ Usuarios",
+    "admin.users.subtitle": "Aprueba nuevos usuarios y gestiona el acceso.",
+    "admin.users.pending_title": "Solicitudes pendientes",
+    "admin.users.pending_empty": "No hay solicitudes pendientes.",
+    "admin.users.active_title": "Usuarios",
+    "admin.users.col.user": "Usuario",
+    "admin.users.col.email": "Correo",
+    "admin.users.col.provider": "Proveedor",
+    "admin.users.col.role": "Rol",
+    "admin.users.col.status": "Estado",
+    "admin.users.col.access": "Acceso",
+    "admin.users.col.remove": "Eliminar",
+    "admin.users.approve": "✅ Aprobar",
+    "admin.users.reject": "🚫 Rechazar",
+    "admin.users.role.admin": "Administrador",
+    "admin.users.role.user": "Usuario",
+    "admin.users.you": "tú",
+    "admin.users.no_action": "",
+    "admin.users.status.active": "Activo",
+    "admin.users.status.banned_indefinite": "Suspendido (indefinido)",
+    "admin.users.status.banned_until": "Suspendido hasta",
+    "admin.users.ban.duration_label": "Duración del baneo",
+    "admin.users.ban.duration.1d": "1 día",
+    "admin.users.ban.duration.7d": "7 días",
+    "admin.users.ban.duration.30d": "30 días",
+    "admin.users.ban.duration.indefinite": "Indefinido",
+    "admin.users.ban.button": "🚫 Banear",
+    "admin.users.unban.button": "✅ Quitar baneo",
+    "admin.users.delete.button": "🗑️ Eliminar",
+    "admin.users.ban_confirm": (
+        "¿Banear a este usuario? Perderá el acceso hasta que expire el baneo."
+    ),
+    "admin.users.delete_confirm": (
+        "¿Eliminar este usuario y todos sus datos? No se puede deshacer."
+    ),
+    "admin.notify.new_request": (
+        "🛡️ Nueva solicitud de acceso de {name}. Revísala en la aplicación."
+    ),
     "profile.title": "Tu perfil",
     "profile.subtitle": "Gestiona cómo apareces y el idioma de tus notificaciones.",
     "profile.display_name_label": "Nombre visible",
@@ -722,6 +802,7 @@ ES: dict[str, str] = {
         "Las reglas definen cuándo, la cookie prueba quién eres, y el "
         "heartbeat detecta problemas antes de que pierdas una clase."
     ),
+    "dashboard.pending_requests": "Tienes {count} solicitud(es) de acceso por revisar.",
     "dashboard.countdown.label": "Próxima ventana de reserva en",
     "dashboard.countdown.firing": (
         "Ejecutando — refresca en unos segundos para ver el resultado en Historial."
@@ -958,6 +1039,15 @@ ES: dict[str, str] = {
         "Si crees que es un error, contacta con la persona que configuró el despliegue."
     ),
     "auth.denied.back": "⬅️ Volver a iniciar sesión",
+    "auth.pending.title": "⏳ Solicitud recibida",
+    "auth.pending.body": (
+        "Tu solicitud de acceso está pendiente de aprobación por el administrador."
+    ),
+    "auth.pending.hint": "Podrás iniciar sesión aquí en cuanto se apruebe.",
+    "auth.pending.back": "⬅️ Volver a iniciar sesión",
+    "auth.suspended.title": "⛔ Acceso suspendido",
+    "auth.suspended.body": "El administrador ha suspendido tu acceso.",
+    "auth.suspended.back": "⬅️ Volver a iniciar sesión",
     "auth.signin.with_microsoft": "🪟 Entrar con Microsoft",
     "auth.signin.with_github": "🐙 Entrar con GitHub",
     "auth.signin.with_google": "🌐 Entrar con Google",

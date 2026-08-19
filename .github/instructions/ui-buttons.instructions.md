@@ -71,6 +71,23 @@ button, submit input, and link styled as a button (`.wb-btn`, `[role="button"]`)
 - All data tables use the same shell: `<div class="wb-table-wrap"><table class="wb-rules-table">`.
   Do not wrap a table in `.wb-card` or use a bespoke `.wb-table` class; that made the
   gyms table look different from the history and vacation tables.
+- Cells are vertically centered: `.wb-rules-table` cells use `vertical-align: middle`
+  (a single global rule in `brand.css`). Do not set per-table `vertical-align`.
+- Every in-table action control shares one fixed height so buttons and combos line up on
+  one centre line: `.wb-cell-actions .wb-btn` is `height: 2.15rem` (plus padding
+  `0.35rem 0.7rem`, font `0.82rem`). Any `<select>` placed in a table cell must match that
+  height (`height: 2.15rem`, `padding: 0 1.6rem 0 0.7rem`, `width: auto`, `min-width: 5rem`,
+  `font-size: 0.82rem`) — see `.wb-ban-duration`. Pico forces `select { width: 100% }`, so a
+  class override is mandatory or the combo overflows the cell and overlaps the next column.
+- Action columns are right-aligned by default. Left-align them only when the column header is
+  left-aligned and you want the control under the header text (the admin Users table uses
+  `.wb-users-table .wb-cell-actions { text-align: left }`).
+- A `<button>` or `<select>` in an action cell must carry `margin: 0`. Pico adds
+  `margin-bottom: var(--pico-spacing)` (~19px) to real form controls but not to `<a>`, so a
+  `<button class="wb-btn">` (Delete, Ban) rendered about 10px higher than an
+  `<a class="wb-btn">` (Edit) in the neighbouring cell. The base `button, .wb-btn, [role="button"]`
+  rule and `.wb-ban-duration` reset the margin. Do not try to fix this with `vertical-align` or
+  `line-height`; the offset is the phantom margin, not the alignment.
 
 ## Related gotchas
 

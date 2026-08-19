@@ -18,13 +18,20 @@ empty dict, so a missing ``operator_id`` is the sole check needed.
 
 from __future__ import annotations
 
-from fastapi import Request
+from datetime import UTC, datetime
+
+from fastapi import Depends, HTTPException, Request
+from sqlalchemy import select
 
 from ..i18n import lang_url
+from ..persistence.engine import get_session
+from ..persistence.models import OperatorProfile
+from ..persistence.users import ban_is_active
 
 # Default provider used for the "not signed in" redirect. Hardcoded
 # per the conductor plan; a later story can make it configurable.
 DEFAULT_LOGIN_PATH = "/auth/microsoft/login"
+SUSPENDED_PATH = "/auth/suspended"
 
 
 class AuthRedirectRequired(Exception):
@@ -53,11 +60,49 @@ def require_session(request: Request) -> int:
     operator_id = request.session.get("operator_id")
     if not isinstance(operator_id, int):
         raise AuthRedirectRequired(location=lang_url(DEFAULT_LOGIN_PATH))
+    # Enforce ban / deletion immediately on the next request (ADR-0010): a
+    # session seated before the admin acted must not keep working.
+    state = _operator_access_state(operator_id)
+    if state == "banned":
+        request.session.clear()
+        raise AuthRedirectRequired(location=lang_url(SUSPENDED_PATH))
+    if state == "gone":
+        request.session.clear()
+        raise AuthRedirectRequired(location=lang_url(DEFAULT_LOGIN_PATH))
+    return operator_id
+
+
+def _operator_access_state(operator_id: int) -> str:
+    """Return ``"ok"``, ``"banned"``, or ``"gone"`` for the operator."""
+    with get_session() as session:
+        row = session.execute(
+            select(OperatorProfile.banned_until).where(OperatorProfile.id == operator_id)
+        ).first()
+    if row is None:
+        return "gone"
+    if ban_is_active(row[0], datetime.now(tz=UTC)):
+        return "banned"
+    return "ok"
+
+
+def require_admin(operator_id: int = Depends(require_session)) -> int:
+    """Assert the seated operator is an admin; 404 otherwise.
+
+    Admin routes return 404 (not 403) for a non-admin so the admin
+    surface is not revealed to regular users (ADR-0010).
+    """
+    with get_session() as session:
+        is_admin = session.scalars(
+            select(OperatorProfile.is_admin).where(OperatorProfile.id == operator_id)
+        ).first()
+    if not is_admin:
+        raise HTTPException(status_code=404, detail="not found")
     return operator_id
 
 
 __all__ = [
     "DEFAULT_LOGIN_PATH",
     "AuthRedirectRequired",
+    "require_admin",
     "require_session",
 ]

@@ -684,6 +684,12 @@ button, .wb-btn, [role="button"] {
   text-decoration: none;
   white-space: nowrap;
   vertical-align: middle;
+  /* Pico ships ``button/select { margin-bottom: var(--pico-spacing) }`` on
+     real form controls but not on ``<a>``. In an action cell that made a
+     ``<button>`` (Delete/Ban) sit ~10px higher than an ``<a class="wb-btn">``
+     (Edit) because the phantom bottom margin enlarged the button's line box.
+     Zeroing it makes anchor and button variants share one baseline. */
+  margin: 0;
 }
 /* Fit every button to its label. Pico ships
    ``button[type=submit]{width:100%}`` whose specificity (0,1,1)
@@ -937,7 +943,9 @@ fieldset legend {
   padding: 0.9rem 1rem;
   text-align: left;
   border-bottom: 1px solid var(--wb-border);
-  vertical-align: top;
+  /* Center cell contents so single-line text lines up with the compact
+     action buttons/selects (same fixed height) in every data table. */
+  vertical-align: middle;
 }
 .wb-rules-table thead th {
   background: var(--wb-bg-inset);
@@ -972,6 +980,43 @@ fieldset legend {
 .wb-cell-actions .wb-btn {
   padding: 0.35rem 0.7rem;
   font-size: 0.82rem;
+  /* Fixed height shared with the in-table duration select so every action
+     control (button + combo) lines up on one centre line across columns. */
+  height: 2.15rem;
+}
+
+/* Admin user-management: the ban control pairs a compact duration select
+   with the Ban button in one cell. Pico's ``select { width: 100% }`` would
+   blow the cell out and overlap the neighbouring Delete column, so the
+   select is constrained to its content and the pair lays out inline. */
+.wb-ban-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+}
+.wb-ban-duration {
+  width: auto;
+  min-width: 5rem;
+  height: 2.15rem;
+  padding: 0 1.6rem 0 0.7rem;
+  font-size: 0.82rem;
+  /* Drop Pico's ``select { margin-bottom }`` so the combo shares the action
+     row's centre line with the neighbouring Ban/Delete buttons. */
+  margin: 0;
+}
+
+/* Admin Users table: left-align the action columns so each control lines up
+   under its left-aligned header (ACCESS, REMOVE) instead of hugging the right
+   edge like the read-only history/rules tables. Placed after the shared
+   ``.wb-rules-table .wb-cell-actions`` right-align rule so it wins on the
+   table that carries both classes. */
+.wb-users-table .wb-cell-actions {
+  text-align: left;
+}
+.wb-users-table .wb-cell-actions .wb-inline-form {
+  margin-left: 0;
+  margin-right: 0.4rem;
 }
 
 /* Class-type value inside the rules table. Uses the brand font rather

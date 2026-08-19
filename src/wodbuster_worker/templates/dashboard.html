@@ -26,6 +26,12 @@
 
   {% include "_banners.html" %}
 
+  {% if pending_requests %}
+    <div class="wb-flash wb-flash--info" role="status">
+      <a href="{{ lang_url('/admin/users') }}">{{ t("dashboard.pending_requests", count=pending_requests) }}</a>
+    </div>
+  {% endif %}
+
   {# Reload on bfcache restore. Without this, tapping the browser
      back button (e.g. after deleting a rule and hitting "back")
      restores a stale snapshot: the countdown keeps ticking against

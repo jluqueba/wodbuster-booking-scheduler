@@ -148,6 +148,19 @@ def extract_identity(
     raise ValueError(f"unknown provider: {provider!r}")
 
 
+def extract_email(user_info: dict[str, Any]) -> str | None:
+    """Return the login email if the provider exposed one, else ``None``.
+
+    All three providers request the ``email`` scope, but GitHub only
+    returns one when the user has a public primary email, so the caller
+    must tolerate ``None``.
+    """
+    email = user_info.get("email")
+    if isinstance(email, str) and email.strip():
+        return email.strip().lower()
+    return None
+
+
 def _first_str(*candidates: object) -> str:
     """Return the first non-empty string in ``candidates``.
 
