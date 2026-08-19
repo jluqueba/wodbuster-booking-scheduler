@@ -84,20 +84,40 @@ _NOTIFICATION_KINDS = ("telegram", "banner")
 # Telegram message rendering and the signed-in web default.
 _LANGUAGES = ("es", "en")
 
+# User lifecycle (ADR-0010). A signup lands 'pending'; the admin moves it
+# to 'active' (full access) or 'rejected' (denied).
+_USER_STATUSES = ("pending", "active", "rejected")
+
 
 class OperatorProfile(Base):
-    """The single human user (spec Key Entities → Operator).
+    """A human user of the platform (ADR-0010).
 
-    Multi-tenant scale is out of scope. The table exists so that every
-    downstream row can carry an ``operator_id`` foreign key, which
-    keeps invariants (one open alert per kind, one cookie per
-    operator) expressible.
+    Every downstream row carries an ``operator_id`` foreign key so
+    invariants (one open alert per kind, one cookie per gym account)
+    stay expressible. Users self-register via OAuth: a new identity
+    lands ``status='pending'`` and gains access only when an ``is_admin``
+    user approves it (``active``) or is denied (``rejected``).
     """
 
     __tablename__ = "operator_profile"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Email from the OAuth identity; used for email notifications. Nullable
+    # because older rows predate capture and GitHub may not expose one.
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    # Lifecycle state (ADR-0010). Defaults to 'active' so approval and the
+    # bootstrap CLI need not set it; the signup path sets 'pending' itself.
+    status: Mapped[str] = mapped_column(
+        Enum(*_USER_STATUSES, name="user_status_enum", native_enum=True),
+        nullable=False,
+        server_default="active",
+    )
+    # Only an admin can approve or reject other users' signups.
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.false())
+    # Ban state (ADR-0010). Null = not banned; a future instant = banned until
+    # then (timed); the far-future sentinel = indefinite reversible ban.
+    banned_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Optional shorter label the operator sets; falls back to display_name.
     short_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Provider avatar URL or a private-blob object path; null renders the

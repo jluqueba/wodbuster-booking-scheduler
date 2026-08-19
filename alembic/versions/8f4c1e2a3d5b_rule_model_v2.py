@@ -131,6 +131,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Not supported. Schema-forward change; operators regenerate rules."""
-    raise NotImplementedError(
-        "downgrade of 8f4c1e2a3d5b (rule model v2) is not supported"
-    )
+    raise NotImplementedError("downgrade of 8f4c1e2a3d5b (rule model v2) is not supported")

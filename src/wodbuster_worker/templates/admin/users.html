@@ -1,0 +1,115 @@
+{# Admin: user management — pending signups + active users (ADR-0010). #}
+{% extends "base.html" %}
+{% from "_datetime.html" import wb_time %}
+
+{% block title %}{{ t("admin.users.title") }} — WodBuster Booking Worker{% endblock %}
+
+{% block nav %}
+  {% set active_nav = "admin" %}
+  {% include "_nav.html" %}
+{% endblock %}
+
+{% block content %}
+  <h1 class="wb-page-title">{{ t("admin.users.title") }}</h1>
+  <p class="wb-page-subtitle">{{ t("admin.users.subtitle") }}</p>
+
+  <h2 class="wb-section-title">{{ t("admin.users.pending_title") }}</h2>
+  {% if pending %}
+    <div class="wb-table-wrap">
+      <table class="wb-rules-table wb-users-table">
+        <thead>
+          <tr><th>{{ t("admin.users.col.user") }}</th><th>{{ t("admin.users.col.email") }}</th><th>{{ t("admin.users.col.provider") }}</th><th>{{ t("admin.users.approve") }}</th><th>{{ t("admin.users.reject") }}</th></tr>
+        </thead>
+        <tbody>
+          {% for req in pending %}
+            <tr>
+              <td>{{ req.display_name }}</td>
+              <td>{{ req.email or "" }}</td>
+              <td><code>{{ req.provider }}</code></td>
+              <td class="wb-cell-actions">
+                <form method="post" action="{{ lang_url('/admin/users/' ~ req.id ~ '/approve') }}" class="wb-inline-form">
+                  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                  <button type="submit" class="wb-btn wb-btn--primary">{{- t("admin.users.approve") -}}</button>
+                </form>
+              </td>
+              <td class="wb-cell-actions">
+                <form method="post" action="{{ lang_url('/admin/users/' ~ req.id ~ '/reject') }}" class="wb-inline-form">
+                  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                  <button type="submit" class="wb-btn wb-btn--danger">{{- t("admin.users.reject") -}}</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="wb-empty-state">
+      <p class="wb-empty-state__title">{{ t("admin.users.pending_empty") }}</p>
+    </div>
+  {% endif %}
+
+  <h2 class="wb-section-title wb-section-title--spaced">{{ t("admin.users.active_title") }}</h2>
+  <div class="wb-table-wrap">
+    <table class="wb-rules-table wb-users-table">
+      <thead>
+        <tr><th>{{ t("admin.users.col.user") }}</th><th>{{ t("admin.users.col.email") }}</th><th>{{ t("admin.users.col.role") }}</th><th>{{ t("admin.users.col.status") }}</th><th>{{ t("admin.users.col.access") }}</th><th>{{ t("admin.users.col.remove") }}</th></tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+          <tr>
+            <td>{{ u.display_name }}{% if u.is_self %} <span class="wb-muted">({{ t("admin.users.you") }})</span>{% endif %}</td>
+            <td>{{ u.email or "" }}</td>
+            <td>{{ t("admin.users.role.admin") if u.is_admin else t("admin.users.role.user") }}</td>
+            <td>
+              {%- if u.banned_indefinitely -%}
+                {{ t("admin.users.status.banned_indefinite") }}
+              {%- elif u.banned -%}
+                {{ t("admin.users.status.banned_until") }} {{ wb_time(u.banned_until, "stamp") }}
+              {%- else -%}
+                {{ t("admin.users.status.active") }}
+              {%- endif -%}
+            </td>
+            <td class="wb-cell-actions">
+              {% if u.is_admin or u.is_self %}
+                <span class="wb-muted">{{ t("admin.users.no_action") }}</span>
+              {% elif u.banned %}
+                <form method="post" action="{{ lang_url('/admin/users/' ~ u.id ~ '/unban') }}" class="wb-inline-form">
+                  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                  <button type="submit" class="wb-btn wb-btn--primary">{{- t("admin.users.unban.button") -}}</button>
+                </form>
+              {% else %}
+                <form method="post" action="{{ lang_url('/admin/users/' ~ u.id ~ '/ban') }}" class="wb-ban-form"
+                  onsubmit="return wbConfirm(this, event, '{{ t('admin.users.ban_confirm') }}')">
+                  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                  <select name="duration" class="wb-ban-duration" aria-label="{{ t('admin.users.ban.duration_label') }}">
+                    <option value="1d">{{ t("admin.users.ban.duration.1d") }}</option>
+                    <option value="7d">{{ t("admin.users.ban.duration.7d") }}</option>
+                    <option value="30d">{{ t("admin.users.ban.duration.30d") }}</option>
+                    <option value="indefinite">{{ t("admin.users.ban.duration.indefinite") }}</option>
+                  </select>
+                  <button type="submit" class="wb-btn wb-btn--danger">{{- t("admin.users.ban.button") -}}</button>
+                </form>
+              {% endif %}
+            </td>
+            <td class="wb-cell-actions">
+              {% if u.is_admin or u.is_self %}
+                <span class="wb-muted">{{ t("admin.users.no_action") }}</span>
+              {% else %}
+                <form
+                  method="post"
+                  action="{{ lang_url('/admin/users/' ~ u.id ~ '/delete') }}"
+                  class="wb-inline-form"
+                  onsubmit="return wbConfirm(this, event, '{{ t('admin.users.delete_confirm') }}')"
+                >
+                  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                  <button type="submit" class="wb-btn wb-btn--danger">{{- t("admin.users.delete.button") -}}</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}
