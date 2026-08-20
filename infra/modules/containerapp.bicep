@@ -81,6 +81,15 @@ param customDomainName string = ''
 @description('Resource ID of the managed certificate to bind to `customDomainName` with SNI. Empty registers the hostname with bindingType `Disabled` (no TLS) so the managed certificate can then be issued against it. This two-step flow is intentional: Azure cannot HTTP-validate a managed certificate for a hostname that is not yet a custom domain on the app, and the app cannot reference a certificate that does not yet exist — a circular dependency that a single-pass template cannot express. Mirrors the two-run `acaOutboundIps` convention. On run 1 leave this empty (hostname registered), issue the cert with `az containerapp hostname bind --validation-method HTTP`, read its id, then set it here for run 2 (SNI-enabled).')
 param customDomainCertificateId string = ''
 
+@description('ACS endpoint for outbound email (https://<host>). Empty leaves email sending disabled; the worker falls back to Telegram-only.')
+param acsEndpoint string = ''
+
+@description('From address for notification emails, e.g. no-reply@wodbuster-booking-scheduler.jluqueba.es.')
+param emailSenderAddress string = ''
+
+@description('From display name recipients see for notification emails.')
+param emailSenderDisplayName string = ''
+
 @description('Target port the container listens on.')
 @minValue(1)
 @maxValue(65535)
@@ -266,6 +275,22 @@ resource containerApp 'Microsoft.App/containerApps@2024-10-02-preview' = {
               // cycle of properties.configuration.ingress.fqdn.
               name: 'APP_BASE_URL'
               value: empty(customDomainName) ? 'https://ca-${resourceToken}.${managedEnvironment.properties.defaultDomain}' : 'https://${customDomainName}'
+            }
+            {
+              // ACS email (ADR-0011). Endpoint + from address are non-secret;
+              // the worker authenticates with its managed identity (no
+              // connection string). Empty until the ACS domain is verified,
+              // in which case the worker sends Telegram only.
+              name: 'ACS_ENDPOINT'
+              value: acsEndpoint
+            }
+            {
+              name: 'EMAIL_SENDER_ADDRESS'
+              value: emailSenderAddress
+            }
+            {
+              name: 'EMAIL_SENDER_DISPLAY_NAME'
+              value: emailSenderDisplayName
             }
           ]
         }
