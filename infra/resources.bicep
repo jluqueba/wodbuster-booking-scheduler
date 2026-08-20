@@ -60,6 +60,9 @@ param customDomainName string = ''
 @description('Resource ID of the managed certificate to bind to `customDomainName`. Empty registers the hostname without TLS so the certificate can be issued against it (two-run flow). Forwarded to the container app module.')
 param customDomainCertificateId string = ''
 
+@description('Link the ACS email domain to the Communication Services resource. False on phase 1 (domain created but unverified); true on phase 2 after the IONOS DNS records verify it.')
+param linkEmailDomain bool = false
+
 module observability 'modules/observability.bicep' = {
   name: 'observability'
   params: {
@@ -106,6 +109,7 @@ module communication 'modules/communication.bicep' = {
     resourceToken: resourceToken
     tags: tags
     appIdentityPrincipalId: identity.outputs.identityPrincipalId
+    linkVerifiedDomain: linkEmailDomain
   }
 }
 

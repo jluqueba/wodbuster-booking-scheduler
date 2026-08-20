@@ -46,6 +46,9 @@
     },
     "customDomainCertificateId": {
       "value": "${AZURE_CUSTOM_DOMAIN_CERTIFICATE_ID=}"
+    },
+    "emailDomainLinked": {
+      "value": "${AZURE_EMAIL_DOMAIN_LINKED=false}"
     }
   }
 }
