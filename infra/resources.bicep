@@ -100,6 +100,15 @@ module identity 'modules/identity.bicep' = {
   }
 }
 
+module communication 'modules/communication.bicep' = {
+  name: 'communication'
+  params: {
+    resourceToken: resourceToken
+    tags: tags
+    appIdentityPrincipalId: identity.outputs.identityPrincipalId
+  }
+}
+
 module postgres 'modules/postgres.bicep' = {
   name: 'postgres'
   params: {
@@ -142,6 +151,9 @@ module containerApp 'modules/containerapp.bicep' = {
     containerImage: containerImage
     customDomainName: customDomainName
     customDomainCertificateId: customDomainCertificateId
+    acsEndpoint: communication.outputs.acsEndpoint
+    emailSenderAddress: communication.outputs.senderAddress
+    emailSenderDisplayName: communication.outputs.senderDisplayName
   }
 }
 
@@ -162,3 +174,7 @@ output postgresServerName string = postgres.outputs.serverName
 output postgresServerFqdn string = postgres.outputs.serverFqdn
 output postgresDatabaseName string = postgres.outputs.databaseName
 output postgresAdminLogin string = postgres.outputs.adminLogin
+
+output acsEndpoint string = communication.outputs.acsEndpoint
+output emailSenderAddress string = communication.outputs.senderAddress
+output emailDnsVerificationRecords object = communication.outputs.dnsVerificationRecords
