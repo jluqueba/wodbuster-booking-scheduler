@@ -4,3 +4,4 @@
 # the interpreter with a cryptic "no such file or directory" error.
 *.sh text eol=lf
 Dockerfile text eol=lf
+docs/internal/** filter=age diff=age merge=age -text

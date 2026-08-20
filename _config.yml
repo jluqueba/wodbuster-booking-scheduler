@@ -18,6 +18,9 @@ exclude:
   - alembic/
   - docker/
   - site/
+  # Internal design docs are git-age encrypted; never render them (the build
+  # would otherwise publish age ciphertext as broken pages).
+  - docs/internal/
   - "*.py"
   - "*.toml"
   - "*.ini"

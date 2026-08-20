@@ -31,14 +31,12 @@ Thumbs.db
 # main.parameters.json is a real source file; only main.json is generated.
 infra/main.json
 
-# Internal design documentation kept out of the public repository:
-# specs, ADRs, envisioning, and migration notes. The single tracked,
-# developer-facing document is docs/DEVELOPER_GUIDE.md (directly under
-# docs/, so it is not matched by the folder patterns below).
-docs/architecture/
-docs/envisioning/
-docs/features/
-docs/migrations/
+# Internal design documentation (ADRs, specs, envisioning, migration notes)
+# now lives tracked under docs/internal/ but ENCRYPTED at rest with git-age
+# (see .gitattributes: docs/internal/** filter=age). The repo is public, so
+# the committed blobs are age ciphertext; plaintext is only ever on disk for
+# holders of the private key (docs/internal/README.md explains the workflow).
+# docs/DEVELOPER_GUIDE.md stays public (plaintext, directly under docs/).
 
 # Spike artifacts that may contain credentials, session material, or PII.
 # See docs/features/phase-0-api-discovery/scripts/README.md for the rationale.
