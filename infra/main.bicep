@@ -65,6 +65,9 @@ param customDomainName string = ''
 @description('Resource ID of the managed certificate to SNI-bind to `customDomainName`. Non-secret; bound to `AZURE_CUSTOM_DOMAIN_CERTIFICATE_ID` with an empty fallback. Empty registers the hostname with bindingType `Disabled` (no TLS) so the managed certificate can be issued against it; set to the issued certificate id on the second provision to enable SNI. Two-run flow mirrors `acaOutboundIps`.')
 param customDomainCertificateId string = ''
 
+@description('Whether the ACS email domain is DNS-verified and may be linked to the Communication Services resource. String (`true`/`false`) bound to `AZURE_EMAIL_DOMAIN_LINKED` with a `false` fallback. Phase 1 leaves it false (domain created, DNS records emitted); once the IONOS records verify the domain, set the GH variable to `true` for phase 2 to link it.')
+param emailDomainLinked string = 'false'
+
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = {
   'azd-env-name': environmentName
@@ -98,6 +101,7 @@ module resources 'resources.bicep' = {
     containerImage: containerImage
     customDomainName: customDomainName
     customDomainCertificateId: customDomainCertificateId
+    linkEmailDomain: toLower(emailDomainLinked) == 'true'
   }
 }
 

@@ -37,6 +37,9 @@ param senderUsername string = 'no-reply'
 @description('From display name recipients see.')
 param senderDisplayName string = 'WodBuster Booking Scheduler'
 
+@description('Link the domain to the Communication Services resource. Must stay false until the domain is DNS-verified: ARM rejects linking an unverified CustomerManaged domain. Two-run flow like acaOutboundIps / the app custom-domain certificate.')
+param linkVerifiedDomain bool = false
+
 // Built-in role "Communication and Email Service Owner" (data-plane send).
 // Verify in a new tenant with:
 //   az role definition list --name "Communication and Email Service Owner" --query "[0].name" -o tsv
@@ -77,9 +80,9 @@ resource communicationService 'Microsoft.Communication/communicationServices@202
   tags: tags
   properties: {
     dataLocation: dataLocation
-    linkedDomains: [
-      emailDomain.id
-    ]
+    // Empty on phase 1 (domain not yet verified); populated on phase 2 once
+    // the IONOS DNS records verify the domain (set AZURE_EMAIL_DOMAIN_LINKED=true).
+    linkedDomains: linkVerifiedDomain ? [emailDomain.id] : []
   }
 }
 
