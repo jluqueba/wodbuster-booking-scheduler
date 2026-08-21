@@ -2,7 +2,7 @@
 
 Comprehensive, developer-facing reference for the WodBuster Booking Worker: an unattended service that books CrossFit / box classes on the WodBuster platform the instant each booking window opens.
 
-This is the only design document tracked in the public repository. Internal specs, ADRs, envisioning notes, and migration records are intentionally excluded from version control (see `.gitignore`).
+This guide is public. Internal specs, ADRs, envisioning notes, and migration records under `docs/internal/**` are also versioned, but Git stores them as age ciphertext through the `git-age` clean and smudge filter. Contributors with the private key see normal Markdown in the working tree; GitHub and GitHub Pages never receive the plaintext.
 
 ## Table of contents
 
@@ -24,6 +24,8 @@ Design principles that shape the whole codebase:
 - No credential storage. Only the `.WBAuth` session cookie is persisted, encrypted at rest with AES-256-GCM. WodBuster username and password never touch the system.
 - No silent failure. Every scheduled run produces a success notification, a failure notification, or a heartbeat anomaly alert. "No notification" is itself an alarm condition.
 - Single long-running process. One FastAPI ASGI application hosts the web UI, the Telegram webhook, the APScheduler runtime, and the heartbeat probe together.
+- Isolated user ownership. Every gym, rule, cookie, booking, alert, and notification belongs to one approved user. New OAuth identities remain pending until an administrator approves them.
+- Recipient-controlled communication. The web UI and outbound messages support English and Spanish; operational email categories are editable per user while account lifecycle mail remains transactional.
 
 ### 1.2 Runtime shape
 
@@ -31,18 +33,19 @@ The application is a single FastAPI process running on Azure Container Apps. Ins
 
 | Concern | Component | Location |
 |---------|-----------|----------|
-| HTTP surface (web UI, OAuth, Telegram webhook) | FastAPI routers | `src/wodbuster_worker/routes`, `auth`, `rules`, `booking`, `cookie`, `notifications` |
+| HTTP surface (web UI, OAuth, admin, Telegram webhook) | FastAPI routers | `src/wodbuster_worker/routes`, `auth`, `admin`, `rules`, `booking`, `cookie`, `notifications` |
 | Background jobs | APScheduler `BackgroundScheduler` | `src/wodbuster_worker/scheduler` |
 | WodBuster integration | Stock HTTP client | `src/wodbuster_worker/wodbuster_client` |
 | Persistence | SQLAlchemy + Alembic against Postgres 16 | `src/wodbuster_worker/persistence`, `alembic/` |
 | Secrets and crypto | Key Vault loader + AES-256-GCM cipher | `src/wodbuster_worker/security` |
-| Notifications | Outbox table + dispatcher | `src/wodbuster_worker/notifications` |
+| Notifications | Transactional outbox + Telegram and ACS Email dispatcher | `src/wodbuster_worker/notifications` |
+| Localization and profiles | URL/session language resolver + translated catalog | `src/wodbuster_worker/i18n`, `routes/profile.py` |
 | Observability | structlog + Azure Monitor OpenTelemetry | `src/wodbuster_worker/observability` |
 
 The scheduler registers five job families at startup (`src/wodbuster_worker/app.py` lifespan):
 
 - Heartbeat probe (cookie validity, hourly cadence).
-- Notification dispatcher (drains the outbox to Telegram and the web banner pool).
+- Notification dispatcher (drains independent Telegram and email outbox rows; dashboard banners are read from their durable rows).
 - Per-run anomaly detector (opens a `heartbeat_anomaly` alert when a booking window passed with no recorded outcome).
 - External dead-man ping to Healthchecks.io (every 10 minutes) so a crashed or partitioned worker trips an out-of-band alarm.
 - Per-rule booking jobs (bootstrapped from the active scheduler rules).
@@ -69,6 +72,7 @@ flowchart TB
 
     wb[[WodBuster API]]
     tg[[Telegram Bot API]]
+    email[[Azure Communication Services Email]]
     oauth[[OAuth providers: Microsoft / GitHub / Google]]
     hc[[Healthchecks.io]]
 
@@ -79,6 +83,7 @@ flowchart TB
     tg -->|webhook POST| api
     api -->|sendMessage| tg
     disp -->|sendMessage| tg
+    disp -->|managed identity send| email
 
     api --> pg
     sched --> pg
@@ -99,7 +104,7 @@ flowchart TB
 Communication summary:
 
 - Inbound to the worker: operator browser (HTTPS), Telegram webhook (`POST /telegram/webhook/{secret}`), OAuth callbacks.
-- Outbound from the worker: WodBuster booking / probe calls, Telegram `sendMessage`, Healthchecks.io ping, Key Vault secret reads, Postgres queries, Application Insights telemetry.
+- Outbound from the worker: WodBuster booking and probe calls, Telegram `sendMessage`, ACS Email sends, Healthchecks.io pings, Key Vault secret reads, Postgres queries, and Application Insights telemetry.
 - The runtime authenticates to Postgres with a per-connection Entra token acquired by its user-assigned managed identity. No database password is stored.
 
 ### 1.4 Azure services
@@ -112,6 +117,7 @@ Communication summary:
 | Azure Container Registry | Stores the worker container image | `infra/modules/registry.bicep` |
 | User-assigned managed identity | Runtime identity for Key Vault reads and Entra-token Postgres auth | `infra/modules/identity.bicep` |
 | Log Analytics workspace + Application Insights | Logs, metrics, distributed traces, the `outbox_queue_depth` gauge | `infra/modules/observability.bicep` |
+| Azure Communication Services + Email Communication Service | Sends localized HTML and text email from the verified custom domain | `infra/modules/communication.bicep` |
 
 Infrastructure is composed at resource-group scope in `infra/resources.bicep`, orchestrated from `infra/main.bicep`, and deployed with the Azure Developer CLI (azd) per ADR-0007.
 
@@ -124,7 +130,7 @@ sequenceDiagram
     participant CS as Cookie store (AES-256-GCM)
     participant WB as WodBuster API
     participant OB as Notification outbox
-    participant TG as Telegram
+    participant CH as Notification channels
 
     S->>DB: load active rule + next window
     S->>CS: decrypt .WBAuth cookie
@@ -140,7 +146,7 @@ sequenceDiagram
         S->>DB: BookingOutcome(status=granted|full)
     end
     S->>OB: enqueue notification (same transaction)
-    OB->>TG: dispatcher sends outcome
+    OB->>CH: dispatcher sends Telegram and email rows independently
 ```
 
 Every state-mutating write that produces an operator-visible signal writes a `notification_outbox` row in the same transaction. A dispatcher job drains the outbox, so a delivery failure never loses the underlying record.
@@ -151,7 +157,7 @@ For a multi-gym user, the scheduler resolves each rule's gym account first and b
 
 ```mermaid
 erDiagram
-    operator_profile ||--o{ federated_identity : "allow-listed logins"
+    operator_profile ||--o{ federated_identity : "OAuth logins"
     operator_profile ||--o{ gym_account : "one per WodBuster gym"
     operator_profile ||--o{ notification_outbox : "pending signals"
     gym_account ||--|| cookie_credential : "active .WBAuth"
@@ -166,22 +172,22 @@ erDiagram
 
 Key tables (`src/wodbuster_worker/persistence/models.py`):
 
-- `operator_profile`: the human user. Owns login identities, gym accounts, and the notification stream.
-- `federated_identity`: OAuth identities allow-listed for the operator; unique on `(provider, subject_id)`.
+- `operator_profile`: the human user. Stores lifecycle status, administrator flag, optional ban expiry, display and short names, communication language, editable email, email preferences, and Telegram binding. Owns login identities, gym accounts, and the notification stream.
+- `federated_identity`: OAuth identities bound to an operator; unique on `(provider, subject_id)`. A previously unseen identity creates a pending profile through the OAuth callback.
 - `gym_account`: one row per WodBuster gym the user books at, carrying the gym subdomain slug, the discovered athlete `idu`, a display name, and an `active` flag. Unique on `(user_id, gym_slug)`. Every booking-scoped table keys off `gym_account_id`, so each gym books, probes, and raises alerts independently.
 - `scheduler_rule`: recurring weekly booking intent (scoped to a gym account) with a primary target and an optional second shot; the window opens `booking_opens_days_before` days before the class at `booking_opens_at`.
 - `cookie_credential`: one encrypted `.WBAuth` blob per gym account (ciphertext + nonce, no plaintext column). The ciphertext is AES-256-GCM bound to the gym account, so a stored row cannot be replayed against another gym.
 - `booking_outcome`: one row per attempt with a terminal status (`granted`, `full`, `cookie_invalid`, `class_not_visible`, `upstream_unavailable`, `cancelled`, `skipped`).
 - `vacation_window`: date ranges (per gym account) with skip-and-cancel semantics.
 - `heartbeat_reading`, `alert`: the per-gym observability pipeline. At most one open alert exists per `(gym_account_id, kind)`, enforced by a partial unique index.
-- `notification_outbox`: pending operator-visible signals scoped to `user_id` for delivery, with an optional `gym_account_id` for gym context.
+- `notification_outbox`: durable channel-specific signals scoped to `user_id`, with an optional `gym_account_id` for gym context. Telegram and email rows have independent attempt and completion state.
 
 ### 1.7 Deployment and CI/CD
 
 ```mermaid
 flowchart LR
     dev[Developer] -->|open PR| pr{Pull request}
-    pr -->|ci.yml| ci[ruff + mypy + pytest]
+    pr -->|ci.yml when code changed| ci[ruff + mypy + pytest]
     pr -->|infra-preview.yml| preview[azd provision --preview<br/>what-if comment]
     ci --> merge[Merge to main]
     preview --> merge
@@ -195,7 +201,7 @@ Both provisioning and application deploys run from GitHub Actions using OIDC fed
 
 | Workflow | Trigger | Action |
 |----------|---------|--------|
-| `.github/workflows/ci.yml` | Every pull request and push to `main` | `ruff`, `mypy`, `pytest` against a Postgres 16 service container. Required status check for `main`. |
+| `.github/workflows/ci.yml` | Every pull request | Runs `ruff`, `mypy`, and `pytest` against Postgres 16 when non-Markdown files changed. The lightweight `ci-gate` still reports success for documentation-only PRs and is the required check for `main`. |
 | `.github/workflows/infra-preview.yml` | Pull request touching `infra/**` or `azure.yaml` | `azd provision --preview`; posts a what-if diff as a sticky PR comment. Read-only. |
 | `.github/workflows/infra.yml` | Push to `main` touching `infra/**` or `azure.yaml`; manual dispatch | `azd provision`. |
 | `.github/workflows/deploy.yml` | Push to `main` touching `src/**` or `Dockerfile`; manual dispatch | Build image, push to ACR, `azd deploy`. |
@@ -247,7 +253,7 @@ Configuration is driven by `pydantic-settings` (`src/wodbuster_worker/config.py`
 - `local`: values come from environment variables, optionally seeded by a `.env` file at the repo root. Copy `.env.example` to `.env` to start.
 - `prod`: values are wired by Container Apps; secrets resolve through Key Vault references.
 
-Notable settings: `POSTGRES_*` connection coordinates, `WODBUSTER_GYM` and `WODBUSTER_IDU` (tenant coordinates discovered in Phase 0), OAuth client IDs, session lifetime knobs, and `WORKER_TIMEZONE` (default `Europe/Madrid`) in which every rule `HH:MM` value is interpreted.
+Notable settings include `POSTGRES_*` connection coordinates, OAuth client IDs, session lifetime knobs, `WORKER_TIMEZONE` (default `Europe/Madrid`), the ACS endpoint and sender identity, and the public app origin used for email assets and unsubscribe links. WodBuster gym coordinates are discovered per user from the submitted `.WBAuth` cookie; the legacy `WODBUSTER_GYM` and `WODBUSTER_IDU` values remain optional deployment inputs.
 
 ### 2.4 Apply database migrations
 
@@ -259,15 +265,17 @@ alembic upgrade head
 
 Component tests in `tests/component/test_migrations.py` exercise the real baseline against a real Postgres, so migrations stay verifiable.
 
-### 2.5 Create the operator record
+### 2.5 Create the first administrator
 
-The single operator and their allow-listed OAuth identity are seeded by the bootstrap command rather than a sign-up flow:
+The bootstrap command creates the first active administrator and their OAuth identity:
 
 ```powershell
 python -m wodbuster_worker.bootstrap
 ```
 
-This creates the `operator_profile` row and the `federated_identity` allow-list entry so the operator can sign in through OAuth.
+The command prompts for provider, provider subject ID, and display name. It is idempotent for an existing provider and subject pair. Once this administrator can sign in, every new OAuth identity uses the normal signup flow: the callback creates a pending profile, administrators review it at `/admin/users`, and the applicant receives transactional email when the request is received, approved, or rejected.
+
+The provider subject ID can be obtained from the structured OAuth callback log produced by an initial sign-in attempt. Do not promote a pending row directly in production; use the administration page so lifecycle behavior and notifications remain consistent.
 
 ### 2.6 Run the app locally
 
@@ -290,9 +298,9 @@ Deployment is normally driven by GitHub Actions, but the first provision on a cl
 
 1. `azd up` (or `azd provision` followed by `azd deploy`) creates the resource group and the initial resource footprint.
 2. Create the deploy user-assigned managed identity, assign its RBAC, and configure federated credentials for `main` and `pull_request`.
-3. Publish the GitHub Actions repository variables `AZURE_CLIENT_ID` (the deploy identity's client ID), `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`.
+3. Publish the GitHub Actions repository variables consumed by the workflows, including the deploy identity, tenant, subscription, operator principal, OAuth client IDs, custom domain values, and ACS domain-link state.
 
-After bootstrap, all infrastructure changes go through pull requests and the `infra.yml` workflow. Seed the runtime secrets (cookie encryption key, Telegram bot token, webhook secret, OAuth client secrets) into Key Vault, then let `deploy.yml` build and roll out the container image.
+After bootstrap, all infrastructure changes go through pull requests and the `infra.yml` workflow. Seed the runtime secrets (cookie encryption key, Telegram bot token, webhook secret, OAuth client secrets) into Key Vault, then let `deploy.yml` build and roll out the container image. ACS Email uses a two-phase provision: create the custom sender domain, publish the emitted SPF/DKIM/DMARC records at the DNS provider, wait for verification, set `AZURE_EMAIL_DOMAIN_LINKED=true`, and provision again. The runtime sends through managed identity, so there is no ACS connection string to rotate.
 
 ---
 
@@ -308,15 +316,18 @@ After bootstrap, all infrastructure changes go through pull requests and the `in
 | Manual booking | One-off booking for a specific date and time, from the web UI or Telegram. |
 | Cancellation | Single-booking cancel (idempotent) from the web UI or Telegram, plus bulk cancel by date range (vacation mode). |
 | Heartbeat and alerts | Hourly cookie probe projects time-to-expiry and alerts the operator with lead time before the next booking window. |
-| Dual-channel notifications | Booking outcomes, cookie-expiry warnings, and anomaly alerts delivered to Telegram and as web UI banners. |
+| Multi-channel notifications | Booking outcomes, cookie-expiry warnings, and anomaly alerts delivered as dashboard banners and, when configured, through Telegram and email. |
 | Dead-man safety | External Healthchecks.io ping plus an internal anomaly detector so a missed run never fails silently. |
-| Federated sign-in | OAuth via Microsoft, GitHub, or Google, restricted to an allow-listed identity. |
+| Federated sign-in and approval | OAuth via Microsoft, GitHub, or Google. New identities remain pending until an administrator approves them. |
+| User profiles and localization | Editable display name, short name, email, English or Spanish communication language, WodBuster avatar, and email preferences. |
+| User administration | Administrators approve or reject requests and can time-limit, indefinitely suspend, restore, or permanently delete regular users. Self-administration and actions against another administrator are blocked. |
+| Email notifications | Localized HTML and text mail through ACS for booking results, session alerts, and transactional account lifecycle messages, with one-click unsubscribe for operational categories. |
 
 ### 3.2 Telegram bot
 
 The bot is a read-and-act channel plus the delivery target for all notifications. The webhook (`POST /telegram/webhook/{secret}`) is gated by a Key Vault-sourced path secret; a mismatch returns 404 so only Telegram can reach the handler. It is intentionally not session-gated, because Telegram never carries the web session cookie.
 
-The dispatcher routes on an explicit allow-list of eight commands (`src/wodbuster_worker/notifications/telegram_webhook.py`):
+The dispatcher routes on an explicit allow-list of seven commands (`src/wodbuster_worker/notifications/telegram_webhook.py`):
 
 | Command | Category | Requires bound chat | Purpose |
 |---------|----------|---------------------|---------|
@@ -334,7 +345,7 @@ Rule create, edit, and delete are deliberately web-UI only. Rule-mutation verbs 
 
 ### 3.3 Web pages
 
-Every page except the landing hero and `/health` is gated by an authenticated session (`require_session`). CSRF protection guards all state-mutating POSTs.
+Booking pages require an active, non-suspended authenticated session (`require_session`). Administrator routes additionally require `is_admin`; they return 404 to regular users. CSRF protection guards all state-mutating POSTs. The OAuth callback, pending/suspended pages, health endpoint, and signed unsubscribe endpoint are deliberately public.
 
 Gym-scoped pages (rules, history, cookie, vacation) act on the operator's currently selected gym, resolved by `gyms/context.py` and surfaced as a switcher in the top navigation. Gyms are discovered automatically from WodBuster (on login and on cookie paste) using the shared `.WBAuth`; there is no manual add and no per-gym management page. There is no persisted default gym: a sole gym is auto-selected, and an operator who owns more than one must pick explicitly (a `POST /gyms/select` stores the choice in the session). Until a multi-gym operator picks one, those pages render a "choose a gym" prompt. Telegram, which has no web session, still resolves the operator's sole gym.
 
@@ -342,6 +353,9 @@ Gym-scoped pages (rules, history, cookie, vacation) act on the operator's curren
 |------|----------|----------|
 | `/` | `landing.html` / `dashboard.html` | Landing hero for anonymous visitors; for a signed-in operator, a dashboard showing next booking, cookie health, and banners. |
 | `/auth/{provider}/login`, `/auth/{provider}/callback`, `/auth/logout` | (redirects) | OAuth sign-in and sign-out for Microsoft, GitHub, and Google. |
+| `/auth/pending`, `/auth/suspended` | auth state templates | Explain that a signup awaits approval or that administrator access is suspended. |
+| `/profile` | `profile.html` | Edit display name, short name, communication language, email address, and operational email preferences; displays the active gym's WodBuster avatar read-only. |
+| `/admin/users` | `admin/users.html` | Administrator-only review of pending requests and management of active regular users, including timed or indefinite suspension, restoration, and permanent deletion. |
 | `/gyms/select` | (redirect) | Select the active gym for the web session. This is the only gym route; ownership is asserted (404 otherwise). Gyms themselves are discovered automatically on login and on cookie paste (shared `.WBAuth`), never added by hand. |
 | `/cookie` | `cookie/` | Paste-and-validate the `.WBAuth` cookie; it is stored for every gym the identity can access and triggers discovery of any new ones; shows the projected time-to-expiry countdown. |
 | `/rules`, `/rules/new`, `/rules/{id}` | `rules/` | List, create, edit, and delete scheduler rules; a class-picker helper reads available class types from WodBuster. |
@@ -349,6 +363,7 @@ Gym-scoped pages (rules, history, cookie, vacation) act on the operator's curren
 | `/vacation` | `vacation.html` | Create and close vacation windows; bulk-cancels bookings in the range. |
 | `/telegram` | `telegram.html` | Bind status, one-shot deep-link generation, test message, and unbind. |
 | `/faq` | `faq.html` | Static frequently-asked-questions content. |
+| `/unsubscribe?token=...` | `unsubscribe.html` | Public signed-link endpoint that disables booking and session-alert email while preserving transactional account mail. |
 | `/health` | (JSON) | Liveness probe used by the Container App and the Healthchecks.io dead-man target. |
 
 Shared templates (`_nav.html`, `_banners.html`, `_confirm_modal.html`, `_datetime.html`, `_time_picker.html`) provide the navigation shell, banner pool rendering, and reusable form widgets, all extending `base.html`.

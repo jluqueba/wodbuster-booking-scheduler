@@ -9,19 +9,22 @@ You set up your preferred classes once. A small service then watches the clock a
 - **Books automatically** the moment a class window opens, with an optional backup class if the first one is full.
 - **Books at every gym you can access.** Your WodBuster gyms appear automatically and one login covers them all; each gym books independently.
 - **Simple web page** to manage everything: preferred classes, session cookie, booking history, and worker health.
-- **Telegram notifications** on every outcome, so a booking is never a mystery. You can also check status, cancel a class, or book a one-off class straight from the chat.
+- **Dashboard, Telegram, and email notifications** for booking results and session alerts. Every message names the gym it concerns, and email categories can be controlled from your profile.
+- **Personal profiles in English or Spanish** with editable name, email address, communication language, and notification preferences.
+- **Controlled multi-user access.** New sign-ins wait for administrator approval; administrators can suspend, restore, or delete regular users without seeing or changing their booking data.
 - **Early warnings** (hours ahead) when your WodBuster session is about to expire, so you are never caught out at booking time.
 - **Never fails silently.** If a scheduled run does not happen, that itself raises an alert.
 - **Keeps your credentials safe.** Your WodBuster username and password are never stored. Only the session cookie is kept, encrypted.
 
 ## How it works, in plain terms
 
-1. You sign in to the web page and paste your WodBuster session cookie once; it applies to every gym you can access, and your gyms are detected automatically.
-2. You create rules for the classes you want (for example, "Tuesday 19:00 CrossFit, or 20:00 if that is full").
-3. The service runs quietly in the background on Azure. When a booking window opens, it makes the reservation in the first second.
-4. You get a Telegram notification with the result, and you can check or cancel anything on the go.
+1. You sign in with Microsoft, GitHub, or Google. New accounts wait for administrator approval; the first administrator is created with the bootstrap command.
+2. You paste your WodBuster session cookie once; it applies to every gym you can access, and your gyms are detected automatically.
+3. You create rules for the classes you want (for example, "Tuesday 19:00 CrossFit, or 20:00 if that is full").
+4. The service runs quietly in the background on Azure. When a booking window opens, it makes the reservation in the first second.
+5. The result appears in the dashboard and, when configured, in Telegram and email.
 
-It runs as a single always-on service on Microsoft Azure, using a scheduler for the timing, a small database for your rules and history, and Telegram for notifications.
+It runs as a single always-on service on Microsoft Azure, using PostgreSQL for durable state, Azure Communication Services for email, and a scheduler for precise timing.
 
 ## Documentation
 
@@ -37,4 +40,4 @@ Want to run the project locally, deploy it, or understand how it is built? Head 
 
 ## Status
 
-Personal project, designed for a single user with room to invite a friend or two later. Built for reliability and low latency first, at a cost that stays reasonable for personal use.
+Personal project supporting several approved users and multiple gyms per user. It is built for reliable, low-latency bookings with deliberately small operational overhead.
