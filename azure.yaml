@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 #
-# azd project descriptor for the WodBuster booking worker.
+# azd project descriptor for the WodBuster Booking Scheduler.
 # Implements ADR-0007 (Bicep + azd, single environment `prod`, single resource group).
 #
 # One service `worker` running as a Container App (ADR-0001). Image is built locally

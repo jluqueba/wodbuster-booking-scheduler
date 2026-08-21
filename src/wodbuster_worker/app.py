@@ -359,7 +359,7 @@ def create_app(*, settings: Settings | None = None, secrets: Secrets | None = No
     session_middleware = build_session_middleware(effective_settings, effective_secrets)
 
     app = FastAPI(
-        title="WodBuster Booking Worker",
+        title="WodBuster Booking Scheduler",
         version="0.1.0",
         lifespan=lifespan,
         # Starlette runs constructor middleware outer→inner in the

@@ -1,11 +1,11 @@
 [project]
 name = "wodbuster-worker"
 version = "0.1.0"
-description = "Unattended WodBuster booking worker (FastAPI + APScheduler + Postgres on Azure Container Apps)."
+description = "Unattended WodBuster Booking Scheduler (FastAPI + APScheduler + Postgres on Azure Container Apps)."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-authors = [{ name = "WodBuster Booking Worker contributors" }]
+authors = [{ name = "WodBuster Booking Scheduler contributors" }]
 
 dependencies = [
     "fastapi>=0.115,<1.0",

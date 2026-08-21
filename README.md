@@ -1,4 +1,4 @@
-# 🏋️ WodBuster Booking Worker
+# 🏋️ WodBuster Booking Scheduler
 
 > Popular CrossFit classes open at a fixed time and fill up in under 10 seconds. Booking by hand means logging in, racing the clock, and often losing the spot anyway. **This project books the class for you.**
 
