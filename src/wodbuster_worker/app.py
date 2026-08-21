@@ -166,6 +166,23 @@ def _fetch_bot_username(bot_token: str) -> str | None:
     return username
 
 
+def _build_email_client(settings: Settings) -> tuple[object | None, str | None]:
+    """Build an ACS ``EmailClient`` + from-address when configured.
+
+    Returns ``(None, None)`` when ACS is not wired (e.g. local dev),
+    which leaves the dispatcher email-disabled and Telegram-only. Auth
+    is the runtime managed identity (``DefaultAzureCredential``).
+    """
+    endpoint = settings.acs_endpoint
+    sender = settings.email_sender_address
+    if endpoint is None or not sender:
+        return None, None
+    from azure.communication.email import EmailClient
+    from azure.identity import DefaultAzureCredential
+
+    return EmailClient(str(endpoint), DefaultAzureCredential()), sender
+
+
 def _register_outbox_gauge() -> None:
     """Wire the ``outbox_queue_depth`` observable gauge.
 
@@ -257,9 +274,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if app.state.heartbeat_probe is not None:
             scheduler = build_scheduler()
             register_heartbeat_job(scheduler, app.state.heartbeat_probe, get_session)
+            email_client, email_from = _build_email_client(settings)
             dispatcher = NotificationDispatcher(
                 bot_token=secrets.telegram_bot_token,
                 session_factory=get_session,
+                email_client=email_client,
+                email_from=email_from,
             )
             app.state.notification_dispatcher = dispatcher
             register_dispatcher_job(scheduler, dispatcher)

@@ -52,3 +52,21 @@ switches).
   to `<a>`. In a table action cell that made a `<button>` sit ~10px higher than
   an `<a class="wb-btn">`; reset the margin on the button/select. Do not chase
   this with `vertical-align`.
+
+## Email templates are the exception (`templates/email/**`)
+
+- HTML email is a different medium: mail clients strip `<head>`/external CSS, so
+  **inline styles are mandatory** and layout is table-based. The `<html lang>`
+  is a Jinja variable (per-recipient), not a literal.
+- To keep the web HTML linter (Edge Tools/webhint, axe) from flagging those as
+  false positives, the email template uses a **`.jinja` extension**
+  (`notification.html.jinja`) so it is not analyzed as HTML. Because the name no
+  longer ends in `.html`, the Jinja `Environment` sets `autoescape=True`
+  explicitly (name-based `select_autoescape` would switch off and leak unescaped
+  user data). The "zero VS Code Problems" rule is satisfied because there is no
+  linted HTML email file.
+- Preview and iterate with `scripts/preview_email.py`, which renders the samples
+  into the OS temp dir (outside the workspace, so those throwaway `.html` files
+  are never linted) and opens the folder. Keep colors/values literal hex (no CSS
+  variables) so every mail client renders them.
+

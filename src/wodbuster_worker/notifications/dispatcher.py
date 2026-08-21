@@ -44,7 +44,8 @@ from sqlalchemy.orm import Session
 
 from ..observability import telemetry
 from ..persistence.models import GymAccount, NotificationOutbox, OperatorProfile
-from . import messages, telegram
+from . import email as email_channel
+from . import email_render, messages, telegram
 
 _log = structlog.get_logger(__name__)
 
@@ -55,6 +56,19 @@ SessionFactory = Callable[[], AbstractContextManager[Session]]
 # Telegram sender type. Kept injectable so tests can supply a fake
 # that captures calls instead of touching the network.
 TelegramSender = Callable[..., None]
+
+# Email sender type (mirrors ``notifications.email.send_email``). Injectable
+# so tests capture calls instead of touching ACS.
+EmailSender = Callable[..., None]
+
+# outbox payload kind -> toggleable email preference category. Kinds absent
+# here (e.g. transactional account mail) are always sent.
+_EMAIL_CATEGORY: dict[str, str] = {
+    "booking_result": "bookings",
+    "cookie_expiring": "session_alerts",
+    "cookie_invalid": "session_alerts",
+    "heartbeat_anomaly": "session_alerts",
+}
 
 # Default retry ceiling. Chosen small so a permanently broken
 # destination stops churning quickly; production callers can override
@@ -72,11 +86,17 @@ class NotificationDispatcher:
         session_factory: SessionFactory,
         max_attempts: int = _DEFAULT_MAX_ATTEMPTS,
         telegram_sender: TelegramSender = telegram.send_message,
+        email_client: Any | None = None,
+        email_from: str | None = None,
+        email_sender: EmailSender = email_channel.send_email,
     ) -> None:
         self._bot_token = bot_token
         self._session_factory = session_factory
         self._max_attempts = max_attempts
         self._telegram_sender = telegram_sender
+        self._email_client = email_client
+        self._email_from = email_from
+        self._email_sender = email_sender
 
     def tick(self) -> None:
         """Drain one batch of pending outbox rows.
@@ -108,6 +128,8 @@ class NotificationDispatcher:
             try:
                 if row.kind == "telegram":
                     self._dispatch_telegram(session, row)
+                elif row.kind == "email":
+                    self._dispatch_email(session, row)
                 elif row.kind == "banner":
                     # No wire delivery — the alert row already backs
                     # the banner UI. Mark done.
@@ -121,7 +143,7 @@ class NotificationDispatcher:
                     self._mark_exhausted(row, reason=f"unknown kind {row.kind!r}")
                     session.commit()
                     return
-            except telegram.TransientTelegramError as exc:
+            except (telegram.TransientTelegramError, email_channel.TransientEmailError) as exc:
                 row.attempt_count = attempt_number
                 if attempt_number >= self._max_attempts:
                     self._mark_exhausted(row, reason=str(exc))
@@ -141,7 +163,7 @@ class NotificationDispatcher:
                     )
                 session.commit()
                 return
-            except telegram.PermanentTelegramError as exc:
+            except (telegram.PermanentTelegramError, email_channel.PermanentEmailError) as exc:
                 row.attempt_count = attempt_number
                 self._mark_exhausted(row, reason=str(exc))
                 _log.warning(
@@ -209,6 +231,44 @@ class NotificationDispatcher:
             return ""
         gym = session.get(GymAccount, row.gym_account_id)
         return gym.display_name if gym and gym.display_name else ""
+
+    def _dispatch_email(self, session: Session, row: NotificationOutbox) -> None:
+        """Render and send the email for ``row``, honoring preferences."""
+        if self._email_client is None or not self._email_from:
+            # ACS not configured yet — keep the row pending (transient).
+            raise email_channel.TransientEmailError("email not configured")
+
+        operator = session.get(OperatorProfile, row.user_id)
+        if operator is None or not operator.email:
+            raise email_channel.PermanentEmailError(f"operator {row.user_id} has no email address")
+
+        category = _EMAIL_CATEGORY.get(str((row.payload or {}).get("kind")))
+        prefs = operator.email_preferences or {}
+        if category is not None and not prefs.get(category, True):
+            # Recipient turned this category off; drop it without sending.
+            _log.info("email.skipped_pref", row_id=row.id, category=category)
+            return
+
+        lang = operator.communication_language or "en"
+        content = email_render.render_email(
+            row.payload,
+            lang=lang,
+            gym_name=self._gym_name(session, row),
+            unsubscribe_url=None,
+        )
+        if content is None:
+            kind = (row.payload or {}).get("kind")
+            raise email_channel.PermanentEmailError(f"email: unrenderable payload kind {kind!r}")
+
+        self._email_sender(
+            client=self._email_client,
+            sender_address=self._email_from,
+            recipient_address=operator.email,
+            subject=content.subject,
+            html=content.html,
+            plain_text=content.text,
+            list_unsubscribe_url=None,
+        )
 
     def _resolve_chat_id(self, session: Session, row: NotificationOutbox) -> str:
         """Return the chat id to send to.

@@ -667,6 +667,17 @@ EN: dict[str, str] = {
         "\U0001f9ea Test message from WodBuster Booking Scheduler. "
         "If you see this, notifications are working."
     ),
+    # -- email notifications (ADR-0011): subjects + footer. The message
+    #    body reuses the tg.* copy via messages.render. --
+    "email.subject.booking": "Booking update · {gym}",
+    "email.subject.cookie_expiring": "Action needed: session expiring · {gym}",
+    "email.subject.cookie_invalid": "Action needed: session invalid · {gym}",
+    "email.subject.anomaly": "Missed booking window · {gym}",
+    "email.footer.tagline": (
+        "WodBuster Booking Scheduler books your classes the moment the window opens."
+    ),
+    "email.footer.preferences": "Manage which emails you receive in your profile.",
+    "email.footer.unsubscribe": "Unsubscribe from these emails",
     # -- dashboard alert banners (rendered server-side in the operator's
     #    web language; one date format via format_slot, gym timezone) --
     "banner.aria_label": "System alerts",
@@ -1373,6 +1384,17 @@ ES: dict[str, str] = {
         "\U0001f9ea Mensaje de prueba de WodBuster Booking Scheduler. "
         "Si ves esto, las notificaciones funcionan."
     ),
+    # -- email notifications (ADR-0011): asuntos + pie. El cuerpo reutiliza
+    #    el texto tg.* vía messages.render. --
+    "email.subject.booking": "Actualización de reserva · {gym}",
+    "email.subject.cookie_expiring": "Acción necesaria: sesión por caducar · {gym}",
+    "email.subject.cookie_invalid": "Acción necesaria: sesión inválida · {gym}",
+    "email.subject.anomaly": "Ventana de reserva perdida · {gym}",
+    "email.footer.tagline": (
+        "WodBuster Booking Scheduler reserva tus clases en cuanto se abre la ventana."
+    ),
+    "email.footer.preferences": "Gestiona qué correos recibes en tu perfil.",
+    "email.footer.unsubscribe": "Darte de baja de estos correos",
     # -- banners de alerta del panel (renderizados en el servidor en el
     #    idioma web del operador; un formato de fecha vía format_slot) --
     "banner.aria_label": "Alertas del sistema",
