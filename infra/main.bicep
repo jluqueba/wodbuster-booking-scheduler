@@ -1,6 +1,6 @@
 // main.bicep
 //
-// Resource-group-scoped entry point for the WodBuster booking worker infrastructure.
+// Resource-group-scoped entry point for the WodBuster Booking Scheduler infrastructure.
 //
 // ADRs implemented (or set up for later modules to implement):
 //   ADR-0001  Azure Container Apps as the hosting service

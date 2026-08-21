@@ -360,7 +360,7 @@ EN: dict[str, str] = {
     # -- auth --------------------------------------------------------
     "auth.landing.title": "WodBuster Booking Scheduler",
     "auth.denied.title": "🚫 Access denied",
-    "auth.denied.body": ("This account is not authorized to access the WodBuster Booking Worker."),
+    "auth.denied.body": ("This account is not authorized to access the WodBuster Booking Scheduler."),
     "auth.denied.contact": (
         "If you believe this is a mistake, contact the operator who set up this deployment."
     ),
@@ -1142,7 +1142,7 @@ ES: dict[str, str] = {
     "auth.landing.title": "WodBuster Booking Scheduler",
     "auth.denied.title": "🚫 Acceso denegado",
     "auth.denied.body": (
-        "Esta cuenta no está autorizada para acceder al WodBuster Booking Worker."
+        "Esta cuenta no está autorizada para acceder al WodBuster Booking Scheduler."
     ),
     "auth.denied.contact": (
         "Si crees que es un error, contacta con la persona que configuró el despliegue."

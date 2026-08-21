@@ -4,8 +4,8 @@
 # Publishing happens automatically on every push to `main`. No separate
 # page is authored; the README is the source of the published site.
 
-title: WodBuster Booking Worker
-description: Unattended worker that books your CrossFit classes the instant the booking window opens.
+title: WodBuster Booking Scheduler
+description: Unattended service that books your CrossFit classes the instant the booking window opens.
 theme: jekyll-theme-cayman
 show_downloads: false
 

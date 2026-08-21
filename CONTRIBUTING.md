@@ -1,4 +1,4 @@
-# Contributing to WodBuster Booking Worker
+# Contributing to WodBuster Booking Scheduler
 
 Thank you for your interest in contributing. This is a personal automation project, but issues and pull requests are welcome.
 

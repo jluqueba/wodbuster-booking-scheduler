@@ -1,6 +1,6 @@
-# WodBuster Booking Worker — Developer Guide
+# WodBuster Booking Scheduler — Developer Guide
 
-Comprehensive, developer-facing reference for the WodBuster Booking Worker: an unattended service that books CrossFit / box classes on the WodBuster platform the instant each booking window opens.
+Comprehensive, developer-facing reference for the WodBuster Booking Scheduler: an unattended service that books CrossFit / box classes on the WodBuster platform the instant each booking window opens.
 
 This guide is public. Internal specs, ADRs, envisioning notes, and migration records under `docs/internal/**` are also versioned, but Git stores them as age ciphertext through the `git-age` clean and smudge filter. Contributors with the private key see normal Markdown in the working tree; GitHub and GitHub Pages never receive the plaintext.
 
