@@ -10,16 +10,15 @@ Interactive prompts collect ``provider``, ``subject_id``, and
 command is idempotent: rerunning with an already-registered pair is a
 no-op and prints ``already registered``.
 
-Rationale: OAuth callback deliberately refuses to auto-create
-operators (FR-030). Seeding the very first operator therefore requires
-an out-of-band step, which is this CLI. On subsequent installs an
-operator with an existing session can add more identities via a future
-admin UI (out of scope for US-009).
+Rationale: the OAuth signup flow creates pending users that only an
+administrator can approve. Seeding the first active administrator
+therefore requires an out-of-band step, which is this CLI. After that,
+the administrator reviews subsequent signup requests in the admin UI.
 
 To discover a ``subject_id`` for a provider, sign in via the OAuth
-flow once and read the denial log (the callback logs the presented
-``(provider, subject_id)`` before rendering the denial page). See
-README "Bootstrap the first operator" for the step-by-step.
+flow once and read the structured callback log (it records the
+presented ``(provider, subject_id)``). See README "Bootstrap the first
+administrator" for the step-by-step.
 """
 
 from __future__ import annotations
@@ -72,7 +71,7 @@ def main() -> int:
             )
             return 0
 
-        operator = OperatorProfile(display_name=display_name)
+        operator = OperatorProfile(display_name=display_name, status="active", is_admin=True)
         session.add(operator)
         session.flush()  # populate operator.id
 

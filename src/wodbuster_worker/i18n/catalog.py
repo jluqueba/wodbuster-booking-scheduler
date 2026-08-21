@@ -395,6 +395,7 @@ EN: dict[str, str] = {
         "Everything you need to run bookings on autopilot. Tap a question to expand it."
     ),
     "faq.section.getting_started": "Getting started",
+    "faq.section.account": "Account and profile",
     "faq.section.cookie": "Cookie",
     "faq.section.gyms": "Gyms",
     "faq.section.rules": "Rules",
@@ -417,6 +418,37 @@ EN: dict[str, str] = {
         "<a href='{rules_url}'>Rules</a> page describing which class you attend, at what time, "
         "and when WodBuster opens the reservation window for it, (3) wait — the scheduler "
         "fires automatically at the window-open instant."
+    ),
+    "faq.q.pending_signup": "Why is my first sign-in waiting for approval?",
+    "faq.a.pending_signup": (
+        "A new OAuth identity creates a pending access request. An administrator must approve "
+        "it before the account can use booking data or controls. The app emails you when the "
+        "request is received and again when it is approved or rejected."
+    ),
+    "faq.q.profile_edit": "What can I change in my profile?",
+    "faq.a.profile_edit": (
+        "On the <a href='{profile_url}'>Profile</a> page you can edit your display name, "
+        "optional short name, communication language, email address, and operational email "
+        "preferences. Your profile picture comes from WodBuster and is read-only here."
+    ),
+    "faq.q.profile_language": "What does the communication language control?",
+    "faq.a.profile_language": (
+        "It controls your signed-in interface and the language used for Telegram and email "
+        "notifications. Change it on the <a href='{profile_url}'>Profile</a> page; the new "
+        "language takes effect as soon as you save."
+    ),
+    "faq.q.admin_difference": "What can an administrator do that a regular user cannot?",
+    "faq.a.admin_difference": (
+        "Regular users manage only their own gyms, rules, bookings, cookie, profile, and "
+        "notification settings. Administrators can also review pending access requests and "
+        "approve, reject, suspend, restore, or permanently delete non-administrator users. "
+        "They cannot suspend or delete themselves or another administrator."
+    ),
+    "faq.q.access_suspended": "What happens if my access is suspended or deleted?",
+    "faq.a.access_suspended": (
+        "A suspended account cannot sign in until the administrator restores it or a timed "
+        "suspension expires; its data remains stored. Deletion is permanent and removes the "
+        "user together with their gyms, rules, history, cookies, and notification data."
     ),
     "faq.q.cookie_source": "Where do I get the cookie value from?",
     "faq.a.cookie_source": (
@@ -477,8 +509,8 @@ EN: dict[str, str] = {
     "faq.a.how_cancel": (
         "Go to the <a href='{history_url}'>History</a> page, find the booking (it must be "
         "granted and its class start must still be in the future), and tap Cancel. The app "
-        "calls WodBuster, flips the row to <em>cancelled</em>, and sends a Telegram "
-        "notification."
+        "calls WodBuster, flips the row to <em>cancelled</em>, and sends the configured "
+        "notifications."
     ),
     "faq.q.cancel_twice": "What happens if I tap Cancel twice?",
     "faq.a.cancel_twice": (
@@ -512,9 +544,28 @@ EN: dict[str, str] = {
     "faq.q.where_notifications": "Where do notifications go?",
     "faq.a.where_notifications": (
         "Every mutating event (booking granted, booking failed, cookie expiring, cookie "
-        "rejected) produces a banner on the dashboard <em>and</em> a Telegram message — as "
-        "long as you have registered your Telegram chat id against your operator profile. "
-        "Web-only alerts still work if Telegram is not wired."
+        "rejected) produces a dashboard banner. It also goes to Telegram when your chat is "
+        "bound and to email when you have an address and the corresponding preference is "
+        "enabled. Every message identifies the gym it concerns."
+    ),
+    "faq.q.email_preferences": "Which email notifications can I control?",
+    "faq.a.email_preferences": (
+        "The <a href='{profile_url}'>Profile</a> page has separate switches for booking "
+        "results and session or cookie alerts. You can also edit the destination email "
+        "address there. Changes apply to events produced after you save."
+    ),
+    "faq.q.email_unsubscribe": "How do I unsubscribe from email?",
+    "faq.a.email_unsubscribe": (
+        "Use the unsubscribe link in any operational email to turn off booking and session "
+        "alert emails without signing in. You can enable either category again from the "
+        "<a href='{profile_url}'>Profile</a> page. Telegram and dashboard banners are not "
+        "affected."
+    ),
+    "faq.q.account_emails": "Why do account emails have no off switch?",
+    "faq.a.account_emails": (
+        "Messages confirming that an access request was received, approved, or rejected are "
+        "transactional. They are always sent so the user can follow the access process, even "
+        "after unsubscribing from operational email."
     ),
     "faq.q.telegram_why": "Why connect Telegram?",
     "faq.a.telegram_why": (
@@ -545,9 +596,9 @@ EN: dict[str, str] = {
     "faq.q.different_provider": "I want to sign in from a different provider.",
     "faq.a.different_provider": (
         "Log out, then hit the sign-in provider you want on the landing page. The app matches "
-        "identities by subject id provided by the OAuth callback — an account you have not "
-        "signed in with before will be rejected because the operator allow-list is "
-        "single-user for now."
+        "identities by the subject id provided by the OAuth callback. A provider identity "
+        "that has not signed in before creates a separate access request and must be approved "
+        "by an administrator before it can enter the app."
     ),
     # -- flash messages ---------------------------------------------
     "flash.booking.cancelled": "Booking cancelled. WodBuster and Telegram updated.",
@@ -1130,6 +1181,7 @@ ES: dict[str, str] = {
         "desplegarla."
     ),
     "faq.section.getting_started": "Primeros pasos",
+    "faq.section.account": "Cuenta y perfil",
     "faq.section.cookie": "Cookie",
     "faq.section.gyms": "Gimnasios",
     "faq.section.rules": "Reglas",
@@ -1152,6 +1204,41 @@ ES: dict[str, str] = {
         "<a href='{rules_url}'>Reglas</a> indicando a qué clase asistes, a qué hora y cuándo "
         "abre WodBuster la ventana de reserva, (3) espera: el planificador se dispara "
         "automáticamente en el instante en que se abre la ventana."
+    ),
+    "faq.q.pending_signup": "¿Por qué mi primer acceso está pendiente de aprobación?",
+    "faq.a.pending_signup": (
+        "Una identidad OAuth nueva crea una solicitud de acceso pendiente. Un administrador "
+        "debe aprobarla antes de que la cuenta pueda usar los datos o controles de reservas. "
+        "La aplicación te envía un correo al recibir la solicitud y otro cuando se aprueba o "
+        "rechaza."
+    ),
+    "faq.q.profile_edit": "¿Qué puedo cambiar en mi perfil?",
+    "faq.a.profile_edit": (
+        "En la página de <a href='{profile_url}'>Perfil</a> puedes editar tu nombre visible, "
+        "el nombre corto opcional, el idioma de comunicación, el correo electrónico y las "
+        "preferencias de correo operativo. La foto procede de WodBuster y aquí es de solo "
+        "lectura."
+    ),
+    "faq.q.profile_language": "¿Qué controla el idioma de comunicación?",
+    "faq.a.profile_language": (
+        "Controla la interfaz cuando has iniciado sesión y el idioma de las notificaciones "
+        "de Telegram y correo. Cámbialo en la página de <a href='{profile_url}'>Perfil</a>; "
+        "el nuevo idioma se aplica al guardar."
+    ),
+    "faq.q.admin_difference": "¿Qué puede hacer un administrador que no pueda un usuario?",
+    "faq.a.admin_difference": (
+        "Los usuarios gestionan únicamente sus gimnasios, reglas, reservas, cookie, perfil y "
+        "ajustes de notificaciones. Los administradores también revisan solicitudes de acceso "
+        "y pueden aprobar, rechazar, suspender, rehabilitar o eliminar de forma permanente a "
+        "usuarios que no sean administradores. No pueden suspenderse o eliminarse a sí mismos "
+        "ni hacerlo con otro administrador."
+    ),
+    "faq.q.access_suspended": "¿Qué ocurre si suspenden o eliminan mi acceso?",
+    "faq.a.access_suspended": (
+        "Una cuenta suspendida no puede entrar hasta que el administrador la rehabilite o "
+        "termine una suspensión temporal; sus datos se conservan. La eliminación es "
+        "permanente y borra al usuario junto con sus gimnasios, reglas, historial, cookies y "
+        "datos de notificaciones."
     ),
     "faq.q.cookie_source": "¿De dónde saco el valor de la cookie?",
     "faq.a.cookie_source": (
@@ -1217,8 +1304,8 @@ ES: dict[str, str] = {
     "faq.a.how_cancel": (
         "Ve a la página de <a href='{history_url}'>Historial</a>, busca la reserva (debe "
         "estar concedida y su inicio de clase debe seguir en el futuro) y toca Cancelar. La "
-        "aplicación llama a WodBuster, cambia la fila a <em>cancelada</em> y envía una "
-        "notificación de Telegram."
+        "aplicación llama a WodBuster, cambia la fila a <em>cancelada</em> y envía las "
+        "notificaciones configuradas."
     ),
     "faq.q.cancel_twice": "¿Qué pasa si toco Cancelar dos veces?",
     "faq.a.cancel_twice": (
@@ -1252,9 +1339,29 @@ ES: dict[str, str] = {
     "faq.q.where_notifications": "¿Dónde llegan las notificaciones?",
     "faq.a.where_notifications": (
         "Cada evento que cambia algo (reserva concedida, reserva fallida, cookie por caducar, "
-        "cookie rechazada) genera un aviso en el panel <em>y</em> un mensaje de Telegram, "
-        "siempre que hayas registrado tu chat de Telegram en tu perfil de operador. Los "
-        "avisos solo web siguen funcionando aunque Telegram no esté conectado."
+        "cookie rechazada) genera un aviso en el panel. También llega a Telegram si el chat "
+        "está vinculado y por correo si tienes una dirección y la preferencia correspondiente "
+        "está activa. Cada mensaje identifica el gimnasio al que se refiere."
+    ),
+    "faq.q.email_preferences": "¿Qué notificaciones por correo puedo controlar?",
+    "faq.a.email_preferences": (
+        "La página de <a href='{profile_url}'>Perfil</a> tiene controles separados para los "
+        "resultados de reservas y las alertas de sesión o cookie. También puedes editar allí "
+        "la dirección de destino. Los cambios se aplican a los eventos generados después de "
+        "guardar."
+    ),
+    "faq.q.email_unsubscribe": "¿Cómo me doy de baja de los correos?",
+    "faq.a.email_unsubscribe": (
+        "Usa el enlace de baja de cualquier correo operativo para desactivar los mensajes de "
+        "reservas y alertas de sesión sin iniciar sesión. Puedes volver a activar cada "
+        "categoría desde la página de <a href='{profile_url}'>Perfil</a>. Telegram y los "
+        "avisos del panel no se ven afectados."
+    ),
+    "faq.q.account_emails": "¿Por qué no puedo desactivar los correos de cuenta?",
+    "faq.a.account_emails": (
+        "Los mensajes que confirman la recepción, aprobación o rechazo de una solicitud de "
+        "acceso son transaccionales. Se envían siempre para que el usuario pueda seguir el "
+        "proceso de acceso, incluso si se ha dado de baja del correo operativo."
     ),
     "faq.q.telegram_why": "¿Para qué conectar Telegram?",
     "faq.a.telegram_why": (
@@ -1287,9 +1394,9 @@ ES: dict[str, str] = {
     "faq.q.different_provider": "Quiero iniciar sesión con otro proveedor.",
     "faq.a.different_provider": (
         "Cierra sesión y pulsa el proveedor que quieras en la página de inicio. La aplicación "
-        "identifica las cuentas por el subject id que envía el callback de OAuth: una cuenta "
-        "con la que no hayas iniciado sesión antes será rechazada porque la lista de "
-        "operadores permitidos es de un solo usuario por ahora."
+        "identifica las cuentas por el subject id que envía el callback de OAuth. Una identidad "
+        "de proveedor que no haya entrado antes crea una solicitud independiente y debe ser "
+        "aprobada por un administrador antes de acceder a la aplicación."
     ),
     # -- flash messages ---------------------------------------------
     "flash.booking.cancelled": "Reserva cancelada. WodBuster y Telegram actualizados.",

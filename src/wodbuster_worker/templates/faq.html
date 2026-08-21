@@ -102,6 +102,43 @@
       </p>
     </details>
 
+    <h2 class="wb-faq__section-title">{{ t("faq.section.account") }}</h2>
+
+    <details>
+      <summary>{{ t("faq.q.pending_signup") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.pending_signup") | safe }}
+      </p>
+    </details>
+
+    <details>
+      <summary>{{ t("faq.q.profile_edit") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.profile_edit", profile_url=lang_url('/profile')) | safe }}
+      </p>
+    </details>
+
+    <details>
+      <summary>{{ t("faq.q.profile_language") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.profile_language", profile_url=lang_url('/profile')) | safe }}
+      </p>
+    </details>
+
+    <details>
+      <summary>{{ t("faq.q.admin_difference") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.admin_difference") | safe }}
+      </p>
+    </details>
+
+    <details>
+      <summary>{{ t("faq.q.access_suspended") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.access_suspended") | safe }}
+      </p>
+    </details>
+
     <h2 class="wb-faq__section-title">{{ t("faq.section.cookie") }}</h2>
 
     <details>
@@ -223,6 +260,27 @@
       <summary>{{ t("faq.q.where_notifications") }}</summary>
       <p class="wb-faq__answer">
         {{ t("faq.a.where_notifications") | safe }}
+      </p>
+    </details>
+
+    <details>
+      <summary>{{ t("faq.q.email_preferences") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.email_preferences", profile_url=lang_url('/profile')) | safe }}
+      </p>
+    </details>
+
+    <details>
+      <summary>{{ t("faq.q.email_unsubscribe") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.email_unsubscribe", profile_url=lang_url('/profile')) | safe }}
+      </p>
+    </details>
+
+    <details>
+      <summary>{{ t("faq.q.account_emails") }}</summary>
+      <p class="wb-faq__answer">
+        {{ t("faq.a.account_emails") | safe }}
       </p>
     </details>
 
