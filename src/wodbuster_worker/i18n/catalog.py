@@ -700,6 +700,22 @@ EN: dict[str, str] = {
     ),
     "email.footer.preferences": "Manage which emails you receive in your profile.",
     "email.footer.unsubscribe": "Unsubscribe from these emails",
+    # -- account (signup lifecycle) mail; transactional, always sent --
+    "email.account.received.subject": "We received your access request",
+    "email.account.received.body": (
+        "Thanks for signing up. Your access request is now waiting for an administrator "
+        "to review it. We'll email you as soon as it is decided."
+    ),
+    "email.account.approved.subject": "Your access is approved",
+    "email.account.approved.body": (
+        "Good news: your access has been approved. You can now sign in and start booking "
+        "your classes."
+    ),
+    "email.account.rejected.subject": "About your access request",
+    "email.account.rejected.body": (
+        "Your access request was not approved this time. If you think this is a mistake, "
+        "sign in again to submit a new request."
+    ),
     # -- dashboard alert banners (rendered server-side in the operator's
     #    web language; one date format via format_slot, gym timezone) --
     "banner.aria_label": "System alerts",
@@ -1439,6 +1455,22 @@ ES: dict[str, str] = {
     ),
     "email.footer.preferences": "Gestiona qué correos recibes en tu perfil.",
     "email.footer.unsubscribe": "Darte de baja de estos correos",
+    # -- correos de cuenta (ciclo de alta); transaccionales, siempre se envían --
+    "email.account.received.subject": "Hemos recibido tu solicitud de acceso",
+    "email.account.received.body": (
+        "Gracias por registrarte. Tu solicitud de acceso está pendiente de que un "
+        "administrador la revise. Te avisaremos por correo en cuanto se decida."
+    ),
+    "email.account.approved.subject": "Tu acceso ha sido aprobado",
+    "email.account.approved.body": (
+        "Buenas noticias: tu acceso ha sido aprobado. Ya puedes iniciar sesión y empezar "
+        "a reservar tus clases."
+    ),
+    "email.account.rejected.subject": "Sobre tu solicitud de acceso",
+    "email.account.rejected.body": (
+        "Tu solicitud de acceso no ha sido aprobada esta vez. Si crees que es un error, "
+        "inicia sesión de nuevo para enviar una nueva solicitud."
+    ),
     # -- banners de alerta del panel (renderizados en el servidor en el
     #    idioma web del operador; un formato de fecha vía format_slot) --
     "banner.aria_label": "Alertas del sistema",

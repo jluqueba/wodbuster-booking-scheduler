@@ -157,6 +157,35 @@ def test_admin_approve_and_reject(
     assert _status(postgres_engine, b_id) == "rejected"
 
 
+def test_admin_approve_enqueues_account_email(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    admin_id, admin_subject = seed_operator(provider="microsoft", display_name="Boss")
+    _make_admin(postgres_engine, admin_id)
+    pending_id, _ = seed_operator(provider="microsoft", display_name="Pat")
+    _set_status(postgres_engine, pending_id, "pending")
+    with postgres_engine.begin() as conn:
+        conn.execute(
+            text("UPDATE operator_profile SET email = 'pat@example.com' WHERE id = :id"),
+            {"id": pending_id},
+        )
+    app = app_factory()
+
+    with _sign_in(app, admin_subject, "Boss", monkeypatch) as client:
+        resp = client.post(f"/admin/users/{pending_id}/approve", data={"_csrf": _csrf(client)})
+        assert resp.status_code == 303
+
+    with postgres_engine.connect() as conn:
+        payload = conn.execute(
+            text("SELECT payload FROM notification_outbox WHERE user_id = :id AND kind = 'email'"),
+            {"id": pending_id},
+        ).scalar_one()
+    assert payload["kind"] == "account_approved"
+
+
 def test_admin_ban_temporary_and_unban(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],

@@ -64,3 +64,18 @@ def test_render_is_localized() -> None:
 
 def test_render_unknown_kind_returns_none() -> None:
     assert email_render.render_email({"kind": "nope"}, lang="en", gym_name="G") is None
+
+
+def test_render_account_email_has_no_gym_chip() -> None:
+    content = email_render.render_email({"kind": "account_approved"}, lang="en", gym_name="")
+    assert content is not None
+    assert "approved" in content.subject.lower()
+    assert "approved" in content.text.lower()
+    # No gym chip markup for account mail (the chip pill is border-radius:999px).
+    assert "border-radius:999px" not in content.html
+
+
+def test_render_account_email_is_localized() -> None:
+    content = email_render.render_email({"kind": "account_received"}, lang="es", gym_name="")
+    assert content is not None
+    assert "solicitud" in content.subject.lower()

@@ -37,6 +37,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from ..gyms.discovery import GymSelectorError
 from ..gyms.service import add_discovered_gym_accounts
 from ..i18n import lang_prefix, set_language, t_lang
+from ..notifications.fanout import enqueue_email_row
 from ..notifications.telegram import TelegramError, send_message
 from ..persistence.cookie_store import CookieDecryptError
 from ..persistence.engine import get_session as db_session
@@ -407,6 +408,14 @@ def _create_pending_signup(
                 subject_id=subject_id,
                 display_name=display_name or None,
             )
+        )
+        # Confirm receipt of the request by email (transactional; ADR-0011).
+        enqueue_email_row(
+            session,
+            operator=profile,
+            gym_account_id=None,
+            payload={"kind": "account_received"},
+            now=datetime.now(tz=UTC),
         )
         session.commit()
         return int(profile.id)

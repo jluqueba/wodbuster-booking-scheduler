@@ -43,6 +43,14 @@ _SUBJECT_KEYS: dict[str, str] = {
     "heartbeat_anomaly": "email.subject.anomaly",
 }
 
+# Account (signup lifecycle) mail is email-only (no Telegram template) and has
+# no gym context: kind -> (subject key, body key). Transactional; always sent.
+_ACCOUNT_KINDS: dict[str, tuple[str, str]] = {
+    "account_received": ("email.account.received.subject", "email.account.received.body"),
+    "account_approved": ("email.account.approved.subject", "email.account.approved.body"),
+    "account_rejected": ("email.account.rejected.subject", "email.account.rejected.body"),
+}
+
 
 @dataclass(frozen=True)
 class EmailContent:
@@ -61,26 +69,35 @@ def render_email(
     unsubscribe_url: str | None = None,
 ) -> EmailContent | None:
     """Render an email, or ``None`` when the payload kind is unknown."""
-    text = messages.render(payload, lang=lang, gym_name=gym_name)
-    if text is None:
-        return None
-
-    kind = (payload or {}).get("kind")
-    subject_key = _SUBJECT_KEYS.get(str(kind), "email.subject.booking")
-    subject = t_lang(lang, subject_key, gym=gym_name)
-    # In-body heading: the subject without the trailing " · {gym}" (the gym
-    # already shows in the chip). Every subject uses that separator.
-    title = subject.rsplit(" · ", 1)[0]
-    # Option (a): the HTML body drops the bracketed "[gym]" that the tg.*
-    # copy carries, because the chip states the gym. The plain-text part
-    # keeps it (no chip there).
-    html_body = text.replace(f"[{gym_name}] ", "") if gym_name else text
+    kind = str((payload or {}).get("kind"))
+    account = _ACCOUNT_KINDS.get(kind)
+    if account is not None:
+        subject_key, body_key = account
+        subject = t_lang(lang, subject_key)
+        text = t_lang(lang, body_key)
+        title = subject
+        html_body = text
+        chip = ""  # no gym on account mail
+    else:
+        rendered = messages.render(payload, lang=lang, gym_name=gym_name)
+        if rendered is None:
+            return None
+        text = rendered
+        subject = t_lang(lang, _SUBJECT_KEYS.get(kind, "email.subject.booking"), gym=gym_name)
+        # In-body heading: the subject without the trailing " · {gym}" (the gym
+        # already shows in the chip). Every subject uses that separator.
+        title = subject.rsplit(" · ", 1)[0]
+        # Option (a): the HTML body drops the bracketed "[gym]" that the tg.*
+        # copy carries, because the chip states the gym. The plain-text part
+        # keeps it (no chip there).
+        html_body = text.replace(f"[{gym_name}] ", "") if gym_name else text
+        chip = gym_name
 
     html = _env.get_template("notification.html.jinja").render(
         lang=lang,
         subject=subject,
         title=title,
-        gym_name=gym_name,
+        gym_name=chip,
         hero_image_url=_HERO_IMAGE_URL,
         body_lines=html_body.split("\n"),
         unsubscribe_url=unsubscribe_url,

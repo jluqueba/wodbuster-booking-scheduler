@@ -31,15 +31,17 @@
                 </table>
               </td>
             </tr>
-            <!-- Gym label -->
+            <!-- Gym label (omitted for account mail, which has no gym) -->
+            {% if gym_name %}
             <tr>
               <td style="padding:22px 28px 0 28px;">
                 <span style="display:inline-block; font-family:'Segoe UI',Arial,sans-serif; font-size:12px; font-weight:600; color:#0a0e14; background-color:#f8ff40; border-radius:999px; padding:4px 12px;">{{ gym_name }}</span>
               </td>
             </tr>
+            {% endif %}
             <!-- Title (subject without the gym, which the chip already shows) -->
             <tr>
-              <td style="padding:12px 28px 0 28px; font-family:'Segoe UI',Arial,sans-serif; font-size:19px; font-weight:700; color:#0a0e14;">
+              <td style="padding:{% if gym_name %}12{% else %}22{% endif %}px 28px 0 28px; font-family:'Segoe UI',Arial,sans-serif; font-size:19px; font-weight:700; color:#0a0e14;">
                 {{ title }}
               </td>
             </tr>

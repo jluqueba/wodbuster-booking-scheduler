@@ -42,11 +42,15 @@ def enqueue_email_row(
     session: Session,
     *,
     operator: OperatorProfile | None,
-    gym_account_id: int,
+    gym_account_id: int | None,
     payload: dict[str, Any],
     now: datetime,
 ) -> None:
-    """Enqueue an email outbox row when the operator opted in."""
+    """Enqueue an email outbox row when the operator opted in.
+
+    ``gym_account_id`` is ``None`` for account (signup lifecycle) mail, which
+    has no gym context.
+    """
     if not email_allowed(operator, payload):
         return
     assert operator is not None  # narrowed by email_allowed

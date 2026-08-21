@@ -247,7 +247,9 @@ class NotificationDispatcher:
             return
 
         lang = operator.communication_language or "en"
-        unsubscribe_url = self._unsubscribe_url(operator)
+        # Only operational mail carries an unsubscribe link; account
+        # (transactional) mail has no category and must not be unsubscribable.
+        unsubscribe_url = self._unsubscribe_url(operator) if category else None
         content = email_render.render_email(
             row.payload,
             lang=lang,
