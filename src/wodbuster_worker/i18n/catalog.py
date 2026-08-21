@@ -122,6 +122,15 @@ EN: dict[str, str] = {
     "profile.flash.name_required": "Display name cannot be empty.",
     "profile.flash.too_long": "Name is too long.",
     "profile.flash.bad_language": "Choose a supported language.",
+    "profile.email_label": "Email address",
+    "profile.email_placeholder": "you@example.com",
+    "profile.email_prefs_label": "Email notifications",
+    "profile.email_pref.bookings": "Booking results",
+    "profile.email_pref.session_alerts": "Session and cookie alerts",
+    "profile.email_prefs_note": (
+        "Account emails (approval, rejection) are always sent, regardless of these settings."
+    ),
+    "profile.flash.bad_email": "That email address does not look valid.",
     # -- dashboard ---------------------------------------------------
     "dashboard.eyebrow": "Welcome back",
     "dashboard.title.hero": "Hero",
@@ -363,6 +372,19 @@ EN: dict[str, str] = {
     "auth.suspended.title": "⛔ Access suspended",
     "auth.suspended.body": "Your access has been suspended by the administrator.",
     "auth.suspended.back": "⬅️ Back to sign-in",
+    # -- email unsubscribe (ADR-0011) --
+    "unsubscribe.title": "Unsubscribe",
+    "unsubscribe.ok.title": "✅ You're unsubscribed",
+    "unsubscribe.ok.body": (
+        "You will no longer receive booking or session-alert emails. You can turn them "
+        "back on anytime from your profile."
+    ),
+    "unsubscribe.bad.title": "⚠️ Link not valid",
+    "unsubscribe.bad.body": (
+        "This unsubscribe link is invalid or has expired. Manage your email preferences "
+        "from your profile instead."
+    ),
+    "unsubscribe.back": "⬅️ Back to sign-in",
     "auth.signin.with_microsoft": "🪟 Sign in with Microsoft",
     "auth.signin.with_github": "🐙 Sign in with GitHub",
     "auth.signin.with_google": "🌐 Sign in with Google",
@@ -804,6 +826,15 @@ ES: dict[str, str] = {
     "profile.flash.name_required": "El nombre visible no puede estar vacío.",
     "profile.flash.too_long": "El nombre es demasiado largo.",
     "profile.flash.bad_language": "Elige un idioma admitido.",
+    "profile.email_label": "Correo electrónico",
+    "profile.email_placeholder": "tu@ejemplo.com",
+    "profile.email_prefs_label": "Notificaciones por correo",
+    "profile.email_pref.bookings": "Resultados de reservas",
+    "profile.email_pref.session_alerts": "Alertas de sesión y cookie",
+    "profile.email_prefs_note": (
+        "Los correos de cuenta (aprobación, rechazo) se envían siempre, al margen de estos ajustes."
+    ),
+    "profile.flash.bad_email": "Ese correo no parece válido.",
     # -- dashboard ---------------------------------------------------
     "dashboard.eyebrow": "Hola de nuevo",
     "dashboard.title.hero": "Crack",
@@ -1059,6 +1090,19 @@ ES: dict[str, str] = {
     "auth.suspended.title": "⛔ Acceso suspendido",
     "auth.suspended.body": "El administrador ha suspendido tu acceso.",
     "auth.suspended.back": "⬅️ Volver a iniciar sesión",
+    # -- baja de correos (ADR-0011) --
+    "unsubscribe.title": "Baja de correos",
+    "unsubscribe.ok.title": "✅ Te has dado de baja",
+    "unsubscribe.ok.body": (
+        "Ya no recibirás correos de reservas ni de alertas de sesión. Puedes volver a "
+        "activarlos cuando quieras desde tu perfil."
+    ),
+    "unsubscribe.bad.title": "⚠️ Enlace no válido",
+    "unsubscribe.bad.body": (
+        "Este enlace de baja no es válido o ha caducado. Gestiona tus preferencias de "
+        "correo desde tu perfil."
+    ),
+    "unsubscribe.back": "⬅️ Volver a iniciar sesión",
     "auth.signin.with_microsoft": "🪟 Entrar con Microsoft",
     "auth.signin.with_github": "🐙 Entrar con GitHub",
     "auth.signin.with_google": "🌐 Entrar con Google",

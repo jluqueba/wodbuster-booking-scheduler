@@ -47,6 +47,7 @@ from ..persistence.models import GymAccount, NotificationOutbox, OperatorProfile
 from . import email as email_channel
 from . import email_render, messages, telegram
 from .fanout import EMAIL_CATEGORY
+from .unsubscribe import make_unsubscribe_token
 
 _log = structlog.get_logger(__name__)
 
@@ -81,6 +82,8 @@ class NotificationDispatcher:
         email_client: Any | None = None,
         email_from: str | None = None,
         email_sender: EmailSender = email_channel.send_email,
+        app_base_url: str | None = None,
+        unsubscribe_secret: str | None = None,
     ) -> None:
         self._bot_token = bot_token
         self._session_factory = session_factory
@@ -89,6 +92,8 @@ class NotificationDispatcher:
         self._email_client = email_client
         self._email_from = email_from
         self._email_sender = email_sender
+        self._app_base_url = app_base_url
+        self._unsubscribe_secret = unsubscribe_secret
 
     def tick(self) -> None:
         """Drain one batch of pending outbox rows.
@@ -242,11 +247,12 @@ class NotificationDispatcher:
             return
 
         lang = operator.communication_language or "en"
+        unsubscribe_url = self._unsubscribe_url(operator)
         content = email_render.render_email(
             row.payload,
             lang=lang,
             gym_name=self._gym_name(session, row),
-            unsubscribe_url=None,
+            unsubscribe_url=unsubscribe_url,
         )
         if content is None:
             kind = (row.payload or {}).get("kind")
@@ -259,8 +265,20 @@ class NotificationDispatcher:
             subject=content.subject,
             html=content.html,
             plain_text=content.text,
-            list_unsubscribe_url=None,
+            list_unsubscribe_url=unsubscribe_url,
         )
+
+    def _unsubscribe_url(self, operator: OperatorProfile) -> str | None:
+        """Build the operator's one-click unsubscribe link, or ``None``.
+
+        Carries the operator's language prefix so the confirmation page
+        renders in the same language as the email.
+        """
+        if not self._app_base_url or not self._unsubscribe_secret:
+            return None
+        token = make_unsubscribe_token(operator.id, secret=self._unsubscribe_secret)
+        prefix = "/es" if (operator.communication_language or "en") == "es" else ""
+        return f"{self._app_base_url.rstrip('/')}{prefix}/unsubscribe?t={token}"
 
     def _resolve_chat_id(self, session: Session, row: NotificationOutbox) -> str:
         """Return the chat id to send to.

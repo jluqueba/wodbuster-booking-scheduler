@@ -1,0 +1,20 @@
+{# Email unsubscribe confirmation (ADR-0011). #}
+{% extends "base.html" %}
+
+{% block title %}{{ t("unsubscribe.title") }} — WodBuster Booking Worker{% endblock %}
+{% block body_class %}wb-body--denied{% endblock %}
+
+{% block content %}
+  <div class="wb-denied">
+    {% if ok %}
+      <h1>{{ t("unsubscribe.ok.title") }}</h1>
+      <p>{{ t("unsubscribe.ok.body") }}</p>
+    {% else %}
+      <h1>{{ t("unsubscribe.bad.title") }}</h1>
+      <p>{{ t("unsubscribe.bad.body") }}</p>
+    {% endif %}
+    <p class="wb-hero-note">
+      <a href="{{ lang_url('/') }}" class="wb-btn">{{ t("unsubscribe.back") }}</a>
+    </p>
+  </div>
+{% endblock %}

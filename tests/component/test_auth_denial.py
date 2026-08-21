@@ -99,6 +99,35 @@ def test_callback_creates_pending_signup_for_unknown_identity(
     assert "Sign in with Microsoft" in follow.text
 
 
+def test_pending_page_uses_the_login_language(
+    app_factory: Callable[..., FastAPI],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A user who started on /es sees the pending page in Spanish.
+
+    The callback URL has no /es prefix, so without restoring the language
+    stored at login the page would fall back to English.
+    """
+    from starlette.responses import RedirectResponse
+
+    app = app_factory()
+    _patch_callback(app, "microsoft", {"sub": "unknown-es", "name": "X"}, monkeypatch)
+    client_obj = app.state.oauth.create_client("microsoft")
+
+    async def fake_authorize_redirect(_request: Any, _redirect_uri: str, **_kw: Any) -> Any:
+        return RedirectResponse("https://provider/authorize", status_code=302)
+
+    monkeypatch.setattr(client_obj, "authorize_redirect", fake_authorize_redirect)
+
+    with TestClient(app, follow_redirects=False) as client:
+        client.get("/es/auth/microsoft/login")  # stores oauth_lang_prefix="/es"
+        response = client.get("/auth/microsoft/callback?code=fake&state=fake")
+
+    assert response.status_code == 200
+    assert "Solicitud recibida" in response.text
+    assert "Request received" not in response.text
+
+
 def test_allow_listed_identity_seats_session(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],
