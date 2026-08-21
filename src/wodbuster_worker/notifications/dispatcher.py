@@ -44,7 +44,10 @@ from sqlalchemy.orm import Session
 
 from ..observability import telemetry
 from ..persistence.models import GymAccount, NotificationOutbox, OperatorProfile
-from . import messages, telegram
+from . import email as email_channel
+from . import email_render, messages, telegram
+from .fanout import EMAIL_CATEGORY
+from .unsubscribe import make_unsubscribe_token
 
 _log = structlog.get_logger(__name__)
 
@@ -55,6 +58,10 @@ SessionFactory = Callable[[], AbstractContextManager[Session]]
 # Telegram sender type. Kept injectable so tests can supply a fake
 # that captures calls instead of touching the network.
 TelegramSender = Callable[..., None]
+
+# Email sender type (mirrors ``notifications.email.send_email``). Injectable
+# so tests capture calls instead of touching ACS.
+EmailSender = Callable[..., None]
 
 # Default retry ceiling. Chosen small so a permanently broken
 # destination stops churning quickly; production callers can override
@@ -72,11 +79,21 @@ class NotificationDispatcher:
         session_factory: SessionFactory,
         max_attempts: int = _DEFAULT_MAX_ATTEMPTS,
         telegram_sender: TelegramSender = telegram.send_message,
+        email_client: Any | None = None,
+        email_from: str | None = None,
+        email_sender: EmailSender = email_channel.send_email,
+        app_base_url: str | None = None,
+        unsubscribe_secret: str | None = None,
     ) -> None:
         self._bot_token = bot_token
         self._session_factory = session_factory
         self._max_attempts = max_attempts
         self._telegram_sender = telegram_sender
+        self._email_client = email_client
+        self._email_from = email_from
+        self._email_sender = email_sender
+        self._app_base_url = app_base_url
+        self._unsubscribe_secret = unsubscribe_secret
 
     def tick(self) -> None:
         """Drain one batch of pending outbox rows.
@@ -108,6 +125,8 @@ class NotificationDispatcher:
             try:
                 if row.kind == "telegram":
                     self._dispatch_telegram(session, row)
+                elif row.kind == "email":
+                    self._dispatch_email(session, row)
                 elif row.kind == "banner":
                     # No wire delivery — the alert row already backs
                     # the banner UI. Mark done.
@@ -121,7 +140,7 @@ class NotificationDispatcher:
                     self._mark_exhausted(row, reason=f"unknown kind {row.kind!r}")
                     session.commit()
                     return
-            except telegram.TransientTelegramError as exc:
+            except (telegram.TransientTelegramError, email_channel.TransientEmailError) as exc:
                 row.attempt_count = attempt_number
                 if attempt_number >= self._max_attempts:
                     self._mark_exhausted(row, reason=str(exc))
@@ -141,7 +160,7 @@ class NotificationDispatcher:
                     )
                 session.commit()
                 return
-            except telegram.PermanentTelegramError as exc:
+            except (telegram.PermanentTelegramError, email_channel.PermanentEmailError) as exc:
                 row.attempt_count = attempt_number
                 self._mark_exhausted(row, reason=str(exc))
                 _log.warning(
@@ -209,6 +228,59 @@ class NotificationDispatcher:
             return ""
         gym = session.get(GymAccount, row.gym_account_id)
         return gym.display_name if gym and gym.display_name else ""
+
+    def _dispatch_email(self, session: Session, row: NotificationOutbox) -> None:
+        """Render and send the email for ``row``, honoring preferences."""
+        if self._email_client is None or not self._email_from:
+            # ACS not configured yet — keep the row pending (transient).
+            raise email_channel.TransientEmailError("email not configured")
+
+        operator = session.get(OperatorProfile, row.user_id)
+        if operator is None or not operator.email:
+            raise email_channel.PermanentEmailError(f"operator {row.user_id} has no email address")
+
+        category = EMAIL_CATEGORY.get(str((row.payload or {}).get("kind")))
+        prefs = operator.email_preferences or {}
+        if category is not None and not prefs.get(category, True):
+            # Recipient turned this category off; drop it without sending.
+            _log.info("email.skipped_pref", row_id=row.id, category=category)
+            return
+
+        lang = operator.communication_language or "en"
+        # Only operational mail carries an unsubscribe link; account
+        # (transactional) mail has no category and must not be unsubscribable.
+        unsubscribe_url = self._unsubscribe_url(operator) if category else None
+        content = email_render.render_email(
+            row.payload,
+            lang=lang,
+            gym_name=self._gym_name(session, row),
+            unsubscribe_url=unsubscribe_url,
+        )
+        if content is None:
+            kind = (row.payload or {}).get("kind")
+            raise email_channel.PermanentEmailError(f"email: unrenderable payload kind {kind!r}")
+
+        self._email_sender(
+            client=self._email_client,
+            sender_address=self._email_from,
+            recipient_address=operator.email,
+            subject=content.subject,
+            html=content.html,
+            plain_text=content.text,
+            list_unsubscribe_url=unsubscribe_url,
+        )
+
+    def _unsubscribe_url(self, operator: OperatorProfile) -> str | None:
+        """Build the operator's one-click unsubscribe link, or ``None``.
+
+        Carries the operator's language prefix so the confirmation page
+        renders in the same language as the email.
+        """
+        if not self._app_base_url or not self._unsubscribe_secret:
+            return None
+        token = make_unsubscribe_token(operator.id, secret=self._unsubscribe_secret)
+        prefix = "/es" if (operator.communication_language or "en") == "es" else ""
+        return f"{self._app_base_url.rstrip('/')}{prefix}/unsubscribe?t={token}"
 
     def _resolve_chat_id(self, session: Session, row: NotificationOutbox) -> str:
         """Return the chat id to send to.

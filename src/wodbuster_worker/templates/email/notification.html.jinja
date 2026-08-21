@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>{{ subject }}</title>
+  </head>
+  {# Preheader: hidden preview text shown by mail clients next to the subject. #}
+  <body style="margin:0; padding:0; background-color:#f4f5f7; -webkit-text-size-adjust:100%;">
+    <span style="display:none!important; visibility:hidden; opacity:0; height:0; width:0; overflow:hidden;">{{ subject }}</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7;">
+      <tr>
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px; max-width:100%; background-color:#ffffff; border:1px solid #e5e7eb; border-radius:12px; overflow:hidden;">
+            <!-- Hero: gym photo backdrop (same shot as the web landing) with a
+                 dark gradient overlay so the wordmark stays readable. Outlook
+                 desktop ignores the image and falls back to the dark bgcolor. -->
+            <tr>
+              <td
+                background="{{ hero_image_url }}"
+                bgcolor="#0a0e14"
+                style="background-color:#0a0e14; background-image:linear-gradient(180deg, rgba(10,14,20,0.50) 0%, rgba(10,14,20,0.92) 100%), url('{{ hero_image_url }}'); background-size:cover; background-position:center; border-bottom:3px solid #f8ff40;"
+              >
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="padding:40px 28px; font-family:'Segoe UI',Arial,sans-serif; font-size:20px; font-weight:700; color:#f1f5f9; letter-spacing:0.2px; text-shadow:0 1px 3px rgba(0,0,0,0.55);">
+                      🏋️&nbsp; WodBuster Booking Scheduler
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <!-- Gym label (omitted for account mail, which has no gym) -->
+            {% if gym_name %}
+            <tr>
+              <td style="padding:22px 28px 0 28px;">
+                <span style="display:inline-block; font-family:'Segoe UI',Arial,sans-serif; font-size:12px; font-weight:600; color:#0a0e14; background-color:#f8ff40; border-radius:999px; padding:4px 12px;">{{ gym_name }}</span>
+              </td>
+            </tr>
+            {% endif %}
+            <!-- Title (subject without the gym, which the chip already shows) -->
+            <tr>
+              <td style="padding:{% if gym_name %}12{% else %}22{% endif %}px 28px 0 28px; font-family:'Segoe UI',Arial,sans-serif; font-size:19px; font-weight:700; color:#0a0e14;">
+                {{ title }}
+              </td>
+            </tr>
+            <!-- Body -->
+            <tr>
+              <td style="padding:10px 28px 8px 28px; font-family:'Segoe UI',Arial,sans-serif; font-size:16px; line-height:1.55; color:#111827;">
+                {% for line in body_lines %}{{ line }}{% if not loop.last %}<br>{% endif %}{% endfor %}
+              </td>
+            </tr>
+            <!-- Footer -->
+            <tr>
+              <td style="padding:24px 28px 28px 28px;">
+                <hr style="border:0; border-top:1px solid #e5e7eb; margin:0 0 16px 0;">
+                <p style="margin:0 0 8px 0; font-family:'Segoe UI',Arial,sans-serif; font-size:12px; line-height:1.5; color:#6b7280;">{{ footer_tagline }}</p>
+                <p style="margin:0 0 8px 0; font-family:'Segoe UI',Arial,sans-serif; font-size:12px; line-height:1.5; color:#6b7280;">{{ footer_preferences }}</p>
+                {% if unsubscribe_url %}
+                <p style="margin:0; font-family:'Segoe UI',Arial,sans-serif; font-size:12px; line-height:1.5;">
+                  <a href="{{ unsubscribe_url }}" style="color:#2563eb; text-decoration:underline;">{{ footer_unsubscribe }}</a>
+                </p>
+                {% endif %}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

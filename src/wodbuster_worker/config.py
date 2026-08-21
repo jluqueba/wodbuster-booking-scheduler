@@ -87,6 +87,14 @@ class Settings(BaseSettings):
     oauth_github_client_id: str | None = None
     oauth_google_client_id: str | None = None
 
+    # ACS Email coordinates (ADR-0011). Non-secret; wired by the Container
+    # App from the communication Bicep module. ``acs_endpoint`` empty leaves
+    # email disabled (the dispatcher sends Telegram only). Auth is the
+    # runtime managed identity (DefaultAzureCredential), no key.
+    acs_endpoint: AnyHttpUrl | None = None
+    email_sender_address: str | None = None
+    email_sender_display_name: str = "WodBuster Booking Scheduler"
+
     # Session lifetime knobs (US-009). ``idle`` closes a session that
     # has been dormant for N minutes; ``absolute`` caps total lifetime
     # regardless of activity. Both are enforced by the idle-timeout

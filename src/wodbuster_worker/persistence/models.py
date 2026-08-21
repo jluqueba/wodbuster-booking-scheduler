@@ -79,7 +79,7 @@ _ALERT_KINDS = (
     "cookie_invalid",
     "heartbeat_anomaly",
 )
-_NOTIFICATION_KINDS = ("telegram", "banner")
+_NOTIFICATION_KINDS = ("telegram", "banner", "email")
 # Communication language for the operator (User Profile, ADR-0008). Governs
 # Telegram message rendering and the signed-in web default.
 _LANGUAGES = ("es", "en")
@@ -106,6 +106,15 @@ class OperatorProfile(Base):
     # Email from the OAuth identity; used for email notifications. Nullable
     # because older rows predate capture and GitHub may not expose one.
     email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    # Per-type email notification preferences (ADR-0011): a JSONB map of
+    # toggleable category -> enabled flag; a missing key reads as enabled.
+    # 'account' (signup lifecycle) mail is transactional and always sent, so
+    # it is intentionally not a key here.
+    email_preferences: Mapped[dict[str, bool]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text('\'{"bookings": true, "session_alerts": true}\'::jsonb'),
+    )
     # Lifecycle state (ADR-0010). Defaults to 'active' so approval and the
     # bootstrap CLI need not set it; the signup path sets 'pending' itself.
     status: Mapped[str] = mapped_column(

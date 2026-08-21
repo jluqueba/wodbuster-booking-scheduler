@@ -475,8 +475,9 @@ def _next_section_lines(next_booking: Any, upcoming: Any) -> list[str]:
 def _handle_next(request: Request, *, chat_id: str) -> str:
     """TG.3: report the next scheduled booking and upcoming slots.
 
-    Aggregates across every gym the operator owns; a multi-gym operator
-    sees each gym labelled, since Telegram has no gym switcher.
+    Aggregates across every gym the operator owns and labels each gym so a
+    message always names the gym it refers to (ADR-0011), including for
+    single-gym operators.
     """
     now = datetime.now(tz=UTC)
     empty = t("tg.cmd.next.empty")
@@ -487,7 +488,6 @@ def _handle_next(request: Request, *, chat_id: str) -> str:
         gyms = list_user_gym_accounts(session, operator.id)
         if not gyms:
             return empty
-        multi = len(gyms) > 1
         blocks: list[str] = []
         any_content = False
         for gym in gyms:
@@ -499,7 +499,7 @@ def _handle_next(request: Request, *, chat_id: str) -> str:
                 body = "\n".join(lines)
             else:
                 body = empty
-            blocks.append(f"[{gym.display_name}]\n{body}" if multi else body)
+            blocks.append(f"[{gym.display_name}]\n{body}")
     if not any_content:
         return empty
     return "\n\n".join(blocks)
@@ -515,7 +515,6 @@ def _handle_last(request: Request, *, chat_id: str) -> str:
         gyms = list_user_gym_accounts(session, operator.id)
         if not gyms:
             return empty
-        multi = len(gyms) > 1
         blocks: list[str] = []
         any_content = False
         for gym in gyms:
@@ -534,7 +533,7 @@ def _handle_last(request: Request, *, chat_id: str) -> str:
                 )
             else:
                 body = t("tg.cmd.last.none")
-            blocks.append(f"[{gym.display_name}]\n{body}" if multi else body)
+            blocks.append(f"[{gym.display_name}]\n{body}")
     if not any_content:
         return empty
     return "\n\n".join(blocks)

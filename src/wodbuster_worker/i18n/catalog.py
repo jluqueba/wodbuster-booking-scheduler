@@ -122,6 +122,15 @@ EN: dict[str, str] = {
     "profile.flash.name_required": "Display name cannot be empty.",
     "profile.flash.too_long": "Name is too long.",
     "profile.flash.bad_language": "Choose a supported language.",
+    "profile.email_label": "Email address",
+    "profile.email_placeholder": "you@example.com",
+    "profile.email_prefs_label": "Email notifications",
+    "profile.email_pref.bookings": "Booking results",
+    "profile.email_pref.session_alerts": "Session and cookie alerts",
+    "profile.email_prefs_note": (
+        "Account emails (approval, rejection) are always sent, regardless of these settings."
+    ),
+    "profile.flash.bad_email": "That email address does not look valid.",
     # -- dashboard ---------------------------------------------------
     "dashboard.eyebrow": "Welcome back",
     "dashboard.title.hero": "Hero",
@@ -363,6 +372,19 @@ EN: dict[str, str] = {
     "auth.suspended.title": "⛔ Access suspended",
     "auth.suspended.body": "Your access has been suspended by the administrator.",
     "auth.suspended.back": "⬅️ Back to sign-in",
+    # -- email unsubscribe (ADR-0011) --
+    "unsubscribe.title": "Unsubscribe",
+    "unsubscribe.ok.title": "✅ You're unsubscribed",
+    "unsubscribe.ok.body": (
+        "You will no longer receive booking or session-alert emails. You can turn them "
+        "back on anytime from your profile."
+    ),
+    "unsubscribe.bad.title": "⚠️ Link not valid",
+    "unsubscribe.bad.body": (
+        "This unsubscribe link is invalid or has expired. Manage your email preferences "
+        "from your profile instead."
+    ),
+    "unsubscribe.back": "⬅️ Back to sign-in",
     "auth.signin.with_microsoft": "🪟 Sign in with Microsoft",
     "auth.signin.with_github": "🐙 Sign in with GitHub",
     "auth.signin.with_google": "🌐 Sign in with Google",
@@ -667,6 +689,33 @@ EN: dict[str, str] = {
         "\U0001f9ea Test message from WodBuster Booking Scheduler. "
         "If you see this, notifications are working."
     ),
+    # -- email notifications (ADR-0011): subjects + footer. The message
+    #    body reuses the tg.* copy via messages.render. --
+    "email.subject.booking": "Booking update · {gym}",
+    "email.subject.cookie_expiring": "Action needed: session expiring · {gym}",
+    "email.subject.cookie_invalid": "Action needed: session invalid · {gym}",
+    "email.subject.anomaly": "Missed booking window · {gym}",
+    "email.footer.tagline": (
+        "WodBuster Booking Scheduler books your classes the moment the window opens."
+    ),
+    "email.footer.preferences": "Manage which emails you receive in your profile.",
+    "email.footer.unsubscribe": "Unsubscribe from these emails",
+    # -- account (signup lifecycle) mail; transactional, always sent --
+    "email.account.received.subject": "We received your access request",
+    "email.account.received.body": (
+        "Thanks for signing up. Your access request is now waiting for an administrator "
+        "to review it. We'll email you as soon as it is decided."
+    ),
+    "email.account.approved.subject": "Your access is approved",
+    "email.account.approved.body": (
+        "Good news: your access has been approved. You can now sign in and start booking "
+        "your classes."
+    ),
+    "email.account.rejected.subject": "About your access request",
+    "email.account.rejected.body": (
+        "Your access request was not approved this time. If you think this is a mistake, "
+        "sign in again to submit a new request."
+    ),
     # -- dashboard alert banners (rendered server-side in the operator's
     #    web language; one date format via format_slot, gym timezone) --
     "banner.aria_label": "System alerts",
@@ -793,6 +842,15 @@ ES: dict[str, str] = {
     "profile.flash.name_required": "El nombre visible no puede estar vacío.",
     "profile.flash.too_long": "El nombre es demasiado largo.",
     "profile.flash.bad_language": "Elige un idioma admitido.",
+    "profile.email_label": "Correo electrónico",
+    "profile.email_placeholder": "tu@ejemplo.com",
+    "profile.email_prefs_label": "Notificaciones por correo",
+    "profile.email_pref.bookings": "Resultados de reservas",
+    "profile.email_pref.session_alerts": "Alertas de sesión y cookie",
+    "profile.email_prefs_note": (
+        "Los correos de cuenta (aprobación, rechazo) se envían siempre, al margen de estos ajustes."
+    ),
+    "profile.flash.bad_email": "Ese correo no parece válido.",
     # -- dashboard ---------------------------------------------------
     "dashboard.eyebrow": "Hola de nuevo",
     "dashboard.title.hero": "Crack",
@@ -1048,6 +1106,19 @@ ES: dict[str, str] = {
     "auth.suspended.title": "⛔ Acceso suspendido",
     "auth.suspended.body": "El administrador ha suspendido tu acceso.",
     "auth.suspended.back": "⬅️ Volver a iniciar sesión",
+    # -- baja de correos (ADR-0011) --
+    "unsubscribe.title": "Baja de correos",
+    "unsubscribe.ok.title": "✅ Te has dado de baja",
+    "unsubscribe.ok.body": (
+        "Ya no recibirás correos de reservas ni de alertas de sesión. Puedes volver a "
+        "activarlos cuando quieras desde tu perfil."
+    ),
+    "unsubscribe.bad.title": "⚠️ Enlace no válido",
+    "unsubscribe.bad.body": (
+        "Este enlace de baja no es válido o ha caducado. Gestiona tus preferencias de "
+        "correo desde tu perfil."
+    ),
+    "unsubscribe.back": "⬅️ Volver a iniciar sesión",
     "auth.signin.with_microsoft": "🪟 Entrar con Microsoft",
     "auth.signin.with_github": "🐙 Entrar con GitHub",
     "auth.signin.with_google": "🌐 Entrar con Google",
@@ -1372,6 +1443,33 @@ ES: dict[str, str] = {
     "tg.test.message": (
         "\U0001f9ea Mensaje de prueba de WodBuster Booking Scheduler. "
         "Si ves esto, las notificaciones funcionan."
+    ),
+    # -- email notifications (ADR-0011): asuntos + pie. El cuerpo reutiliza
+    #    el texto tg.* vía messages.render. --
+    "email.subject.booking": "Actualización de reserva · {gym}",
+    "email.subject.cookie_expiring": "Acción necesaria: sesión por caducar · {gym}",
+    "email.subject.cookie_invalid": "Acción necesaria: sesión inválida · {gym}",
+    "email.subject.anomaly": "Ventana de reserva perdida · {gym}",
+    "email.footer.tagline": (
+        "WodBuster Booking Scheduler reserva tus clases en cuanto se abre la ventana."
+    ),
+    "email.footer.preferences": "Gestiona qué correos recibes en tu perfil.",
+    "email.footer.unsubscribe": "Darte de baja de estos correos",
+    # -- correos de cuenta (ciclo de alta); transaccionales, siempre se envían --
+    "email.account.received.subject": "Hemos recibido tu solicitud de acceso",
+    "email.account.received.body": (
+        "Gracias por registrarte. Tu solicitud de acceso está pendiente de que un "
+        "administrador la revise. Te avisaremos por correo en cuanto se decida."
+    ),
+    "email.account.approved.subject": "Tu acceso ha sido aprobado",
+    "email.account.approved.body": (
+        "Buenas noticias: tu acceso ha sido aprobado. Ya puedes iniciar sesión y empezar "
+        "a reservar tus clases."
+    ),
+    "email.account.rejected.subject": "Sobre tu solicitud de acceso",
+    "email.account.rejected.body": (
+        "Tu solicitud de acceso no ha sido aprobada esta vez. Si crees que es un error, "
+        "inicia sesión de nuevo para enviar una nueva solicitud."
     ),
     # -- banners de alerta del panel (renderizados en el servidor en el
     #    idioma web del operador; un formato de fecha vía format_slot) --

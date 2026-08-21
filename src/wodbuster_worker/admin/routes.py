@@ -20,6 +20,7 @@ from sqlalchemy import select
 from ..auth.csrf import get_csrf_token, verify_csrf
 from ..auth.deps import require_admin
 from ..i18n import lang_url
+from ..notifications.fanout import enqueue_email_row
 from ..persistence.engine import get_session
 from ..persistence.models import FederatedIdentity, OperatorProfile
 from ..persistence.users import INDEFINITE_BAN, ban_is_active
@@ -102,6 +103,15 @@ def _set_status_if_pending(target_id: int, status: str) -> None:
         profile = session.get(OperatorProfile, target_id)
         if profile is not None and profile.status == "pending":
             profile.status = status
+            # Tell the user by email (transactional; ADR-0011).
+            kind = "account_approved" if status == "active" else "account_rejected"
+            enqueue_email_row(
+                session,
+                operator=profile,
+                gym_account_id=None,
+                payload={"kind": kind},
+                now=datetime.now(tz=UTC),
+            )
             session.commit()
 
 

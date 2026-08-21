@@ -56,6 +56,30 @@
       <option value="es" {% if communication_language == "es" %}selected{% endif %}>{{ t("profile.lang.es") }}</option>
     </select>
 
+    <label for="email">{{ t("profile.email_label") }}</label>
+    <input
+      type="email"
+      id="email"
+      name="email"
+      value="{{ email }}"
+      maxlength="320"
+      autocomplete="email"
+      placeholder="{{ t('profile.email_placeholder') }}"
+    >
+
+    <fieldset class="wb-email-prefs">
+      <legend>{{ t("profile.email_prefs_label") }}</legend>
+      <label class="wb-checkbox">
+        <input type="checkbox" name="email_bookings" {% if email_bookings %}checked{% endif %}>
+        {{ t("profile.email_pref.bookings") }}
+      </label>
+      <label class="wb-checkbox">
+        <input type="checkbox" name="email_session_alerts" {% if email_session_alerts %}checked{% endif %}>
+        {{ t("profile.email_pref.session_alerts") }}
+      </label>
+      <p class="wb-muted wb-note">{{ t("profile.email_prefs_note") }}</p>
+    </fieldset>
+
     <button type="submit" class="wb-btn wb-btn--primary">{{- t("profile.save") -}}</button>
   </form>
 {% endblock %}

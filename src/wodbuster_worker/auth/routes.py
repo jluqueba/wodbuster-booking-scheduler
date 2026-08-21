@@ -36,7 +36,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ..gyms.discovery import GymSelectorError
 from ..gyms.service import add_discovered_gym_accounts
-from ..i18n import lang_prefix, t_lang
+from ..i18n import lang_prefix, set_language, t_lang
+from ..notifications.fanout import enqueue_email_row
 from ..notifications.telegram import TelegramError, send_message
 from ..persistence.cookie_store import CookieDecryptError
 from ..persistence.engine import get_session as db_session
@@ -408,6 +409,14 @@ def _create_pending_signup(
                 display_name=display_name or None,
             )
         )
+        # Confirm receipt of the request by email (transactional; ADR-0011).
+        enqueue_email_row(
+            session,
+            operator=profile,
+            gym_account_id=None,
+            payload={"kind": "account_received"},
+            now=datetime.now(tz=UTC),
+        )
         session.commit()
         return int(profile.id)
 
@@ -463,6 +472,7 @@ def _render_pending(request: Request) -> Response:
     Shown to a signed-in-with-the-provider identity that is not yet
     approved. No session is seated and the body carries no operator data.
     """
+    _apply_oauth_language(request)
     templates = _templates(request)
     return templates.TemplateResponse(
         request=request,
@@ -478,6 +488,7 @@ def _render_denial(request: Request) -> Response:
     Body contains no operator-linked strings; the template ships a
     static message. See ``templates/auth/denied.html``.
     """
+    _apply_oauth_language(request)
     templates = _templates(request)
     return templates.TemplateResponse(
         request=request,
@@ -489,6 +500,7 @@ def _render_denial(request: Request) -> Response:
 
 def _render_banned(request: Request) -> Response:
     """Render the "access suspended" page shown to a banned user (ADR-0010)."""
+    _apply_oauth_language(request)
     templates = _templates(request)
     return templates.TemplateResponse(
         request=request,
@@ -496,3 +508,14 @@ def _render_banned(request: Request) -> Response:
         context={},
         status_code=200,
     )
+
+
+def _apply_oauth_language(request: Request) -> None:
+    """Restore the language the operator started on (stored at login).
+
+    The OAuth callback URL carries no ``/es`` prefix and a signing-up user
+    has no session language yet, so without this the pending/denied/banned
+    pages would render in English regardless of where the user came from.
+    """
+    prefix = request.session.get("oauth_lang_prefix") or ""
+    set_language(prefix.lstrip("/"))

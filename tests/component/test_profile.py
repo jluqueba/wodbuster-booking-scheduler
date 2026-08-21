@@ -108,6 +108,59 @@ def test_profile_save_persists_fields_and_language(
     assert row.communication_language == "es"
 
 
+def test_profile_save_persists_email_and_preferences(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        resp = client.post(
+            "/profile",
+            data={
+                "display_name": "Alice",
+                "short_name": "",
+                "communication_language": "en",
+                "email": "alice@example.com",
+                "email_bookings": "on",  # session_alerts omitted -> off
+                "_csrf": _csrf(client),
+            },
+        )
+    assert resp.status_code == 303
+    assert "flash_kind=info" in resp.headers["location"]
+    with postgres_engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT email, email_preferences FROM operator_profile WHERE id = :id"),
+            {"id": op_id},
+        ).one()
+    assert row.email == "alice@example.com"
+    assert row.email_preferences == {"bookings": True, "session_alerts": False}
+
+
+def test_profile_save_rejects_bad_email(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        resp = client.post(
+            "/profile",
+            data={
+                "display_name": "Alice",
+                "short_name": "",
+                "communication_language": "en",
+                "email": "not-an-email",
+                "_csrf": _csrf(client),
+            },
+        )
+    assert resp.status_code == 303
+    assert "flash_kind=error" in resp.headers["location"]
+
+
 def test_profile_save_rejects_empty_display_name(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],

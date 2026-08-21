@@ -54,6 +54,7 @@ from .persistence.users import count_pending_signups
 from .routes.profile import register_profile_globals
 from .routes.profile import router as profile_router
 from .routes.static_pages import router as static_pages_router
+from .routes.unsubscribe import router as unsubscribe_router
 from .rules.routes import router as rules_router
 from .scheduler.scheduler import (
     build_scheduler,
@@ -166,6 +167,23 @@ def _fetch_bot_username(bot_token: str) -> str | None:
     return username
 
 
+def _build_email_client(settings: Settings) -> tuple[object | None, str | None]:
+    """Build an ACS ``EmailClient`` + from-address when configured.
+
+    Returns ``(None, None)`` when ACS is not wired (e.g. local dev),
+    which leaves the dispatcher email-disabled and Telegram-only. Auth
+    is the runtime managed identity (``DefaultAzureCredential``).
+    """
+    endpoint = settings.acs_endpoint
+    sender = settings.email_sender_address
+    if endpoint is None or not sender:
+        return None, None
+    from azure.communication.email import EmailClient
+    from azure.identity import DefaultAzureCredential
+
+    return EmailClient(str(endpoint), DefaultAzureCredential()), sender
+
+
 def _register_outbox_gauge() -> None:
     """Wire the ``outbox_queue_depth`` observable gauge.
 
@@ -247,6 +265,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.telegram_bind_store = TelegramBindStore()
     app.state.telegram_webhook_secret = secrets.telegram_webhook_secret
     app.state.telegram_bot_token = secrets.telegram_bot_token
+    # Signing secret for one-click email unsubscribe tokens (ADR-0011); the
+    # /unsubscribe route reads it. Reuses the session-signing secret.
+    app.state.email_unsubscribe_secret = secrets.session_encryption_secret
     if not getattr(app.state, "telegram_bot_username", None) and secrets.telegram_bot_token:
         app.state.telegram_bot_username = _fetch_bot_username(secrets.telegram_bot_token)
     # Scheduler: build lazily and register the heartbeat + dispatcher
@@ -257,9 +278,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if app.state.heartbeat_probe is not None:
             scheduler = build_scheduler()
             register_heartbeat_job(scheduler, app.state.heartbeat_probe, get_session)
+            email_client, email_from = _build_email_client(settings)
             dispatcher = NotificationDispatcher(
                 bot_token=secrets.telegram_bot_token,
                 session_factory=get_session,
+                email_client=email_client,
+                email_from=email_from,
+                app_base_url=str(settings.app_base_url) if settings.app_base_url else None,
+                unsubscribe_secret=secrets.session_encryption_secret,
             )
             app.state.notification_dispatcher = dispatcher
             register_dispatcher_job(scheduler, dispatcher)
@@ -415,6 +441,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(gyms_router)
     app.include_router(profile_router)
     app.include_router(static_pages_router)
+    app.include_router(unsubscribe_router)
     app.add_api_route("/health", health, methods=["GET"])
     # Static assets (brand CSS, later JS / images). Mounted after
     # routers so a stray path collision would surface as an app-side

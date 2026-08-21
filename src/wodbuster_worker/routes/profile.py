@@ -19,6 +19,7 @@ URL-prefix language like the rest of the app.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from urllib.parse import urlencode
 
@@ -42,7 +43,11 @@ _log = structlog.get_logger(__name__)
 # clean validation flash rather than a database error.
 _DISPLAY_NAME_MAX = 200
 _SHORT_NAME_MAX = 100
+_EMAIL_MAX = 320
 _LANGUAGES = frozenset({"es", "en"})
+# Deliberately lenient: reject the obvious (no @, no dot) without pretending to
+# fully validate RFC 5322. Real deliverability is proven by an actual send.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _templates(request: Request) -> Jinja2Templates:
@@ -107,6 +112,11 @@ def profile_view(
             "display_name": profile.display_name,
             "short_name": profile.short_name or "",
             "communication_language": profile.communication_language,
+            "email": profile.email or "",
+            "email_bookings": bool((profile.email_preferences or {}).get("bookings", True)),
+            "email_session_alerts": bool(
+                (profile.email_preferences or {}).get("session_alerts", True)
+            ),
             "picture_url": _active_avatar_url(request),
         }
     return templates.TemplateResponse(
@@ -127,17 +137,33 @@ def profile_save(
     display_name: str = Form(...),
     short_name: str = Form(""),
     communication_language: str = Form(...),
+    email: str = Form(""),
+    email_bookings: str = Form(""),
+    email_session_alerts: str = Form(""),
     operator_id: int = Depends(require_session),
 ) -> Response:
     """Validate and persist the editable profile fields."""
     name = display_name.strip()
     short = short_name.strip()
+    email_clean = email.strip()
     if not name:
         return _redirect_with_flash(t("profile.flash.name_required"), kind="error")
-    if len(name) > _DISPLAY_NAME_MAX or len(short) > _SHORT_NAME_MAX:
+    if (
+        len(name) > _DISPLAY_NAME_MAX
+        or len(short) > _SHORT_NAME_MAX
+        or len(email_clean) > _EMAIL_MAX
+    ):
         return _redirect_with_flash(t("profile.flash.too_long"), kind="error")
     if communication_language not in _LANGUAGES:
         return _redirect_with_flash(t("profile.flash.bad_language"), kind="error")
+    if email_clean and not _EMAIL_RE.match(email_clean):
+        return _redirect_with_flash(t("profile.flash.bad_email"), kind="error")
+
+    # Checkbox form fields arrive only when ticked; absence means off.
+    email_prefs = {
+        "bookings": bool(email_bookings),
+        "session_alerts": bool(email_session_alerts),
+    }
 
     with get_session() as session:
         profile = session.get(OperatorProfile, operator_id)
@@ -146,6 +172,8 @@ def profile_save(
         profile.display_name = name
         profile.short_name = short or None
         profile.communication_language = communication_language
+        profile.email = email_clean or None
+        profile.email_preferences = email_prefs
         session.commit()
 
     # Keep the nav/greeting and the middleware language in sync within

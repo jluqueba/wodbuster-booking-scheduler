@@ -41,6 +41,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..notifications.fanout import enqueue_email_row
 from ..persistence.models import (
     Alert,
     GymAccount,
@@ -316,6 +317,9 @@ def _enqueue_outbox_rows(
     # populates that; before then, silently skip so the dispatcher
     # never sees an empty-target row.
     operator = session.get(OperatorProfile, user_id)
+    enqueue_email_row(
+        session, operator=operator, gym_account_id=gym_account_id, payload=outbox_payload, now=now
+    )
     if operator is None or not operator.telegram_chat_id:
         return
     session.add(
