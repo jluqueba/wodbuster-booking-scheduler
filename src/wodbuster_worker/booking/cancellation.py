@@ -41,6 +41,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..notifications.fanout import enqueue_email_row
 from ..persistence.cookie_store import CookieStore
 from ..persistence.models import BookingOutcome, GymAccount, NotificationOutbox, OperatorProfile
 from ..wodbuster_client.client import (
@@ -239,6 +240,9 @@ def _enqueue_cancel_outbox(
         )
     )
     operator = session.get(OperatorProfile, user_id)
+    enqueue_email_row(
+        session, operator=operator, gym_account_id=gym_account_id, payload=payload, now=now
+    )
     if operator is None or not operator.telegram_chat_id:
         return
     session.add(

@@ -46,6 +46,7 @@ from ..observability import telemetry
 from ..persistence.models import GymAccount, NotificationOutbox, OperatorProfile
 from . import email as email_channel
 from . import email_render, messages, telegram
+from .fanout import EMAIL_CATEGORY
 
 _log = structlog.get_logger(__name__)
 
@@ -60,15 +61,6 @@ TelegramSender = Callable[..., None]
 # Email sender type (mirrors ``notifications.email.send_email``). Injectable
 # so tests capture calls instead of touching ACS.
 EmailSender = Callable[..., None]
-
-# outbox payload kind -> toggleable email preference category. Kinds absent
-# here (e.g. transactional account mail) are always sent.
-_EMAIL_CATEGORY: dict[str, str] = {
-    "booking_result": "bookings",
-    "cookie_expiring": "session_alerts",
-    "cookie_invalid": "session_alerts",
-    "heartbeat_anomaly": "session_alerts",
-}
 
 # Default retry ceiling. Chosen small so a permanently broken
 # destination stops churning quickly; production callers can override
@@ -242,7 +234,7 @@ class NotificationDispatcher:
         if operator is None or not operator.email:
             raise email_channel.PermanentEmailError(f"operator {row.user_id} has no email address")
 
-        category = _EMAIL_CATEGORY.get(str((row.payload or {}).get("kind")))
+        category = EMAIL_CATEGORY.get(str((row.payload or {}).get("kind")))
         prefs = operator.email_preferences or {}
         if category is not None and not prefs.get(category, True):
             # Recipient turned this category off; drop it without sending.
