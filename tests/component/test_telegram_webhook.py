@@ -591,6 +591,8 @@ def test_next_lists_upcoming_granted_booking(
     assert "UpcomingWOD" in body
     # Granted (cancellable) slots surface the id /cancel needs.
     assert f"#{booking_id}" in body
+    # ADR-0011: the gym is always labelled, even for a single-gym operator.
+    assert body.startswith("[Test Operator]")
 
 
 def _seed_second_gym(engine: Engine, operator_id: int, *, slug: str, display_name: str) -> int:
