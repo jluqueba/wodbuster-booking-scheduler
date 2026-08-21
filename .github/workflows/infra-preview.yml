@@ -55,6 +55,7 @@ jobs:
       # both repo variables populated whenever a custom domain is bound.
       AZURE_CUSTOM_DOMAIN_NAME: ${{ vars.AZURE_CUSTOM_DOMAIN_NAME }}
       AZURE_CUSTOM_DOMAIN_CERTIFICATE_ID: ${{ vars.AZURE_CUSTOM_DOMAIN_CERTIFICATE_ID }}
+      AZURE_EMAIL_DOMAIN_LINKED: ${{ vars.AZURE_EMAIL_DOMAIN_LINKED }}
 
     steps:
       - name: Checkout PR head
