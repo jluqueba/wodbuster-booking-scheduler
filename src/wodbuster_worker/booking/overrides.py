@@ -19,11 +19,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..persistence.models import BookingDayOverride, BookingOutcome, SchedulerRule
 from ..scheduler.clock import DEFAULT_PREWARM_LEAD_S, operator_timezone
+
+_log = structlog.get_logger(__name__)
 
 # Safety margin on top of the pre-warm lead (FR-006). An edit accepted
 # any later than this races the job that is about to fire.
@@ -269,6 +272,59 @@ def delete_override(
     return True
 
 
+def discard_future_overrides_for_rule(
+    session: Session,
+    *,
+    rule: SchedulerRule,
+    reason: str,
+    now: datetime,
+) -> list[date]:
+    """Drop the rule's overrides from today onwards (FR-023, FR-026).
+
+    An override is a single-day amendment to a projected date. Once the
+    rule stops projecting that date, the amendment has nothing to amend,
+    so it is deleted rather than silently re-pointed at a day the user
+    never chose.
+
+    Overrides for dates already past are inert history and survive: they
+    describe what was asked for on a day that has already run.
+
+    Returns the discarded dates in ascending order, so ``len(...)`` is
+    the count and the caller can name them back to the user, which
+    FR-023 requires. The edit cutoff is deliberately not consulted: the
+    day is gone regardless of how close its window is.
+    """
+    today = local_date_for_slot(now)
+    rows = (
+        session.execute(
+            select(BookingDayOverride)
+            .where(
+                BookingDayOverride.rule_id == rule.id,
+                BookingDayOverride.target_date >= today,
+            )
+            .order_by(BookingDayOverride.target_date)
+        )
+        .scalars()
+        .all()
+    )
+    discarded = [row.target_date for row in rows]
+    if not discarded:
+        return discarded
+
+    for row in rows:
+        session.delete(row)
+    session.flush()
+    _log.info(
+        "override.discarded",
+        rule_id=int(rule.id),
+        gym_account_id=int(rule.gym_account_id),
+        reason=reason,
+        discarded=len(discarded),
+        dates=[day.isoformat() for day in discarded],
+    )
+    return discarded
+
+
 def _assert_writable(
     session: Session, *, rule: SchedulerRule, target_date: date, now: datetime
 ) -> None:
@@ -312,6 +368,7 @@ __all__ = [
     "OverrideSkipConflictError",
     "OverrideWindowClosedError",
     "delete_override",
+    "discard_future_overrides_for_rule",
     "edit_cutoff_for",
     "effective_slot_for",
     "is_editable",

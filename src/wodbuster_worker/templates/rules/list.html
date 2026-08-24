@@ -19,6 +19,12 @@
 
   {% include "_gym_prompt.html" %}
 
+  {% if flash %}
+    <div class="wb-flash wb-flash--{{ flash_kind }}" role="status">
+      {{ flash }}
+    </div>
+  {% endif %}
+
   <div class="wb-toolbar">
     <a href="{{ lang_url('/rules/new') }}" class="wb-btn wb-btn--primary">{{ t("rules.new_button") }}</a>
   </div>

@@ -690,6 +690,11 @@ EN: dict[str, str] = {
     "flash.override.already_executed": (
         "That day already ran. Check the result below. Nothing was saved."
     ),
+    "flash.override.discarded": (
+        "The rule now runs on a different weekday, so the single-day "
+        "changes you had saved for {dates} no longer apply and have been "
+        "discarded."
+    ),
     "flash.telegram.test_sent": "Test message sent. Check your Telegram chat.",
     "flash.telegram.unbound": "Telegram unbound.",
     "flash.telegram.no_token": (
@@ -1592,6 +1597,11 @@ ES: dict[str, str] = {
     ),
     "flash.override.already_executed": (
         "Ese día ya se ha ejecutado. Consulta el resultado más abajo. No se ha guardado nada."
+    ),
+    "flash.override.discarded": (
+        "La regla pasa a otro día de la semana, así que los cambios de un "
+        "solo día que tenías guardados para {dates} ya no se aplican y se "
+        "han descartado."
     ),
     "flash.telegram.test_sent": "Mensaje de prueba enviado. Revisa tu chat de Telegram.",
     "flash.telegram.unbound": "Telegram desvinculado.",

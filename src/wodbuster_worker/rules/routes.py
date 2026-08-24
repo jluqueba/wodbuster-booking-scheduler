@@ -22,6 +22,7 @@ import contextlib
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
@@ -32,7 +33,7 @@ from ..auth.deps import require_session
 from ..booking.executor import BookingExecutorProvider
 from ..gyms.context import active_gym_account_id
 from ..gyms.service import gym_client_factory, resolve_gym_client
-from ..i18n import lang_url
+from ..i18n import lang_url, t
 from ..persistence.cookie_store import CookieStore
 from ..persistence.engine import get_session
 from ..persistence.models import SchedulerRule
@@ -199,6 +200,8 @@ def rules_list(request: Request, operator_id: int = Depends(require_session)) ->
         name="rules/list.html",
         context={
             "rules": rows,
+            "flash": request.query_params.get("flash", ""),
+            "flash_kind": request.query_params.get("flash_kind", "info"),
             "csrf_token": get_csrf_token(request) or "",
         },
     )
@@ -478,7 +481,7 @@ async def rules_update(
         assert parsed.class_time is not None
         assert parsed.booking_opens_days_before is not None
         assert parsed.booking_opens_at is not None
-        updated = update_rule(
+        result = update_rule(
             session,
             rule,
             day_of_week=parsed.day_of_week,
@@ -489,8 +492,23 @@ async def rules_update(
             second_shot_class_type=parsed.second_shot_class_type,
             second_shot_class_time=parsed.second_shot_class_time,
         )
+        updated = result.rule
+        discarded = result.discarded_override_dates
 
     _sync_after_update(request, updated)
+    if discarded:
+        # The user is on screen at the moment they cause the discard, so
+        # the notice is a web flash and nothing is enqueued (FR-023).
+        query = urlencode(
+            {
+                "flash": t(
+                    "flash.override.discarded",
+                    dates=", ".join(day.isoformat() for day in discarded),
+                ),
+                "flash_kind": "warning",
+            }
+        )
+        return RedirectResponse(url=f"{lang_url('/rules')}?{query}", status_code=303)
     return RedirectResponse(url=lang_url("/rules"), status_code=303)
 
 
