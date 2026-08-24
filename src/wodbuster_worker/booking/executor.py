@@ -50,7 +50,7 @@ import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, Protocol
 
 import structlog
@@ -58,6 +58,7 @@ import structlog
 from ..observability import telemetry
 from ..persistence.cookie_store import CookieStore
 from ..persistence.models import BookingOutcome, SchedulerRule
+from ..scheduler.clock import midnight_utc_ticks
 from ..wodbuster_client.client import (
     BookingActionResponse,
     GymAccountLike,
@@ -76,6 +77,7 @@ from ..wodbuster_client.parsers import (
     read_target_enrollment,
 )
 from .outcomes import persist_outcome
+from .overrides import OverridePlan
 from .vacation import find_covering_window
 
 _log = structlog.get_logger(__name__)
@@ -181,8 +183,13 @@ class BookingExecutor:
         *,
         rule: SchedulerRule,
         target_slot: datetime,
+        override: OverridePlan | None = None,
     ) -> BookingResult:
         """Attempt to book ``rule`` for the class starting at ``target_slot``.
+
+        ``override`` is the single-day plan the scheduler read for this
+        date (ADR-0012); ``None`` is the ordinary case and takes the
+        exact code path it took before the feature existed.
 
         Returns the persisted :class:`BookingResult`. Never raises for
         expected failure modes (missing cookie, full class, unknown
@@ -197,7 +204,7 @@ class BookingExecutor:
         start = time.monotonic()
         result: BookingResult | None = None
         try:
-            result = self._book_inner(rule=rule, target_slot=target_slot)
+            result = self._book_inner(rule=rule, target_slot=target_slot, override=override)
             return result
         finally:
             elapsed_ms = (time.monotonic() - start) * 1000.0
@@ -216,24 +223,45 @@ class BookingExecutor:
         *,
         rule: SchedulerRule,
         target_slot: datetime,
+        override: OverridePlan | None = None,
     ) -> BookingResult:
         """Body of :meth:`book`; wrapped by ``book`` for latency timing."""
         if target_slot.tzinfo is None:
             raise ValueError("target_slot must be timezone-aware")
 
-        ticks = _midnight_utc_ticks(target_slot)
+        ticks = midnight_utc_ticks(target_slot)
+        # The override replaces the rule's target for this date only; a
+        # run without one resolves to the rule's own pair, so the whole
+        # walk below is byte-for-byte what it was before ADR-0012.
+        contests_override = (
+            override is not None and not override.skip_day and override.changes_target
+        )
+        primary_class_type = (
+            override.effective_class_type(rule)
+            if contests_override and override
+            else rule.class_type
+        )
+        primary_class_time = (
+            override.effective_class_time(rule)
+            if contests_override and override
+            else rule.class_time
+        )
+        outcome_source = "override" if contests_override else "rule"
         _log.info(
             "booking.start",
             rule_id=rule.id,
             gym_account_id=rule.gym_account_id,
             target_slot=target_slot.isoformat(),
             ticks=ticks,
+            override_id=override.override_id if override is not None else None,
         )
 
         # US7.2 skip guard: if the target class sits inside an open
         # vacation window for the operator, do not attempt the
         # booking. Persist a ``skipped`` terminal so the history
-        # page still reports the run.
+        # page still reports the run. Vacation wins over any override
+        # (FR-029), so this stays the first exit and stays sourced to
+        # the rule.
         vacation = self._vacation_covering(rule.gym_account_id, target_slot)
         if vacation is not None:
             return self._persist_terminal(
@@ -244,18 +272,20 @@ class BookingExecutor:
                 fallback_index=None,
                 response=f"vacation window #{vacation.id}",
                 telegram_text=self._render_vacation_skip_text(rule, target_slot),
+                outcome_source="rule",
             )
 
         cookie = self._load_cookie(rule.gym_account_id)
         if cookie is None:
             return self._persist_terminal(
                 rule=rule,
-                target_class=rule.class_type,
+                target_class=primary_class_type,
                 target_slot=target_slot,
                 terminal_status="cookie_invalid",
                 fallback_index=None,
                 response="no cookie on file",
                 telegram_text=self._render_no_cookie_text(rule, target_slot),
+                outcome_source=outcome_source,
             )
 
         # US1.5: align on WodBuster's own ``SegundosHastaPublicacion``
@@ -271,18 +301,22 @@ class BookingExecutor:
             target_slot=target_slot,
             ticks=ticks,
             cookie=cookie,
-            class_type=rule.class_type,
-            class_time=rule.class_time,
+            class_type=primary_class_type,
+            class_time=primary_class_time,
             fallback_index=0,
         )
         if primary_result.done:
-            return self._persist_terminal(**primary_result.payload)
+            return self._persist_terminal(**primary_result.payload, outcome_source=outcome_source)
 
         # -- second shot ---------------------------------------------
         # Only reached when primary came back "full" AND a second-shot
-        # pair is configured on the rule.
+        # pair is configured on the rule. The second shot keeps the pair
+        # configured on the rule and is never re-targeted to the
+        # override's values (ADR-0012 Decision 6).
         if not rule.second_shot_class_type or not rule.second_shot_class_time:
-            return self._persist_terminal(**primary_result.full_payload)
+            return self._persist_terminal(
+                **primary_result.full_payload, outcome_source=outcome_source
+            )
 
         second_result = self._attempt(
             rule=rule,
@@ -294,9 +328,9 @@ class BookingExecutor:
             fallback_index=1,
         )
         if second_result.done:
-            return self._persist_terminal(**second_result.payload)
+            return self._persist_terminal(**second_result.payload, outcome_source=outcome_source)
         # Second shot also full — persist the second-shot outcome.
-        return self._persist_terminal(**second_result.full_payload)
+        return self._persist_terminal(**second_result.full_payload, outcome_source=outcome_source)
 
     # ------------------------------------------------------------------
     # Internals
@@ -611,6 +645,7 @@ class BookingExecutor:
         fallback_index: int | None,
         response: str | None,
         telegram_text: str,
+        outcome_source: str = "rule",
     ) -> BookingResult:
         """Open a session, persist outcome + outbox rows, commit."""
         with self._session_factory() as session:
@@ -621,6 +656,7 @@ class BookingExecutor:
                 target_class=target_class,
                 target_slot=target_slot,
                 terminal_status=terminal_status,
+                outcome_source=outcome_source,
                 granted_fallback_index=fallback_index,
                 response_payload=response,
                 telegram_text=telegram_text,
@@ -631,6 +667,7 @@ class BookingExecutor:
                 rule_id=rule.id,
                 gym_account_id=rule.gym_account_id,
                 terminal_status=terminal_status,
+                outcome_source=outcome_source,
                 fallback_index=fallback_index,
                 outcome_id=outcome.id,
             )
@@ -754,18 +791,6 @@ class _AttemptResult:
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
-
-
-def _midnight_utc_ticks(target_slot: datetime) -> int:
-    """Return the UTC-midnight epoch seconds for ``target_slot``'s day.
-
-    Phase 0 established that LoadClass and the booking handlers accept
-    a ``ticks`` parameter equal to the UTC-midnight seconds-since-
-    epoch of the target date. Reuse that convention.
-    """
-    aware = target_slot.astimezone(UTC)
-    midnight = aware.replace(hour=0, minute=0, second=0, microsecond=0)
-    return int(midnight.timestamp())
 
 
 def _short_payload(payload: dict[str, Any], raw_res: str | None) -> str:

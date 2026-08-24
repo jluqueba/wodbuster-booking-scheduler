@@ -30,20 +30,23 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import structlog
 
+from ..booking.overrides import local_date_for_slot
 from ..persistence.cookie_store import CookieStore
 from ..persistence.engine import get_session
+from ..scheduler.clock import midnight_utc_ticks
 from ..wodbuster_client.client import (
     WodBusterAuthError,
     WodBusterClient,
     WodBusterProtocolError,
     WodBusterTransportError,
 )
+from ..wodbuster_client.parsers import ClassSlot, extract_class_slots, find_matching_slot
 
 _log = structlog.get_logger(__name__)
 
@@ -144,6 +147,112 @@ def fetch_available_classes(
         days_probed=days_probed,
     )
     return result
+
+
+@dataclass(frozen=True)
+class DateSchedule:
+    """Date-scoped probe result for the override form (ADR-0012, Decision 7).
+
+    Distinct from :class:`AvailableClasses`, which unions a whole week
+    into two unpaired lists and therefore cannot answer "does this class
+    type run at this time on this date" (FR-008).
+
+    ``published`` is ``False`` when the probe succeeded but WodBuster
+    carried no class instance for the date. That is not the same as the
+    probe returning ``None``, which means it produced no answer at all.
+    """
+
+    target_date: date
+    published: bool
+    slots: list[ClassSlot]
+
+    @property
+    def class_types(self) -> list[str]:
+        return sorted({slot.nombre for slot in self.slots})
+
+    @property
+    def time_slots(self) -> list[str]:
+        return sorted({slot.hora_comienzo for slot in self.slots})
+
+    def has(self, class_type: str, class_time: str) -> bool:
+        """Whether the exact pair runs on this date.
+
+        Delegates to the matcher the executor uses at trigger time, so a
+        validated save and a successful booking agree by construction
+        rather than by two implementations staying in sync.
+        """
+        return (
+            find_matching_slot(self.slots, class_type=class_type, class_time=class_time) is not None
+        )
+
+
+def fetch_classes_for_date(
+    store: CookieStore,
+    client: WodBusterClient,
+    gym_account_id: int,
+    *,
+    target_slot: datetime,
+) -> DateSchedule | None:
+    """Probe WodBuster for the classes that run on ``target_slot``'s date.
+
+    ``target_slot`` is the UTC class-start instant produced by
+    :func:`booking.overrides.effective_slot_for`. Both the calendar day
+    the result is labelled with and the ``ticks`` sent upstream are
+    derived from it, so the probe reads exactly the day the executor
+    will read at trigger time (plan AMB-005). This is deliberately the
+    executor's UTC-midnight convention, not the week-scoped picker's
+    local-midnight :func:`_current_week_ticks`; the picker is left as it
+    is because changing it would alter the rules form.
+
+    One ``load_class`` call, not seven, and no caching: this probe
+    exists to be authoritative at the moment it is read.
+
+    Returns ``None`` when the cookie is missing, when WodBuster rejects
+    it, or when the call fails.
+    """
+    target_date = local_date_for_slot(target_slot)
+    with get_session() as session:
+        cookie_value = store.load(session, gym_account_id)
+    if cookie_value is None:
+        _log.info(
+            "rules.picker.date.no_cookie",
+            gym_account_id=gym_account_id,
+            target_date=target_date.isoformat(),
+        )
+        return None
+
+    ticks = midnight_utc_ticks(target_slot)
+    try:
+        loaded = client.load_class(cookie_value, ticks)
+    except WodBusterAuthError as exc:
+        _log.warning(
+            "rules.picker.date.auth_error",
+            gym_account_id=gym_account_id,
+            target_date=target_date.isoformat(),
+            ticks=ticks,
+            error=str(exc),
+        )
+        return None
+    except (WodBusterTransportError, WodBusterProtocolError) as exc:
+        _log.warning(
+            "rules.picker.date.upstream_error",
+            gym_account_id=gym_account_id,
+            target_date=target_date.isoformat(),
+            ticks=ticks,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+        return None
+
+    slots = extract_class_slots(loaded.payload)
+    _log.info(
+        "rules.picker.date.fetched",
+        gym_account_id=gym_account_id,
+        target_date=target_date.isoformat(),
+        ticks=ticks,
+        slots=len(slots),
+    )
+    return DateSchedule(target_date=target_date, published=bool(slots), slots=slots)
 
 
 def extract_available_classes(payload: dict[str, Any]) -> AvailableClasses:
@@ -252,4 +361,10 @@ def _current_week_ticks() -> list[int]:
     return [int((monday_local + timedelta(days=offset)).timestamp()) for offset in range(7)]
 
 
-__all__ = ["AvailableClasses", "extract_available_classes", "fetch_available_classes"]
+__all__ = [
+    "AvailableClasses",
+    "DateSchedule",
+    "extract_available_classes",
+    "fetch_available_classes",
+    "fetch_classes_for_date",
+]

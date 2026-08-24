@@ -52,6 +52,7 @@ def persist_outcome(
     target_class: str,
     target_slot: datetime,
     terminal_status: str,
+    outcome_source: str = "rule",
     granted_fallback_index: int | None = None,
     response_payload: str | None = None,
     telegram_text: str,
@@ -73,6 +74,10 @@ def persist_outcome(
     - ``telegram_text`` is the pre-rendered notification body. Keeping
       the copy at the writer avoids scattering the "success" /
       "failure" wording across the executor.
+    - ``outcome_source`` is orthogonal to ``terminal_status``
+      (ADR-0012, Decision 4): it says which plan drove the attempt
+      (``rule`` or ``override``), not how it ended. It defaults to
+      ``rule`` so every pre-override caller stays correct.
 
     For ``terminal_status == "cookie_invalid"`` an ``Alert`` row is
     opened (or refreshed if one is already open) so the banner
@@ -87,6 +92,7 @@ def persist_outcome(
         target_slot=target_slot,
         attempted_at=_now,
         terminal_status=terminal_status,
+        outcome_source=outcome_source,
         granted_fallback_index=granted_fallback_index,
         response_payload=response_payload,
     )

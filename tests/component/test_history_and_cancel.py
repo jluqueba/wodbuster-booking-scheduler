@@ -17,7 +17,7 @@ Covers:
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -707,3 +707,230 @@ def test_cancel_without_csrf_is_forbidden(
         response = client.post(f"/bookings/{booking_id}/cancel")
 
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Upcoming: the modified state and its actions (T-BDO-008)
+# ---------------------------------------------------------------------------
+
+# Wednesday 6 May 2026 at 18:30 Madrid. The window opens two days before
+# at 21:30 Madrid (19:30 UTC), so the edit cutoff is 19:28:30 UTC on the
+# Monday. Every override test below freezes ``_utcnow`` on one side of
+# that instant rather than assuming anything about the current week.
+_OVERRIDE_DATE = date(2026, 5, 6)
+_BEFORE_CUTOFF = datetime(2026, 5, 4, 12, 0, tzinfo=UTC)
+_AFTER_CUTOFF = datetime(2026, 5, 4, 19, 29, tzinfo=UTC)
+
+
+def _seed_rule(engine: Engine, operator_id: int) -> tuple[int, int]:
+    """Insert a Wednesday 18:30 WOD rule. Returns ``(rule_id, gym_account_id)``."""
+    with engine.begin() as conn:
+        gym_account_id = gym_account_id_for(conn, operator_id)
+        rule_id = int(
+            conn.execute(
+                text(
+                    "INSERT INTO scheduler_rule "
+                    "(gym_account_id, day_of_week, class_type, class_time, "
+                    " booking_opens_days_before, booking_opens_at, active) "
+                    "VALUES (:ga, 2, 'WOD', '18:30', 2, '21:30', true) RETURNING id"
+                ),
+                {"ga": gym_account_id},
+            ).scalar_one()
+        )
+    return rule_id, gym_account_id
+
+
+def _seed_override(
+    engine: Engine,
+    *,
+    rule_id: int,
+    gym_account_id: int,
+    class_time: str = "19:00",
+    validated: bool = True,
+    target_date: date = _OVERRIDE_DATE,
+) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO booking_day_override "
+                "(rule_id, gym_account_id, target_date, class_time, validated) "
+                "VALUES (:r, :ga, :d, :ct, :v)"
+            ),
+            {
+                "r": rule_id,
+                "ga": gym_account_id,
+                "d": target_date,
+                "ct": class_time,
+                "v": validated,
+            },
+        )
+
+
+def _override_url(rule_id: int, *, revert: bool = False) -> str:
+    base = f"/history/overrides/{rule_id}/{_OVERRIDE_DATE.isoformat()}"
+    return f"{base}/revert" if revert else base
+
+
+def _freeze(monkeypatch: pytest.MonkeyPatch, instant: datetime) -> None:
+    monkeypatch.setenv("WORKER_TIMEZONE", "Europe/Madrid")
+    monkeypatch.setattr("wodbuster_worker.booking.routes._utcnow", lambda: instant)
+
+
+def test_history_renders_modified_day_with_rule_values_and_both_actions(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-019, FR-020, CC-001 (render half): the chip, the rule's own
+    values as an annotation, and the edit + revert actions."""
+    _freeze(monkeypatch, _BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, gym_account_id = _seed_rule(postgres_engine, op_id)
+    _seed_override(postgres_engine, rule_id=rule_id, gym_account_id=gym_account_id)
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/history")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "wb-chip--modified" in body
+    # Effective time, and the rule's own values annotated beside it.
+    assert "19:00" in body
+    assert "Rule: WOD at 18:30" in body
+    assert _override_url(rule_id) in body
+    assert _override_url(rule_id, revert=True) in body
+
+
+def test_history_pending_day_offers_edit_but_no_revert(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """There is nothing to revert on a day that carries no override."""
+    _freeze(monkeypatch, _BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, _ = _seed_rule(postgres_engine, op_id)
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/history")
+
+    assert response.status_code == 200
+    assert _override_url(rule_id) in response.text
+    assert _override_url(rule_id, revert=True) not in response.text
+
+
+def test_history_granted_day_offers_neither_action(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A booked day is past editing (FR-005)."""
+    _freeze(monkeypatch, _BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, gym_account_id = _seed_rule(postgres_engine, op_id)
+    with postgres_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO booking_outcome "
+                "(gym_account_id, rule_id, target_class, target_slot, terminal_status) "
+                "VALUES (:ga, :r, 'WOD', :slot, 'granted')"
+            ),
+            {
+                "ga": gym_account_id,
+                "r": rule_id,
+                "slot": datetime(2026, 5, 6, 16, 30, tzinfo=UTC),
+            },
+        )
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/history")
+
+    assert response.status_code == 200
+    assert _override_url(rule_id) not in response.text
+    assert _override_url(rule_id, revert=True) not in response.text
+
+
+def test_history_vacation_day_offers_neither_action(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CC-014: vacation wins, so the day is not editable either."""
+    _freeze(monkeypatch, _BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, gym_account_id = _seed_rule(postgres_engine, op_id)
+    _seed_override(postgres_engine, rule_id=rule_id, gym_account_id=gym_account_id)
+    with postgres_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO vacation_window (gym_account_id, start_date, end_date) "
+                "VALUES (:ga, :start, :end)"
+            ),
+            {
+                "ga": gym_account_id,
+                "start": datetime(2026, 5, 5, 0, 0, tzinfo=UTC),
+                "end": datetime(2026, 5, 7, 0, 0, tzinfo=UTC),
+            },
+        )
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/history")
+
+    assert response.status_code == 200
+    assert "wb-chip--vacation" in response.text
+    assert _override_url(rule_id) not in response.text
+    assert _override_url(rule_id, revert=True) not in response.text
+
+
+def test_history_hides_the_edit_action_past_the_cutoff(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-006: ``editable`` is server-side, so the action disappears."""
+    _freeze(monkeypatch, _AFTER_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, gym_account_id = _seed_rule(postgres_engine, op_id)
+    _seed_override(postgres_engine, rule_id=rule_id, gym_account_id=gym_account_id)
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/history")
+
+    assert response.status_code == 200
+    # The day still renders as modified; only the actions are withheld.
+    assert "wb-chip--modified" in response.text
+    assert _override_url(rule_id) not in response.text
+    assert _override_url(rule_id, revert=True) not in response.text
+
+
+def test_history_not_validated_warning_tracks_the_validated_flag(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CC-005 (render half): the warning is shown only when unvalidated."""
+    _freeze(monkeypatch, _BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, gym_account_id = _seed_rule(postgres_engine, op_id)
+    _seed_override(postgres_engine, rule_id=rule_id, gym_account_id=gym_account_id, validated=False)
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        unvalidated = client.get("/history")
+        with postgres_engine.begin() as conn:
+            conn.execute(text("UPDATE booking_day_override SET validated = true"))
+        validated = client.get("/history")
+
+    assert "not validated against a published schedule" in unvalidated.text
+    assert "not validated against a published schedule" not in validated.text

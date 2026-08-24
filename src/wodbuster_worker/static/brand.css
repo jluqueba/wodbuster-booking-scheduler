@@ -40,6 +40,10 @@
   --wb-warning:       #fbbf24;
   --wb-danger:        #f87171;
   --wb-info:          #60a5fa;
+  /* A day whose weekly rule was overridden for that date only. Violet
+     because green, blue and yellow already carry granted, pending and
+     vacation in the upcoming grid. */
+  --wb-modified:      #c084fc;
 
   /* Type + geometry.
 
@@ -1553,6 +1557,13 @@ button.wb-confirm__cancel:focus-visible,
   border-color: var(--wb-accent);
   box-shadow: 0 10px 26px rgba(248, 255, 64, 0.28);
 }
+.wb-upcoming__day--modified {
+  border-color: rgba(192, 132, 252, 0.5);
+}
+.wb-upcoming__day--modified:hover {
+  border-color: var(--wb-modified);
+  box-shadow: 0 10px 26px rgba(192, 132, 252, 0.28);
+}
 
 .wb-upcoming__date {
   font-weight: 600;
@@ -1619,6 +1630,24 @@ button.wb-confirm__cancel:focus-visible,
   background: rgba(96, 165, 250, 0.10);
   color: var(--wb-info);
   border-color: var(--wb-info);
+}
+/* Single-day override applied to a projected day (ADR-0012). */
+.wb-chip--modified {
+  background: rgba(192, 132, 252, 0.12);
+  color: var(--wb-modified);
+  border-color: var(--wb-modified);
+}
+/* Row of per-slot actions (Edit, Back to rule) inside an upcoming day
+   tile. Same compact sizing as the in-tile Cancel button so the three
+   controls read as one family. */
+.wb-upcoming__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.wb-upcoming__actions .wb-btn {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.82rem;
 }
 /* In the stacked column layout the status chip sits on its own row and
    left-aligns with the time and class above it. */

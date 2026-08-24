@@ -25,12 +25,14 @@ Design notes:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -70,6 +72,15 @@ _BOOKING_TERMINAL_STATUSES = (
     "cancelled",
     "skipped",
 )
+# Orthogonal to the terminal status (ADR-0012, Decision 4): what drove the
+# attempt, not how it ended. 'rule' covers every row written before the
+# single-day override feature existed.
+_BOOKING_OUTCOME_SOURCES = (
+    "rule",
+    "override",
+    "override_fallback",
+    "override_skip",
+)
 _HEARTBEAT_RESULTS = ("valid", "rejected", "unknown")
 # The alert kinds intentionally cover only the vocabularies referenced in
 # the plan and spec (cookie expiring, cookie invalid, silent-run
@@ -78,6 +89,7 @@ _ALERT_KINDS = (
     "cookie_expiring",
     "cookie_invalid",
     "heartbeat_anomaly",
+    "booking_fallback",
 )
 _NOTIFICATION_KINDS = ("telegram", "banner", "email")
 # Communication language for the operator (User Profile, ADR-0008). Governs
@@ -325,6 +337,15 @@ class BookingOutcome(Base):
         ),
         nullable=False,
     )
+    outcome_source: Mapped[str] = mapped_column(
+        Enum(
+            *_BOOKING_OUTCOME_SOURCES,
+            name="booking_outcome_source_enum",
+            native_enum=True,
+        ),
+        nullable=False,
+        server_default="rule",
+    )
     # 0-based index into the ``class_preference`` walk that produced the
     # granted outcome. Null when the terminal status is not ``granted``.
     granted_fallback_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -334,6 +355,69 @@ class BookingOutcome(Base):
     # introspect via psql without json path syntax.
     response_payload: Mapped[str | None] = mapped_column(Text, nullable=True)
     notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BookingDayOverride(Base):
+    """Single-date exception to a weekly rule (ADR-0012, Decision 1A).
+
+    The rule is never mutated: this row replaces the rule's target for
+    exactly one operator-local calendar day, and every consumer resolves
+    an effective target as "override value if present else rule value".
+
+    ``target_date`` is a ``DATE`` in the operator timezone (Decision 2),
+    so a time change never changes the row's identity. There is no
+    soft-delete column: revert is a hard delete, and a past row is inert
+    because the projection only looks forward.
+    """
+
+    __tablename__ = "booking_day_override"
+    __table_args__ = (
+        UniqueConstraint("rule_id", "target_date", name="uq_booking_day_override_rule_date"),
+        CheckConstraint(
+            "NOT skip_day OR (class_type IS NULL AND class_time IS NULL)",
+            name="ck_booking_day_override_skip_exclusive",
+        ),
+        CheckConstraint(
+            "skip_day OR class_type IS NOT NULL OR class_time IS NOT NULL OR suppress_second_shot",
+            name="ck_booking_day_override_has_change",
+        ),
+        Index("ix_booking_day_override_gym_date", "gym_account_id", "target_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rule_id: Mapped[int] = mapped_column(
+        ForeignKey("scheduler_rule.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Denormalized from the rule so scoping (ADR-0007) and the
+    # projection's range query do not need a join.
+    gym_account_id: Mapped[int] = mapped_column(
+        ForeignKey("gym_account.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    target_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # Widths mirror ``SchedulerRule`` exactly so an effective value
+    # substitutes without truncation. Null means "keep the rule's value".
+    class_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    class_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    skip_day: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.false())
+    # True only when the combination was confirmed against the published
+    # schedule of ``target_date``.
+    validated: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.false())
+    suppress_second_shot: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=sa.false()
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
 
 
 class VacationWindow(Base):

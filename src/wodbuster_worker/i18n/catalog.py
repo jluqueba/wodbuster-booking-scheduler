@@ -51,6 +51,7 @@ EN: dict[str, str] = {
     "chip.granted": "granted",
     "chip.scheduled": "scheduled",
     "chip.vacation": "on vacation",
+    "chip.modified": "modified",
     "chip.full": "full",
     "chip.cancelled": "cancelled",
     "chip.skipped": "skipped",
@@ -246,6 +247,45 @@ EN: dict[str, str] = {
     "history.second_shot_tag": "(second shot)",
     "history.cancel_button": "🚫 Cancel",
     "history.confirm.cancel": "Cancel this booking on WodBuster?",
+    # -- single-day override (ADR-0012) ------------------------------
+    "override.eyebrow": "Single day",
+    "override.title": "✏️ Edit this day",
+    "override.back_to_history": "← Back to history",
+    "override.rule_values": "This day comes from a rule: {class_type} at {class_time}.",
+    "override.rule_original": "Rule: {class_type} at {class_time}",
+    "override.form.target": "Class for this day only",
+    "override.form.class_type": "Class type",
+    "override.form.class_time": "Class time",
+    "override.form.target_hint": ("Applies to this date only. The weekly rule is not modified."),
+    "override.form.second_shot": "Second shot",
+    "override.form.second_shot_value": (
+        "The rule's second shot still runs on this day: {class_type} at {class_time}."
+    ),
+    "override.form.second_shot_none": "This rule has no second shot.",
+    "override.warning.not_published": (
+        "The gym has not published the schedule for this date yet. The "
+        "options below are the combinations known for this weekday; the "
+        "class will be re-checked when the booking window opens."
+    ),
+    "override.warning.probe_unavailable": (
+        "Live class list unavailable, so the class cannot be checked "
+        "against this date. You can still save; it will be re-checked "
+        "when the booking window opens. Paste a fresh cookie:"
+    ),
+    "override.warning.not_validated": (
+        "This day is not validated against a published schedule. If the "
+        "class is unavailable when the window opens, the rule's class is "
+        "booked instead."
+    ),
+    "override.error.combination_unavailable": (
+        "That class does not run at that time on this date."
+    ),
+    "override.error.invalid_time": "Use HH:MM in 24-hour format.",
+    "override.error.invalid_class_type": "Choose a class type.",
+    "override.edit_button": "✏️ Edit day",
+    "override.save_button": "💾 Save this day",
+    "override.revert_button": "🚫 Back to rule",
+    "override.confirm.revert": "Discard this day's change and go back to the rule?",
     # -- cookie ------------------------------------------------------
     "cookie.eyebrow": "Access",
     "cookie.title": "🍪 WodBuster cookie",
@@ -360,7 +400,9 @@ EN: dict[str, str] = {
     # -- auth --------------------------------------------------------
     "auth.landing.title": "WodBuster Booking Scheduler",
     "auth.denied.title": "🚫 Access denied",
-    "auth.denied.body": ("This account is not authorized to access the WodBuster Booking Scheduler."),
+    "auth.denied.body": (
+        "This account is not authorized to access the WodBuster Booking Scheduler."
+    ),
     "auth.denied.contact": (
         "If you believe this is a mistake, contact the operator who set up this deployment."
     ),
@@ -615,6 +657,15 @@ EN: dict[str, str] = {
         "Vacation window closed. Automated bookings resume for future dates."
     ),
     "flash.vacation.invalid_date": ("Invalid date. Use YYYY-MM-DD for both start and end."),
+    "flash.override.saved": "Day updated. The weekly rule is unchanged.",
+    "flash.override.reverted": "Day back to the rule.",
+    "flash.override.window_closed": (
+        "The booking window for that day has already opened, so it can no "
+        "longer be edited. Nothing was saved."
+    ),
+    "flash.override.already_executed": (
+        "That day already ran. Check the result below. Nothing was saved."
+    ),
     "flash.telegram.test_sent": "Test message sent. Check your Telegram chat.",
     "flash.telegram.unbound": "Telegram unbound.",
     "flash.telegram.no_token": (
@@ -816,6 +867,7 @@ ES: dict[str, str] = {
     "chip.granted": "reservado",
     "chip.scheduled": "programado",
     "chip.vacation": "en vacaciones",
+    "chip.modified": "modificado",
     "chip.full": "completo",
     "chip.cancelled": "cancelado",
     "chip.skipped": "omitido",
@@ -1023,6 +1075,45 @@ ES: dict[str, str] = {
     "history.second_shot_tag": "(alternativa)",
     "history.cancel_button": "🚫 Cancelar",
     "history.confirm.cancel": "¿Cancelar esta reserva en WodBuster?",
+    # -- single-day override (ADR-0012) ------------------------------
+    "override.eyebrow": "Un solo día",
+    "override.title": "✏️ Editar este día",
+    "override.back_to_history": "← Volver al historial",
+    "override.rule_values": "Este día viene de una regla: {class_type} a las {class_time}.",
+    "override.rule_original": "Regla: {class_type} a las {class_time}",
+    "override.form.target": "Clase solo para este día",
+    "override.form.class_type": "Tipo de clase",
+    "override.form.class_time": "Hora de la clase",
+    "override.form.target_hint": ("Se aplica solo a esta fecha. La regla semanal no se modifica."),
+    "override.form.second_shot": "Alternativa",
+    "override.form.second_shot_value": (
+        "La alternativa de la regla se sigue intentando este día: {class_type} a las {class_time}."
+    ),
+    "override.form.second_shot_none": "Esta regla no tiene alternativa.",
+    "override.warning.not_published": (
+        "El gimnasio aún no ha publicado el horario de esta fecha. Las "
+        "opciones de abajo son las combinaciones conocidas para este día "
+        "de la semana; la clase se vuelve a comprobar cuando se abra la "
+        "ventana de reserva."
+    ),
+    "override.warning.probe_unavailable": (
+        "Lista de clases no disponible, así que la clase no se puede "
+        "comprobar contra esta fecha. Puedes guardar igualmente; se "
+        "volverá a comprobar cuando se abra la ventana de reserva. Pega "
+        "una cookie fresca:"
+    ),
+    "override.warning.not_validated": (
+        "Este día no está validado contra un horario publicado. Si la "
+        "clase no está disponible al abrirse la ventana, se reserva la "
+        "clase de la regla."
+    ),
+    "override.error.combination_unavailable": ("Esa clase no se imparte a esa hora en esta fecha."),
+    "override.error.invalid_time": "Usa HH:MM en formato de 24 horas.",
+    "override.error.invalid_class_type": "Elige un tipo de clase.",
+    "override.edit_button": "✏️ Editar día",
+    "override.save_button": "💾 Guardar este día",
+    "override.revert_button": "🚫 Volver a la regla",
+    "override.confirm.revert": "¿Descartar el cambio de este día y volver a la regla?",
     # -- cookie ------------------------------------------------------
     "cookie.eyebrow": "Acceso",
     "cookie.title": "🍪 Cookie de WodBuster",
@@ -1413,6 +1504,15 @@ ES: dict[str, str] = {
         "Ventana de vacaciones cerrada. Las reservas automáticas se reanudan para fechas futuras."
     ),
     "flash.vacation.invalid_date": ("Fecha inválida. Usa YYYY-MM-DD para inicio y fin."),
+    "flash.override.saved": "Día actualizado. La regla semanal no cambia.",
+    "flash.override.reverted": "Día devuelto a la regla.",
+    "flash.override.window_closed": (
+        "La ventana de reserva de ese día ya se ha abierto, así que ya no "
+        "se puede editar. No se ha guardado nada."
+    ),
+    "flash.override.already_executed": (
+        "Ese día ya se ha ejecutado. Consulta el resultado más abajo. No se ha guardado nada."
+    ),
     "flash.telegram.test_sent": "Mensaje de prueba enviado. Revisa tu chat de Telegram.",
     "flash.telegram.unbound": "Telegram desvinculado.",
     "flash.telegram.no_token": (

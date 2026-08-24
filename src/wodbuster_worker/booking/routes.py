@@ -38,8 +38,10 @@ from ..gyms.context import active_gym_account_id
 from ..gyms.service import gym_client_factory, resolve_gym_client
 from ..i18n import lang_url, t
 from ..persistence.engine import get_session
-from ..persistence.models import BookingOutcome
+from ..persistence.models import BookingOutcome, SchedulerRule
+from ..rules.service import list_rules_for_operator
 from ..scheduler.rule_jobs import operator_timezone
+from .overrides import is_editable
 
 _log = structlog.get_logger(__name__)
 
@@ -90,10 +92,17 @@ def history_list(
     with get_session() as session:
         upcoming: list[UpcomingSlot] = []
         outcomes: list[BookingOutcome] = []
+        rules_by_id: dict[int, SchedulerRule] = {}
         if gym_account_id is not None:
             upcoming = list_upcoming_slots(session, gym_account_id, now=now)
             outcomes = list_recent_bookings(session, gym_account_id, since=week_start)
-        upcoming_days = _group_upcoming_by_day(upcoming)
+            # The projection carries no rule object, and the edit cutoff
+            # is rule arithmetic, so the rules are loaded once here
+            # rather than re-queried per row.
+            rules_by_id = {
+                int(rule.id): rule for rule in list_rules_for_operator(session, gym_account_id)
+            }
+        upcoming_days = _group_upcoming_by_day(upcoming, rules_by_id=rules_by_id, now=now)
         rows = [_outcome_to_row(o) for o in outcomes]
     return templates.TemplateResponse(
         request=request,
@@ -207,15 +216,23 @@ def _outcome_to_row(outcome: BookingOutcome) -> dict[str, Any]:
 
 def _group_upcoming_by_day(
     slots: list[UpcomingSlot],
+    *,
+    rules_by_id: dict[int, SchedulerRule],
+    now: datetime,
 ) -> list[dict[str, Any]]:
     """Group upcoming attendance slots by local calendar day.
 
     Times are shown in the operator's zone (``WORKER_TIMEZONE``) so
     the operator reads "Wed 22 Jul at 21:30" the way they wrote the
-    rule, not in UTC. Both ``granted`` (already secured) and
-    ``pending`` (scheduler hasn't fired yet) slots flow through
+    rule, not in UTC. ``granted`` (already secured), ``pending``
+    (scheduler hasn't fired yet), ``vacation`` and ``modified`` (a
+    single-day override replaced the rule's target) all flow through
     here; the template renders a chip per ``kind`` and the cancel
     button only when the slot has a ``booking_id``.
+
+    ``editable`` is computed server side from :func:`is_editable`, so a
+    row past its cutoff renders no edit action at all rather than an
+    action the save route would refuse (FR-006).
     """
     tz = operator_timezone()
     groups: list[dict[str, Any]] = []
@@ -241,9 +258,42 @@ def _group_upcoming_by_day(
                 "time_label": local.strftime("%H:%M"),
                 "slot_dt": local,
                 "fallback_index": slot.fallback_index,
+                "rule_class_type": slot.rule_class_type,
+                "rule_class_time": slot.rule_class_time,
+                "validated": slot.validated,
+                **_override_actions(slot, rules_by_id=rules_by_id, now=now),
             }
         )
     return groups
+
+
+def _override_actions(
+    slot: UpcomingSlot,
+    *,
+    rules_by_id: dict[int, SchedulerRule],
+    now: datetime,
+) -> dict[str, Any]:
+    """Return the edit/revert URLs a row may offer.
+
+    Only ``pending`` and ``modified`` rows are editable: ``granted`` is
+    already booked and ``vacation`` wins over any override (FR-005,
+    FR-029). Revert is offered only where there is something to revert.
+    """
+    rule = rules_by_id.get(slot.rule_id) if slot.rule_id is not None else None
+    editable = (
+        slot.kind in {"pending", "modified"}
+        and rule is not None
+        and slot.target_date is not None
+        and is_editable(rule, slot.target_date, now)
+    )
+    if not editable or slot.target_date is None:
+        return {"editable": False, "edit_url": None, "revert_url": None}
+    base = f"/history/overrides/{slot.rule_id}/{slot.target_date.isoformat()}"
+    return {
+        "editable": True,
+        "edit_url": lang_url(base),
+        "revert_url": lang_url(f"{base}/revert") if slot.kind == "modified" else None,
+    }
 
 
 __all__ = ["router"]

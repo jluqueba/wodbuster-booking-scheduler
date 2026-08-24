@@ -20,13 +20,14 @@ import types as _types
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
 from wodbuster_worker.booking.executor import BookingExecutor, BookingExecutorProvider
+from wodbuster_worker.booking.overrides import OverridePlan
 from wodbuster_worker.persistence.models import SchedulerRule
 from wodbuster_worker.wodbuster_client.client import (
     BookingActionResponse,
@@ -1033,3 +1034,223 @@ def test_provider_isolates_and_caches_executors_per_gym_account() -> None:
     # Each executor is bound to its gym account's idu (enrollment check).
     assert ex_a1._operator_idu == "idu-a"
     assert ex_b._operator_idu == "idu-b"
+
+
+# ---------------------------------------------------------------------------
+# Single-day override (T-BDO-009, ADR-0012)
+# ---------------------------------------------------------------------------
+
+
+def _override(
+    *,
+    class_type: str | None = None,
+    class_time: str | None = None,
+    skip_day: bool = False,
+    suppress_second_shot: bool = False,
+) -> OverridePlan:
+    return OverridePlan(
+        override_id=9,
+        rule_id=42,
+        target_date=date(2026, 7, 15),
+        class_type=class_type,
+        class_time=class_time,
+        skip_day=skip_day,
+        validated=True,
+        suppress_second_shot=suppress_second_shot,
+    )
+
+
+def _mixed_schedule() -> LoadClassResponse:
+    """Published day carrying every pair the override tests can contest.
+
+    Four distinct ``(class type, start time)`` combinations means the
+    booked ``class_id`` alone identifies which pair the executor chose.
+    """
+    return _load_class_payload(
+        slots=[
+            {"Id": 45654, "Nombre": "WOD", "HoraComienzo": "21:30:00"},
+            {"Id": 77777, "Nombre": "WOD", "HoraComienzo": "19:00:00"},
+            {"Id": 88888, "Nombre": "Halterofilia", "HoraComienzo": "21:30:00"},
+            {"Id": 99999, "Nombre": "Halterofilia", "HoraComienzo": "19:00:00"},
+        ]
+    )
+
+
+def test_no_override_contests_the_rule_pair_and_sources_the_outcome_to_rule(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-010 regression guard: without an override the executor books the
+    rule's own pair out of a schedule that also publishes three decoys, and
+    persists ``outcome_source="rule"``."""
+    ex, client, writer = _executor(
+        load_class_responses=[_mixed_schedule()],
+        inscribir_responses=[_inscribir_ok()],
+        monkeypatch=monkeypatch,
+    )
+
+    result = ex.book(rule=_rule(), target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC))
+
+    assert result.terminal_status == "granted"
+    assert [c["class_id"] for c in client.inscribir_calls] == [45654]
+    call = writer.calls[0]
+    assert call["outcome_source"] == "rule"
+    assert call["target_class"] == "WOD"
+
+
+def test_time_override_contests_the_override_slot_and_sources_the_outcome_to_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-010, CC-001 trigger half: a time-only override keeps the rule's
+    class type and books it at the override's time."""
+    ex, client, writer = _executor(
+        load_class_responses=[_mixed_schedule()],
+        inscribir_responses=[_inscribir_ok()],
+        monkeypatch=monkeypatch,
+    )
+
+    result = ex.book(
+        rule=_rule(),
+        # The scheduler already resolved the effective slot before calling.
+        target_slot=datetime(2026, 7, 15, 19, 0, tzinfo=UTC),
+        override=_override(class_time="19:00"),
+    )
+
+    assert result.terminal_status == "granted"
+    assert [c["class_id"] for c in client.inscribir_calls] == [77777]
+    call = writer.calls[0]
+    assert call["outcome_source"] == "override"
+    assert call["target_class"] == "WOD"
+    assert call["target_slot"] == datetime(2026, 7, 15, 19, 0, tzinfo=UTC)
+
+
+def test_type_override_contests_the_override_class_at_the_rule_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-010: a type-only override changes what is contested, not when."""
+    ex, client, writer = _executor(
+        load_class_responses=[_mixed_schedule()],
+        inscribir_responses=[_inscribir_ok()],
+        monkeypatch=monkeypatch,
+    )
+
+    result = ex.book(
+        rule=_rule(),
+        target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC),
+        override=_override(class_type="Halterofilia"),
+    )
+
+    assert result.terminal_status == "granted"
+    assert [c["class_id"] for c in client.inscribir_calls] == [88888]
+    call = writer.calls[0]
+    assert call["outcome_source"] == "override"
+    assert call["target_class"] == "Halterofilia"
+
+
+def test_override_changing_both_contests_both(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-010: type and time move together on the same plan."""
+    ex, client, writer = _executor(
+        load_class_responses=[_mixed_schedule()],
+        inscribir_responses=[_inscribir_ok()],
+        monkeypatch=monkeypatch,
+    )
+
+    result = ex.book(
+        rule=_rule(),
+        target_slot=datetime(2026, 7, 15, 19, 0, tzinfo=UTC),
+        override=_override(class_type="Halterofilia", class_time="19:00"),
+    )
+
+    assert result.terminal_status == "granted"
+    assert [c["class_id"] for c in client.inscribir_calls] == [99999]
+    assert writer.calls[0]["target_class"] == "Halterofilia"
+    assert writer.calls[0]["outcome_source"] == "override"
+
+
+def test_vacation_guard_wins_over_an_override_and_stays_sourced_to_the_rule(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-029, CC-014 executor half: vacation is the first exit even on a day
+    carrying an override, and the skip is attributed to the rule."""
+    ex, client, writer = _executor(
+        load_class_responses=[_mixed_schedule()],
+        inscribir_responses=[_inscribir_ok()],
+        monkeypatch=monkeypatch,
+    )
+    fake_window = MagicMock()
+    fake_window.id = 77
+    monkeypatch.setattr(
+        "wodbuster_worker.booking.executor.find_covering_window",
+        lambda session, *, gym_account_id, target_slot: fake_window,
+    )
+
+    result = ex.book(
+        rule=_rule(),
+        target_slot=datetime(2026, 7, 15, 19, 0, tzinfo=UTC),
+        override=_override(class_type="Halterofilia", class_time="19:00"),
+    )
+
+    assert result.terminal_status == "skipped"
+    assert client.load_class_calls == []
+    assert client.inscribir_calls == []
+    call = writer.calls[0]
+    assert call["outcome_source"] == "rule"
+    assert call["target_class"] == "WOD"
+
+
+def test_second_shot_keeps_the_rule_pair_and_is_never_retargeted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR-0012 Decision 6 (AMB-001): when the override target comes back
+    full, the second shot contests the pair configured on the rule, not the
+    override's values."""
+    ex, client, writer = _executor(
+        load_class_responses=[_mixed_schedule()],
+        inscribir_responses=[_inscribir_full(), _inscribir_ok()],
+        monkeypatch=monkeypatch,
+    )
+
+    result = ex.book(
+        rule=_rule(
+            second_shot_class_type="Halterofilia",
+            second_shot_class_time="21:30",
+        ),
+        target_slot=datetime(2026, 7, 15, 19, 0, tzinfo=UTC),
+        override=_override(class_time="19:00"),
+    )
+
+    assert result.terminal_status == "granted"
+    assert result.fallback_index == 1
+    # 77777 = the override's WOD 19:00; 88888 = the rule's own second shot.
+    # Neither 99999 (Halterofilia at the override's time) nor any other
+    # override-flavoured pair is contested.
+    assert [c["class_id"] for c in client.inscribir_calls] == [77777, 88888]
+    assert writer.calls[0]["target_class"] == "Halterofilia"
+
+
+def test_override_target_not_visible_is_terminal_without_falling_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T-BDO-009 acceptance 8: the fallback to the rule's class arrives in
+    T-BDO-013. Until then an invisible override target is terminal, even
+    though the rule's own class is published and bookable."""
+    ex, client, writer = _executor(
+        load_class_responses=[_load_class_payload()],  # WOD 21:30 only
+        monkeypatch=monkeypatch,
+        # One poll and out: the retry budget is smaller than the interval.
+        retry_interval_s=1.0,
+        retry_timeout_s=0.05,
+    )
+
+    result = ex.book(
+        rule=_rule(),
+        target_slot=datetime(2026, 7, 15, 19, 0, tzinfo=UTC),
+        override=_override(class_time="19:00"),
+    )
+
+    assert result.terminal_status == "class_not_visible"
+    assert client.inscribir_calls == []
+    call = writer.calls[0]
+    assert call["outcome_source"] == "override"
+    assert "19:00" in call["response_payload"]
