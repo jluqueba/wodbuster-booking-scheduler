@@ -275,6 +275,25 @@ class BookingExecutor:
                 outcome_source="rule",
             )
 
+        # Skip exit (FR-011, FR-013, INV-007). Deliberately second, so
+        # vacation keeps precedence and stays sourced to the rule. From
+        # here on there is no cookie load, no alignment poll, no schedule
+        # read and no candidate: omitting means omitting, under every
+        # condition, including a bookable rule class. The terminal
+        # ``skipped`` row is what lets the history screen report that the
+        # executor ran and chose to book nothing.
+        if override is not None and override.skip_day:
+            return self._persist_terminal(
+                rule=rule,
+                target_class=rule.class_type,
+                target_slot=target_slot,
+                terminal_status="skipped",
+                fallback_index=None,
+                response=f"override #{override.override_id} skips this day",
+                telegram_text=self._render_override_skip_text(rule, target_slot),
+                outcome_source="override_skip",
+            )
+
         cookie = self._load_cookie(rule.gym_account_id)
         if cookie is None:
             return self._persist_terminal(
@@ -744,6 +763,16 @@ class BookingExecutor:
     ) -> str:
         return (
             f"Booking for {_format_slot(target_slot)} skipped: vacation mode is on for this date."
+        )
+
+    def _render_override_skip_text(
+        self,
+        rule: SchedulerRule,
+        target_slot: datetime,
+    ) -> str:
+        return (
+            f"Booking for {_format_slot(target_slot)} skipped: you marked "
+            "this day as skipped. No class was contested."
         )
 
     def _render_upstream_text(

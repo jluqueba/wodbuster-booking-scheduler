@@ -38,6 +38,15 @@ class OverrideCombinationUnavailableError(Exception):
     """Raised when the combination is absent from a published schedule."""
 
 
+class OverrideSkipConflictError(Exception):
+    """Raised when a skip is submitted alongside an alternative target.
+
+    ``ck_booking_day_override_skip_exclusive`` enforces the same rule in
+    the database, but an integrity error surfacing to the user is not an
+    error message. This is the first line of defence (FR-003, INV-002).
+    """
+
+
 @dataclass(frozen=True)
 class OverridePlan:
     """Immutable view of an override, as handed to the executor.
@@ -209,9 +218,14 @@ def save_override(
 
     Raises :class:`OverrideWindowClosedError` past the edit cutoff or
     once the executor has already recorded an outcome for that day
-    (FR-007). Neither branch writes anything. The rule row is never
-    written by this function.
+    (FR-007). Raises :class:`OverrideSkipConflictError` when a skip
+    carries an alternative target (FR-003). No branch writes anything.
+    The rule row is never written by this function.
     """
+    if skip_day and (class_type is not None or class_time is not None):
+        raise OverrideSkipConflictError(
+            "a skipped day carries no alternative class type or class time"
+        )
     _assert_writable(session, rule=rule, target_date=target_date, now=now)
 
     existing = load_override(session, rule_id=int(rule.id), target_date=target_date)
@@ -295,6 +309,7 @@ __all__ = [
     "DEFAULT_EDIT_MARGIN_S",
     "OverrideCombinationUnavailableError",
     "OverridePlan",
+    "OverrideSkipConflictError",
     "OverrideWindowClosedError",
     "delete_override",
     "edit_cutoff_for",

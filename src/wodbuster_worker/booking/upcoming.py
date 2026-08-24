@@ -47,7 +47,7 @@ from ..scheduler.rule_jobs import (
 )
 from .overrides import effective_slot_for, load_overrides_in_range, local_date_for_slot
 
-SlotKind = Literal["granted", "pending", "vacation", "modified"]
+SlotKind = Literal["granted", "pending", "vacation", "modified", "skipped"]
 
 
 @dataclass(frozen=True)
@@ -273,6 +273,10 @@ def _project_pending(
             on_vacation = any(start <= target_slot <= end for start, end in vacation_ranges)
             if on_vacation:
                 kind: SlotKind = "vacation"
+            elif override is not None and override.skip_day:
+                # A skip carries no alternative time, so the row stays on
+                # the rule's own slot (T-BDO-011).
+                kind = "skipped"
             elif replaces_target:
                 kind = "modified"
             else:

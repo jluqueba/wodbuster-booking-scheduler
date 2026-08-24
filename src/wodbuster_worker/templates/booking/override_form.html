@@ -64,6 +64,10 @@
     <p class="wb-override-note">{{ t("override.warning.not_validated") }}</p>
   {% endif %}
 
+  {% if is_skipped %}
+    <p class="wb-override-note">{{ t("override.skip_active") }}</p>
+  {% endif %}
+
   <form class="wb-card" method="post" action="{{ action_url }}">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
@@ -150,17 +154,35 @@
     </div>
   </form>
 
-  {% if revert_url %}
-    <form
-      method="post"
-      action="{{ revert_url }}"
-      class="wb-inline-form"
-      onsubmit="return wbConfirm(this, event, '{{ t('override.confirm.revert') }}')"
-    >
-      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <button type="submit" class="wb-btn wb-btn--danger">{{- t("override.revert_button") -}}</button>
-    </form>
-  {% endif %}
+  {# Skipping posts on its own rather than as a checkbox inside the form
+     above: a skip is exclusive, so it must not carry the class fields
+     the main form always submits (FR-003, INV-002). #}
+  <p class="wb-muted wb-note--xs">{{ t("override.skip_hint") }}</p>
+  <div class="wb-form-actions">
+    {% if not is_skipped %}
+      <form
+        method="post"
+        action="{{ action_url }}"
+        class="wb-inline-form"
+        onsubmit="return wbConfirm(this, event, '{{ t('override.confirm.skip') }}')"
+      >
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="skip_day" value="1">
+        <button type="submit" class="wb-btn wb-btn--danger">{{- t("override.skip_button") -}}</button>
+      </form>
+    {% endif %}
+    {% if revert_url %}
+      <form
+        method="post"
+        action="{{ revert_url }}"
+        class="wb-inline-form"
+        onsubmit="return wbConfirm(this, event, '{{ t('override.confirm.revert') }}')"
+      >
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button type="submit" class="wb-btn wb-btn--danger">{{- t("override.revert_button") -}}</button>
+      </form>
+    {% endif %}
+  </div>
 
   {# Initialise every wb-time-picker widget on the page. #}
   {% include "_time_picker_script.html" %}

@@ -745,7 +745,8 @@ def _seed_override(
     *,
     rule_id: int,
     gym_account_id: int,
-    class_time: str = "19:00",
+    class_time: str | None = "19:00",
+    skip_day: bool = False,
     validated: bool = True,
     target_date: date = _OVERRIDE_DATE,
 ) -> None:
@@ -753,14 +754,15 @@ def _seed_override(
         conn.execute(
             text(
                 "INSERT INTO booking_day_override "
-                "(rule_id, gym_account_id, target_date, class_time, validated) "
-                "VALUES (:r, :ga, :d, :ct, :v)"
+                "(rule_id, gym_account_id, target_date, class_time, skip_day, validated) "
+                "VALUES (:r, :ga, :d, :ct, :skip, :v)"
             ),
             {
                 "r": rule_id,
                 "ga": gym_account_id,
                 "d": target_date,
-                "ct": class_time,
+                "ct": None if skip_day else class_time,
+                "skip": skip_day,
                 "v": validated,
             },
         )
@@ -934,3 +936,59 @@ def test_history_not_validated_warning_tracks_the_validated_flag(
 
     assert "not validated against a published schedule" in unvalidated.text
     assert "not validated against a published schedule" not in validated.text
+
+
+# ---------------------------------------------------------------------------
+# Upcoming: the skipped state and its actions (T-BDO-011)
+# ---------------------------------------------------------------------------
+
+
+def test_history_renders_the_skipped_day_with_revert_and_no_cancel(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-019, FR-022: the skipped chip, its own edit and revert actions,
+    and no cancel action, because there will be no booking to cancel."""
+    _freeze(monkeypatch, _BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, gym_account_id = _seed_rule(postgres_engine, op_id)
+    _seed_override(postgres_engine, rule_id=rule_id, gym_account_id=gym_account_id, skip_day=True)
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/history")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "wb-chip--skipped-day" in body
+    assert "will be skipped" in body
+    assert _override_url(rule_id) in body
+    assert _override_url(rule_id, revert=True) in body
+    # The cancel form only ever renders on a granted upcoming row.
+    assert "wb-upcoming__cancel" not in body
+    # The skip is not a mistargeted override, so no validation warning.
+    assert "not validated against a published schedule" not in body
+
+
+def test_history_renders_the_skipped_chip_in_spanish(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """i18n parity: the new chip resolves in both catalogs, not only EN."""
+    _freeze(monkeypatch, _BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, gym_account_id = _seed_rule(postgres_engine, op_id)
+    _seed_override(postgres_engine, rule_id=rule_id, gym_account_id=gym_account_id, skip_day=True)
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        english = client.get("/history")
+        spanish = client.get("/es/history")
+
+    assert "will be skipped" in english.text
+    assert "se saltará" in spanish.text
+    assert "chip.skipped_day" not in spanish.text

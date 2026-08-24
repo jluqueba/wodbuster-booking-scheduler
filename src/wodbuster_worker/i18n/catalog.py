@@ -52,6 +52,7 @@ EN: dict[str, str] = {
     "chip.scheduled": "scheduled",
     "chip.vacation": "on vacation",
     "chip.modified": "modified",
+    "chip.skipped_day": "will be skipped",
     "chip.full": "full",
     "chip.cancelled": "cancelled",
     "chip.skipped": "skipped",
@@ -282,10 +283,23 @@ EN: dict[str, str] = {
     ),
     "override.error.invalid_time": "Use HH:MM in 24-hour format.",
     "override.error.invalid_class_type": "Choose a class type.",
+    "override.error.skip_exclusive": (
+        "A skipped day carries no class: clear the class type and the class "
+        "time, or save a class instead of skipping."
+    ),
+    "override.skip_hint": (
+        "Or skip this day entirely: no booking is attempted and the weekly rule is not modified."
+    ),
+    "override.skip_active": (
+        "This day is skipped. No booking will be attempted. Save a class "
+        "above, or go back to the rule, to undo it."
+    ),
     "override.edit_button": "✏️ Edit day",
     "override.save_button": "💾 Save this day",
+    "override.skip_button": "🚫 Skip this day",
     "override.revert_button": "🚫 Back to rule",
     "override.confirm.revert": "Discard this day's change and go back to the rule?",
+    "override.confirm.skip": "Skip this day? No booking will be attempted.",
     # -- cookie ------------------------------------------------------
     "cookie.eyebrow": "Access",
     "cookie.title": "🍪 WodBuster cookie",
@@ -658,6 +672,7 @@ EN: dict[str, str] = {
     ),
     "flash.vacation.invalid_date": ("Invalid date. Use YYYY-MM-DD for both start and end."),
     "flash.override.saved": "Day updated. The weekly rule is unchanged.",
+    "flash.override.skipped": "Day skipped. No booking will be attempted.",
     "flash.override.reverted": "Day back to the rule.",
     "flash.override.window_closed": (
         "The booking window for that day has already opened, so it can no "
@@ -868,6 +883,7 @@ ES: dict[str, str] = {
     "chip.scheduled": "programado",
     "chip.vacation": "en vacaciones",
     "chip.modified": "modificado",
+    "chip.skipped_day": "se saltará",
     "chip.full": "completo",
     "chip.cancelled": "cancelado",
     "chip.skipped": "omitido",
@@ -1110,10 +1126,24 @@ ES: dict[str, str] = {
     "override.error.combination_unavailable": ("Esa clase no se imparte a esa hora en esta fecha."),
     "override.error.invalid_time": "Usa HH:MM en formato de 24 horas.",
     "override.error.invalid_class_type": "Elige un tipo de clase.",
+    "override.error.skip_exclusive": (
+        "Un día saltado no lleva clase: vacía el tipo y la hora, o guarda "
+        "una clase en lugar de saltar el día."
+    ),
+    "override.skip_hint": (
+        "O salta este día por completo: no se intenta ninguna reserva y la "
+        "regla semanal no se modifica."
+    ),
+    "override.skip_active": (
+        "Este día está saltado. No se intentará ninguna reserva. Guarda una "
+        "clase arriba, o vuelve a la regla, para deshacerlo."
+    ),
     "override.edit_button": "✏️ Editar día",
     "override.save_button": "💾 Guardar este día",
+    "override.skip_button": "🚫 Saltar este día",
     "override.revert_button": "🚫 Volver a la regla",
     "override.confirm.revert": "¿Descartar el cambio de este día y volver a la regla?",
+    "override.confirm.skip": "¿Saltar este día? No se intentará ninguna reserva.",
     # -- cookie ------------------------------------------------------
     "cookie.eyebrow": "Acceso",
     "cookie.title": "🍪 Cookie de WodBuster",
@@ -1505,6 +1535,7 @@ ES: dict[str, str] = {
     ),
     "flash.vacation.invalid_date": ("Fecha inválida. Usa YYYY-MM-DD para inicio y fin."),
     "flash.override.saved": "Día actualizado. La regla semanal no cambia.",
+    "flash.override.skipped": "Día saltado. No se intentará ninguna reserva.",
     "flash.override.reverted": "Día devuelto a la regla.",
     "flash.override.window_closed": (
         "La ventana de reserva de ese día ya se ha abierto, así que ya no "

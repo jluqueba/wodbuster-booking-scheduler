@@ -275,13 +275,15 @@ def _override_actions(
 ) -> dict[str, Any]:
     """Return the edit/revert URLs a row may offer.
 
-    Only ``pending`` and ``modified`` rows are editable: ``granted`` is
-    already booked and ``vacation`` wins over any override (FR-005,
-    FR-029). Revert is offered only where there is something to revert.
+    Only ``pending``, ``modified`` and ``skipped`` rows are editable:
+    ``granted`` is already booked and ``vacation`` wins over any override
+    (FR-005, FR-029). Revert is offered only where there is something to
+    revert, which includes a skipped day: there is no booking to cancel,
+    but the skip itself can be undone (FR-022).
     """
     rule = rules_by_id.get(slot.rule_id) if slot.rule_id is not None else None
     editable = (
-        slot.kind in {"pending", "modified"}
+        slot.kind in {"pending", "modified", "skipped"}
         and rule is not None
         and slot.target_date is not None
         and is_editable(rule, slot.target_date, now)
@@ -292,7 +294,9 @@ def _override_actions(
     return {
         "editable": True,
         "edit_url": lang_url(base),
-        "revert_url": lang_url(f"{base}/revert") if slot.kind == "modified" else None,
+        "revert_url": (
+            lang_url(f"{base}/revert") if slot.kind in {"modified", "skipped"} else None
+        ),
     }
 
 

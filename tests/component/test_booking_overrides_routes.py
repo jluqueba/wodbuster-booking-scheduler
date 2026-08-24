@@ -681,3 +681,205 @@ def test_revert_deletes_the_row_and_redirects(
     assert first.headers["location"].startswith("/history?")
     assert second.status_code == 303
     assert _overrides(session_factory) == []
+
+
+# ---------------------------------------------------------------------------
+# Skip (T-BDO-010)
+# ---------------------------------------------------------------------------
+
+
+def test_skip_persists_the_mark_and_issues_no_probe(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+    freeze_now: Callable[[datetime], None],
+) -> None:
+    """CC-002 (save half): a skip is always valid, so nothing is probed and
+    nothing is validated."""
+    freeze_now(BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, gym_account_id = _seed_rule(postgres_engine, op_id)
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        probe = _wire_probe(
+            app,
+            postgres_engine,
+            gym_account_id,
+            _payload_with(("WOD", "18:30")),
+        )
+        response = client.post(
+            _url(rule_id),
+            data={"skip_day": "1"},
+            headers=_csrf(client),
+        )
+
+    assert response.status_code == 303
+    assert probe.calls == []
+    rows = _overrides(session_factory)
+    assert len(rows) == 1
+    assert rows[0].skip_day is True
+    assert rows[0].class_type is None
+    assert rows[0].class_time is None
+
+    # The rule is untouched (INV-003).
+    with session_factory() as session:
+        rule = session.get(SchedulerRule, rule_id)
+        assert rule is not None
+        assert rule.class_time == "18:30"
+        assert rule.active is True
+
+
+def test_skip_replaces_an_existing_time_override_in_one_row(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+    freeze_now: Callable[[datetime], None],
+) -> None:
+    """T-BDO-010 acceptance 3: switching to a skip clears the class fields."""
+    freeze_now(BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, _ = _seed_rule(postgres_engine, op_id)
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        headers = _csrf(client)
+        client.post(
+            _url(rule_id), data={"class_type": "WOD", "class_time": "19:00"}, headers=headers
+        )
+        response = client.post(_url(rule_id), data={"skip_day": "1"}, headers=headers)
+
+    assert response.status_code == 303
+    rows = _overrides(session_factory)
+    assert len(rows) == 1
+    assert rows[0].skip_day is True
+    assert rows[0].class_time is None
+
+
+def test_skip_carrying_a_class_is_answered_with_a_field_error(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+    freeze_now: Callable[[datetime], None],
+) -> None:
+    """INV-002: only a crafted POST can produce this, and the answer is a
+    422 with a message, never an integrity error escaping to the user."""
+    freeze_now(BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, _ = _seed_rule(postgres_engine, op_id)
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.post(
+            _url(rule_id),
+            data={"skip_day": "1", "class_type": "Endurance", "class_time": "07:00"},
+            headers=_csrf(client),
+        )
+
+    assert response.status_code == 422
+    assert "A skipped day carries no class" in response.text
+    assert _overrides(session_factory) == []
+
+
+def test_skip_without_csrf_rejected(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+    freeze_now: Callable[[datetime], None],
+) -> None:
+    freeze_now(BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, _ = _seed_rule(postgres_engine, op_id)
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.post(_url(rule_id), data={"skip_day": "1"})
+
+    assert response.status_code == 403
+    assert _overrides(session_factory) == []
+
+
+def test_late_skip_rejected(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+    freeze_now: Callable[[datetime], None],
+) -> None:
+    """CC-003: the cutoff is re-checked server side on the skip path too."""
+    freeze_now(AFTER_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, _ = _seed_rule(postgres_engine, op_id)
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.post(_url(rule_id), data={"skip_day": "1"}, headers=_csrf(client))
+
+    assert response.status_code == 303
+    assert "already+opened" in response.headers["location"]
+    assert _overrides(session_factory) == []
+
+
+def test_skip_on_a_foreign_rule_returns_404_not_403(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+    freeze_now: Callable[[datetime], None],
+) -> None:
+    """CC-013: ownership is answered by a 404 that leaks nothing, and the
+    body matches the one a missing rule produces."""
+    freeze_now(BEFORE_CUTOFF)
+    _, subject_a = seed_operator(provider="microsoft", display_name="Alice")
+    op_b, _ = seed_operator(provider="microsoft", display_name="Bob")
+    bob_rule_id, _ = _seed_rule(postgres_engine, op_b, class_type="BobsSecretClass")
+
+    app = app_factory()
+    with _sign_in(app, subject_a, "Alice", monkeypatch) as client:
+        headers = _csrf(client)
+        foreign = client.post(_url(bob_rule_id), data={"skip_day": "1"}, headers=headers)
+        missing = client.post(_url(bob_rule_id + 10_000), data={"skip_day": "1"}, headers=headers)
+
+    assert foreign.status_code == 404
+    assert missing.status_code == 404
+    assert foreign.content == missing.content
+    assert "BobsSecretClass" not in foreign.text
+    assert _overrides(session_factory) == []
+
+
+def test_reverting_a_skip_returns_the_day_to_pending(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+    freeze_now: Callable[[datetime], None],
+) -> None:
+    """FR-022: the day goes back to being a plain rule projection, which is
+    asserted on the history screen rather than only on the row count."""
+    freeze_now(BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, _ = _seed_rule(postgres_engine, op_id)
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        headers = _csrf(client)
+        client.post(_url(rule_id), data={"skip_day": "1"}, headers=headers)
+        skipped = client.get("/history")
+        client.post(_url(rule_id, revert=True), headers=headers)
+        reverted = client.get("/history")
+
+    assert "wb-chip--skipped-day" in skipped.text
+    assert "wb-chip--skipped-day" not in reverted.text
+    assert "wb-chip--pending" in reverted.text
+    assert _overrides(session_factory) == []

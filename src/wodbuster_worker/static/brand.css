@@ -1564,6 +1564,16 @@ button.wb-confirm__cancel:focus-visible,
   border-color: var(--wb-modified);
   box-shadow: 0 10px 26px rgba(192, 132, 252, 0.28);
 }
+/* A day a single-day override marked as skipped: nothing will be
+   attempted, so the tile reads muted grey rather than borrowing any of
+   the four active state colours. */
+.wb-upcoming__day--skipped {
+  border-color: rgba(148, 163, 184, 0.45);
+}
+.wb-upcoming__day--skipped:hover {
+  border-color: var(--wb-text-muted);
+  box-shadow: 0 10px 26px rgba(148, 163, 184, 0.22);
+}
 
 .wb-upcoming__date {
   font-weight: 600;
@@ -1636,6 +1646,14 @@ button.wb-confirm__cancel:focus-visible,
   background: rgba(192, 132, 252, 0.12);
   color: var(--wb-modified);
   border-color: var(--wb-modified);
+}
+/* Upcoming day a single-day override skips (ADR-0012). Distinct from
+   ``.wb-chip--skipped``, which is the terminal status on the attempts
+   table below and keeps its own meaning. */
+.wb-chip--skipped-day {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--wb-text-muted);
+  border-color: var(--wb-text-muted);
 }
 /* Row of per-slot actions (Edit, Back to rule) inside an upcoming day
    tile. Same compact sizing as the in-tile Cancel button so the three

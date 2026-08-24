@@ -50,6 +50,12 @@
   .wb-upcoming__item--vacation .wb-upcoming__class {
     text-decoration: line-through;
   }
+  .wb-upcoming__item--skipped {
+    opacity: 0.72;
+  }
+  .wb-upcoming__item--skipped .wb-upcoming__class {
+    text-decoration: line-through;
+  }
   .wb-upcoming__warning {
     color: var(--wb-warning);
   }
@@ -103,6 +109,10 @@
          retargeted; they show the effective class, the rule's own
          values as a muted annotation, and both an edit and a revert
          action while the edit cutoff has not passed.
+       - ``skipped`` slots are rule projections a single-day override
+         marked as skipped; they stay on the rule's own time, offer no
+         cancel action because nothing will be booked, and offer edit
+         and revert while the cutoff has not passed.
        - ``pending`` slots come from rule projections; the scheduler
          has not fired yet, so there is nothing to cancel and we
          show a "scheduled" chip plus the edit action.
@@ -118,6 +128,7 @@
           {% if "granted" in day_kinds %}{% set day_kind = "granted" %}
           {% elif "pending" in day_kinds %}{% set day_kind = "pending" %}
           {% elif "modified" in day_kinds %}{% set day_kind = "modified" %}
+          {% elif "skipped" in day_kinds %}{% set day_kind = "skipped" %}
           {% else %}{% set day_kind = "vacation" %}{% endif %}
           <article class="wb-upcoming__day wb-upcoming__day--{{ day_kind }}">
             <header class="wb-upcoming__date">{{ wb_time(day.date_dt, "date", day.date_label) }}</header>
@@ -160,6 +171,26 @@
                         {{ t("override.warning.not_validated") }}
                       </span>
                     {% endif %}
+                    <div class="wb-upcoming__actions">
+                      {% if slot.edit_url %}
+                        <a class="wb-btn" href="{{ slot.edit_url }}">{{- t("override.edit_button") -}}</a>
+                      {% endif %}
+                      {% if slot.revert_url %}
+                        <form
+                          method="post"
+                          action="{{ slot.revert_url }}"
+                          class="wb-inline-form"
+                          onsubmit="return wbConfirm(this, event, '{{ t('override.confirm.revert') }}')"
+                        >
+                          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                          <button type="submit" class="wb-btn wb-btn--danger">{{- t("override.revert_button") -}}</button>
+                        </form>
+                      {% endif %}
+                    </div>
+                  {% elif slot.kind == "skipped" %}
+                    <span class="wb-chip wb-chip--skipped-day wb-upcoming__chip">
+                      🚫 {{ t("chip.skipped_day") }}
+                    </span>
                     <div class="wb-upcoming__actions">
                       {% if slot.edit_url %}
                         <a class="wb-btn" href="{{ slot.edit_url }}">{{- t("override.edit_button") -}}</a>

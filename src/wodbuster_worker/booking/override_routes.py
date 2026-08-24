@@ -18,10 +18,10 @@ Both writes are CSRF-protected and re-check the edit cutoff and the
 already-executed guard server side. What the form rendered is a UI
 convenience, never the enforcement point (FR-007, INV-005).
 
-This task covers class time and class type only. The skip control
-(T-BDO-010) and the second-attempt controls (T-BDO-016) land later; the
-rule's second shot is displayed read-only here because FR-017 requires
-the user to see what will still run.
+This task covers class time, class type and the skip mark. The
+second-attempt controls (T-BDO-016) land later; the rule's second shot
+is displayed read-only here because FR-017 requires the user to see what
+will still run.
 """
 
 from __future__ import annotations
@@ -52,6 +52,7 @@ from ..rules.classes import (
 )
 from ..rules.service import get_rule_for_operator
 from .overrides import (
+    OverrideSkipConflictError,
     OverrideWindowClosedError,
     delete_override,
     effective_slot_for,
@@ -148,9 +149,10 @@ def override_save(
     request: Request,
     class_type: str = Form(default=""),
     class_time: str = Form(default=""),
+    skip_day: str = Form(default=""),
     operator_id: int = Depends(require_session),
 ) -> Response:
-    """Upsert the override for one projected day (FR-001, FR-002)."""
+    """Upsert the override for one projected day (FR-001, FR-002, FR-003)."""
     _ = operator_id
     now = _utcnow()
     with get_session() as session:
@@ -163,6 +165,17 @@ def override_save(
         submitted_type = class_type.strip()
         submitted_time = class_time.strip()
         form_values = {"class_type": submitted_type, "class_time": submitted_time}
+
+        if _checked(skip_day):
+            return _skip(
+                request,
+                session,
+                rule=rule,
+                target_date=target_date,
+                form_values=form_values,
+                now=now,
+            )
+
         errors = _field_errors(submitted_type, submitted_time)
         if errors:
             return _render(
@@ -267,6 +280,57 @@ def _revert(
     except OverrideWindowClosedError:
         return _redirect_with_flash(_closed_message(rule, target_date, now), kind="error")
     return _redirect_with_flash(t("flash.override.reverted"), kind="info")
+
+
+def _skip(
+    request: Request,
+    session: Session,
+    *,
+    rule: SchedulerRule,
+    target_date: date,
+    form_values: dict[str, str],
+    now: datetime,
+) -> Response:
+    """Mark the day as skipped (FR-002, FR-003, INV-002).
+
+    A skip is exclusive and always valid: it carries no alternative
+    target, so there is nothing to probe and nothing to validate. The
+    save clears whatever the previous override held, which is how a time
+    override is turned into a skip in one upsert.
+    """
+    if form_values["class_type"] or form_values["class_time"]:
+        # Only reachable through a crafted POST: the skip control posts
+        # on its own. Answer with a field error, not an integrity error.
+        return _render(
+            request,
+            rule=rule,
+            target_date=target_date,
+            form_values=form_values,
+            errors={"class_type": t("override.error.skip_exclusive")},
+            existing=load_override(session, rule_id=int(rule.id), target_date=target_date),
+            schedule=_probe_date(
+                request, rule=rule, target_date=target_date, class_time=str(rule.class_time)
+            ),
+            status_code=422,
+        )
+    try:
+        save_override(
+            session,
+            rule=rule,
+            target_date=target_date,
+            skip_day=True,
+            now=now,
+        )
+    except OverrideSkipConflictError:  # pragma: no cover - guarded above
+        return _redirect_with_flash(t("override.error.skip_exclusive"), kind="error")
+    except OverrideWindowClosedError:
+        return _redirect_with_flash(_closed_message(rule, target_date, now), kind="error")
+    return _redirect_with_flash(t("flash.override.skipped"), kind="info")
+
+
+def _checked(raw: str) -> bool:
+    """Whether a checkbox-shaped form value was submitted as set."""
+    return raw.strip().lower() in {"1", "true", "on", "yes"}
 
 
 def _closed_message(rule: SchedulerRule, target_date: date, now: datetime) -> str:
@@ -411,7 +475,14 @@ def _render(
             "picker_class_types": class_types,
             "picker_time_slots": time_slots,
             "probe_notice": notice,
-            "not_validated": existing is not None and not bool(existing.validated),
+            "is_skipped": existing is not None and bool(existing.skip_day),
+            # A skip has no combination, so "not validated" would be a
+            # warning about nothing.
+            "not_validated": (
+                existing is not None
+                and not bool(existing.skip_day)
+                and not bool(existing.validated)
+            ),
             "csrf_token": get_csrf_token(request) or "",
         },
         status_code=status_code,

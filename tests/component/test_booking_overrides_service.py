@@ -18,9 +18,11 @@ from datetime import UTC, date, datetime, timedelta
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from wodbuster_worker.booking.overrides import (
+    OverrideSkipConflictError,
     OverrideWindowClosedError,
     delete_override,
     edit_cutoff_for,
@@ -320,3 +322,116 @@ def test_load_overrides_in_range_keys_by_rule_and_date(
 
     assert list(loaded) == [(int(rule.id), TARGET_DATE)]
     assert loaded[(int(rule.id), TARGET_DATE)].class_time == "07:00"
+
+
+# ---------------------------------------------------------------------------
+# Skipping a day (T-BDO-010)
+# ---------------------------------------------------------------------------
+
+
+def test_skip_persists_with_no_alternative_target(
+    session_factory: sessionmaker[Session], make_rule: Callable[..., SchedulerRule]
+) -> None:
+    """FR-003: a skip carries the mark and nothing else."""
+    with session_factory() as session:
+        rule = make_rule(session)
+
+        save_override(session, rule=rule, target_date=TARGET_DATE, skip_day=True, now=BEFORE_CUTOFF)
+        session.commit()
+
+        rows = _override_rows(session)
+
+    assert len(rows) == 1
+    assert rows[0].skip_day is True
+    assert rows[0].class_type is None
+    assert rows[0].class_time is None
+
+
+def test_skip_carrying_a_target_is_refused_before_the_database(
+    session_factory: sessionmaker[Session], make_rule: Callable[..., SchedulerRule]
+) -> None:
+    """INV-002: the service is the first line of defence, so the user gets a
+    message rather than an integrity error."""
+    with session_factory() as session:
+        rule = make_rule(session)
+
+        for kwargs in ({"class_time": "07:00"}, {"class_type": "Endurance"}):
+            with pytest.raises(OverrideSkipConflictError):
+                save_override(
+                    session,
+                    rule=rule,
+                    target_date=TARGET_DATE,
+                    skip_day=True,
+                    now=BEFORE_CUTOFF,
+                    **kwargs,
+                )
+        session.rollback()
+
+        assert _override_rows(session) == []
+
+
+def test_the_check_constraint_backs_the_service_up(
+    session_factory: sessionmaker[Session],
+    make_rule: Callable[..., SchedulerRule],
+) -> None:
+    """INV-002: ``ck_booking_day_override_skip_exclusive`` still rejects the
+    combination when it is written around the service."""
+    with session_factory() as session:
+        rule = make_rule(session)
+        rule_id = int(rule.id)
+        gym_account_id = int(rule.gym_account_id)
+
+        with pytest.raises(IntegrityError) as excinfo:
+            session.execute(
+                text(
+                    "INSERT INTO booking_day_override "
+                    "(rule_id, gym_account_id, target_date, class_time, skip_day) "
+                    "VALUES (:r, :ga, :d, '07:00', true)"
+                ),
+                {"r": rule_id, "ga": gym_account_id, "d": TARGET_DATE},
+            )
+        session.rollback()
+
+    assert "ck_booking_day_override_skip_exclusive" in str(excinfo.value)
+
+
+def test_switching_a_time_override_to_a_skip_clears_both_fields(
+    session_factory: sessionmaker[Session], make_rule: Callable[..., SchedulerRule]
+) -> None:
+    """T-BDO-010 acceptance 3: one upsert, not a delete and an insert."""
+    with session_factory() as session:
+        rule = make_rule(session)
+        save_override(
+            session,
+            rule=rule,
+            target_date=TARGET_DATE,
+            class_type="Endurance",
+            class_time="07:00",
+            now=BEFORE_CUTOFF,
+        )
+        session.commit()
+
+        save_override(session, rule=rule, target_date=TARGET_DATE, skip_day=True, now=BEFORE_CUTOFF)
+        session.commit()
+
+        rows = _override_rows(session)
+
+    assert len(rows) == 1
+    assert rows[0].skip_day is True
+    assert rows[0].class_type is None
+    assert rows[0].class_time is None
+
+
+def test_reverting_a_skip_removes_the_row(
+    session_factory: sessionmaker[Session], make_rule: Callable[..., SchedulerRule]
+) -> None:
+    """FR-022, CC-015: a skip is undone the same way any override is."""
+    with session_factory() as session:
+        rule = make_rule(session)
+        save_override(session, rule=rule, target_date=TARGET_DATE, skip_day=True, now=BEFORE_CUTOFF)
+        session.commit()
+
+        assert delete_override(session, rule=rule, target_date=TARGET_DATE, now=BEFORE_CUTOFF)
+        session.commit()
+
+        assert load_override(session, rule_id=int(rule.id), target_date=TARGET_DATE) is None

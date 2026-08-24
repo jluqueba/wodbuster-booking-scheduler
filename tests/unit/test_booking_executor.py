@@ -145,8 +145,12 @@ class _RecordingWriter:
 class _FakeCookieStore:
     def __init__(self, cookie: str | None) -> None:
         self._cookie = cookie
+        # Recorded so a test can assert an exit path never reached the
+        # cookie load at all, not merely that it booked nothing.
+        self.loads: list[int] = []
 
     def load(self, session: Any, gym_account_id: int) -> str | None:
+        self.loads.append(gym_account_id)
         return self._cookie
 
 
@@ -1254,3 +1258,96 @@ def test_override_target_not_visible_is_terminal_without_falling_back(
     call = writer.calls[0]
     assert call["outcome_source"] == "override"
     assert "19:00" in call["response_payload"]
+
+
+# ---------------------------------------------------------------------------
+# Skipping a single day (T-BDO-012)
+# ---------------------------------------------------------------------------
+
+
+def test_skip_override_books_nothing_and_sources_the_outcome_to_override_skip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-011, CC-008: a skip exits before any WodBuster work and still
+    persists a terminal ``skipped`` row so the history screen reports the
+    run. The schedule is scripted as fully bookable so the assertion is
+    about the skip, not about an empty gym."""
+    ex, client, writer = _executor(
+        load_class_responses=[_mixed_schedule()],
+        inscribir_responses=[_inscribir_ok()],
+        monkeypatch=monkeypatch,
+    )
+
+    result = ex.book(
+        rule=_rule(),
+        target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC),
+        override=_override(skip_day=True),
+    )
+
+    assert result.terminal_status == "skipped"
+    assert result.fallback_index is None
+    assert client.inscribir_calls == []
+    call = writer.calls[0]
+    assert call["terminal_status"] == "skipped"
+    assert call["outcome_source"] == "override_skip"
+    # The row describes the rule's own target: there is no alternative
+    # one on a skip, and the history screen still names the day's class.
+    assert call["target_class"] == "WOD"
+    assert call["target_slot"] == datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    assert "skips this day" in call["response_payload"]
+
+
+def test_skip_override_never_reads_the_schedule_or_the_cookie(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-013, INV-007: omitting means omitting. Not one call leaves the
+    process, including the cookie load and the schedule read, and the rule's
+    second shot is never walked even though it is configured and bookable."""
+    ex, client, writer = _executor(
+        load_class_responses=[_mixed_schedule()],
+        inscribir_responses=[_inscribir_ok()],
+        monkeypatch=monkeypatch,
+    )
+
+    result = ex.book(
+        rule=_rule(second_shot_class_type="Halterofilia", second_shot_class_time="21:30"),
+        target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC),
+        override=_override(skip_day=True),
+    )
+
+    assert result.terminal_status == "skipped"
+    assert client.load_class_calls == []
+    assert client.inscribir_calls == []
+    assert ex._cookie_store.loads == []  # type: ignore[attr-defined]
+    # One terminal row, so nothing walked on to a second attempt.
+    assert len(writer.calls) == 1
+
+
+def test_vacation_guard_wins_over_a_skip_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-029: vacation is the first exit, so a day that is both on vacation
+    and skipped is attributed to the rule, not to the override."""
+    ex, client, writer = _executor(
+        load_class_responses=[_mixed_schedule()],
+        inscribir_responses=[_inscribir_ok()],
+        monkeypatch=monkeypatch,
+    )
+    fake_window = MagicMock()
+    fake_window.id = 77
+    monkeypatch.setattr(
+        "wodbuster_worker.booking.executor.find_covering_window",
+        lambda session, *, gym_account_id, target_slot: fake_window,
+    )
+
+    result = ex.book(
+        rule=_rule(),
+        target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC),
+        override=_override(skip_day=True),
+    )
+
+    assert result.terminal_status == "skipped"
+    assert client.load_class_calls == []
+    call = writer.calls[0]
+    assert call["outcome_source"] == "rule"
+    assert call["response_payload"] == "vacation window #77"
