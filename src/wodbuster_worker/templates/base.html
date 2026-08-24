@@ -1,5 +1,7 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+{# ``lang`` follows the URL prefix, not the default: a Spanish page
+   tagged as English is read out with English pronunciation rules. #}
+<html lang="{{ current_language() }}" data-theme="dark">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -53,8 +55,11 @@
     <main class="wb-main">
       {% block content %}{% endblock %}
     </main>
-    {# Custom confirmation modal available to every page. Forms use
-       onsubmit="return wbConfirm(this, event, 'Are you sure?')". #}
+    {# Custom confirmation modal available to every page. A form asks for
+       confirmation by carrying the prompt as text in a data attribute:
+       data-wb-confirm="{{ t('some.key') }}". A single delegated listener
+       picks it up; templates stay free of JavaScript.
+       See _confirm_modal.html for the details. #}
     {% include "_confirm_modal.html" %}
   </body>
 </html>

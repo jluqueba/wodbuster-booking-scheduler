@@ -39,6 +39,10 @@ dev = [
     "pytest-asyncio>=0.24,<1.0",
     "ruff>=0.7,<1.0",
     "mypy>=1.11,<2.0",
+    "djlint>=1.36,<2.0",
+    # Accessibility audits parse the rendered response with the WHATWG
+    # algorithm, so the tree under test is the one a browser builds.
+    "html5lib>=1.1,<2.0",
     "types-requests",
 ]
 
@@ -57,3 +61,20 @@ asyncio_mode = "auto"
 markers = [
     "live_contract: hits the real WodBuster API; gated by RUN_LIVE_WODBUSTER=1",
 ]
+
+[tool.djlint]
+# Linting only, never reformatting: djlint is here to catch malformed
+# markup (unclosed tags, invalid nesting, broken Jinja), which no other
+# tool in the stack understands, and not to impose a house layout on
+# hand-tuned templates.
+profile = "jinja"
+# Restricting to .html deliberately leaves out
+# templates/email/notification.html.jinja, whose inline styles are
+# mandatory for mail clients and would trip the inline-style rule.
+extension = "html"
+# J004 expects the Flask/Django url_for('static') idiom. Static files are
+#      mounted here at a fixed /static prefix and no such global exists.
+# H030/H031 ask for meta description and keywords: SEO hints for indexed
+#      public pages, while every page here sits behind a login (and the
+#      keywords tag has been ignored by search engines for years).
+ignore = "J004,H030,H031"

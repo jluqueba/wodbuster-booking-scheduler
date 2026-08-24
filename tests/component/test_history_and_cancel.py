@@ -1097,3 +1097,44 @@ def test_upcoming_confirmations_survive_entity_decoding(
 
     assert response.status_code == 200
     assert confirm_messages(response.text) == [revert_message]
+
+
+@pytest.mark.parametrize(
+    ("prefix", "cancel_message"),
+    [
+        ("", "Cancel this booking on WodBuster?"),
+        ("/es", "\u00bfCancelar esta reserva en WodBuster?"),
+    ],
+    ids=["en", "es"],
+)
+def test_cancel_confirmations_carry_the_prompt(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    prefix: str,
+    cancel_message: str,
+) -> None:
+    """Cancelling a booking must still ask before it fires.
+
+    The prompt travels as text in ``data-wb-confirm``, so the assertion
+    is on the value a browser hands the listener after entity decoding.
+    Both languages are rendered because only one of them carries an
+    apostrophe.
+    """
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    _seed_booking(
+        postgres_engine,
+        operator_id=op_id,
+        target_slot=datetime.now(tz=UTC) + timedelta(days=3),
+        terminal_status="granted",
+    )
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get(f"{prefix}/history")
+
+    assert response.status_code == 200
+    messages = confirm_messages(response.text)
+    assert messages, "expected at least one cancel confirmation"
+    assert set(messages) == {cancel_message}

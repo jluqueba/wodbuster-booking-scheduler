@@ -46,8 +46,10 @@
           <th>{{ t("rules.table.second_shot_hour") }}</th>
           <th>{{ t("rules.table.window") }}</th>
           <th>{{ t("rules.table.status") }}</th>
-          <th></th>
-          <th></th>
+          {# Action columns carry no header, so the cell is a td: an empty th
+             is announced as a header with no name. #}
+          <td></td>
+          <td></td>
         </tr>
       </thead>
       <tbody>
@@ -92,7 +94,7 @@
                 method="post"
                 action="{{ lang_url('/rules/' ~ rule.id ~ '/delete') }}"
                 class="wb-inline-form"
-                onsubmit="return wbConfirm(this, event, '{{ t('rules.confirm.delete') }}')"
+                data-wb-confirm="{{ t('rules.confirm.delete') }}"
               >
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                 <button type="submit" class="wb-btn wb-btn--danger">{{ t("rules.actions.delete") }}</button>

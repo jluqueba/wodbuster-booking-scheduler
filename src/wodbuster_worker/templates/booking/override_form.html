@@ -173,7 +173,7 @@
         method="post"
         action="{{ action_url }}"
         class="wb-inline-form"
-        onsubmit='return wbConfirm(this, event, {{ t("override.confirm.skip")|tojson }})'
+        data-wb-confirm="{{ t('override.confirm.skip') }}"
       >
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <input type="hidden" name="skip_day" value="1">
@@ -185,7 +185,7 @@
         method="post"
         action="{{ revert_url }}"
         class="wb-inline-form"
-        onsubmit='return wbConfirm(this, event, {{ t("override.confirm.revert")|tojson }})'
+        data-wb-confirm="{{ t('override.confirm.revert') }}"
       >
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <button type="submit" class="wb-btn wb-btn--danger">{{- t("override.revert_button") -}}</button>

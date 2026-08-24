@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from .conftest import gym_account_id_for
+from .conftest import confirm_messages, gym_account_id_for
 
 
 def _sign_in(
@@ -319,7 +319,9 @@ def test_confirm_modal_partial_included_on_authed_pages(
             response = client.get(path)
             assert response.status_code == 200, f"{path} status {response.status_code}"
             assert 'id="wb-confirm-dialog"' in response.text
-            assert "window.wbConfirm" in response.text
+            # The guard is one delegated listener, so its selector is what
+            # proves the partial is wired on the page.
+            assert "form[data-wb-confirm]" in response.text
 
 
 def test_rules_delete_form_uses_wbconfirm_handler(
@@ -338,4 +340,88 @@ def test_rules_delete_form_uses_wbconfirm_handler(
     assert response.status_code == 200
     # No stray native confirm() calls left in the rules list.
     assert "return confirm(" not in response.text
-    assert "wbConfirm(this, event, 'Delete this rule?')" in response.text
+    assert confirm_messages(response.text) == ["Delete this rule?"]
+
+
+@pytest.mark.parametrize(
+    ("prefix", "close_message"),
+    [
+        ("", "End this vacation window now?"),
+        ("/es", "\u00bfTerminar esta ventana de vacaciones ahora?"),
+    ],
+    ids=["en", "es"],
+)
+def test_vacation_confirmations_carry_the_prompt(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    prefix: str,
+    close_message: str,
+) -> None:
+    """Ending a vacation window early must still ask before it fires.
+
+    The prompt travels as text in ``data-wb-confirm``, so the assertion
+    is on the value a browser hands the listener after entity decoding.
+    Both languages are rendered because only one of them carries an
+    apostrophe.
+    """
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    now = datetime.now(tz=UTC)
+    with postgres_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO vacation_window (gym_account_id, start_date, end_date) "
+                "VALUES (:ga, :s, :e)"
+            ),
+            {
+                "ga": gym_account_id_for(conn, op_id),
+                "s": now - timedelta(days=1),
+                "e": now + timedelta(days=5),
+            },
+        )
+    app = app_factory()
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get(f"{prefix}/vacation")
+
+    assert response.status_code == 200
+    assert confirm_messages(response.text) == [close_message]
+
+
+@pytest.mark.parametrize(
+    ("prefix", "unbind_message"),
+    [
+        ("", "Unbind Telegram from this operator?"),
+        ("/es", "\u00bfDesvincular Telegram de este operador?"),
+    ],
+    ids=["en", "es"],
+)
+def test_telegram_confirmations_carry_the_prompt(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    prefix: str,
+    unbind_message: str,
+) -> None:
+    """Unbinding Telegram must still ask before it fires.
+
+    The prompt travels as text in ``data-wb-confirm``, so the assertion
+    is on the value a browser hands the listener after entity decoding.
+    Both languages are rendered because only one of them carries an
+    apostrophe.
+    """
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    with postgres_engine.begin() as conn:
+        conn.execute(
+            text("UPDATE operator_profile SET telegram_chat_id = '4242' WHERE id = :i"),
+            {"i": op_id},
+        )
+    app = app_factory()
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get(f"{prefix}/telegram")
+
+    assert response.status_code == 200
+    assert confirm_messages(response.text) == [unbind_message]

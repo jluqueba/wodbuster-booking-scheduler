@@ -16,6 +16,41 @@ switches).
   iterate until clean. The diagnostics come from the Edge Tools (webhint) and
   axe integrations plus the HTML/CSS language servers.
 
+## Never put JavaScript in an attribute
+
+- Templates carry **no inline event handlers** (`onsubmit`, `onclick`, ...) that
+  contain Jinja. The editor hands an event attribute's contents to the
+  TypeScript parser, which knows nothing about Jinja and reports `{{` as the
+  start of an object literal, so every such site emits permanent, unfixable
+  syntax errors in the Problems view.
+- It is also a correctness trap: Jinja autoescapes an apostrophe to `&#39;`, the
+  browser decodes it **before** parsing the script, and the JS string literal
+  closes early. The handler then fails to compile and the form submits with no
+  confirmation at all. This shipped once and was caught in review.
+- Pass values through `data-` attributes and read them from a script file or a
+  delegated listener. In a data attribute the value is text, so autoescape is
+  exactly the right treatment. The confirm modal (`_confirm_modal.html`,
+  `data-wb-confirm`) and the dashboard countdown (`data-fires-at`) both follow
+  this.
+- `tests/unit/test_template_hygiene.py` enforces it. Do not weaken that test.
+
+## Run the template gate before committing
+
+- `djlint` understands `{% %}` as template syntax rather than text, which no
+  other tool in the stack does. It catches malformed HTML, unclosed tags,
+  invalid nesting, and broken Jinja without the phantom findings that source
+  linters produce on templates.
+
+  ```powershell
+  djlint src/wodbuster_worker/templates --lint
+  ```
+
+- It runs inside `.\check.ps1`, `make check`, and CI, so the whole gate is
+  `.\check.ps1`. Configuration lives under `[tool.djlint]` in `pyproject.toml`;
+  it lints only and never reformats.
+- An empty `<th></th>` is reported as a header with no name. A column with no
+  header (an actions column) uses `<td></td>` in the header row instead.
+
 ## Verify layout with evidence, not by eye
 
 - Do not theorize about CSS cascade or alignment. Verify against the real,

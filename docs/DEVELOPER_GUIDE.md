@@ -244,7 +244,15 @@ make check
 
 `docker compose up -d postgres` starts the Postgres 16 container declared in `docker-compose.yml`, listening on `localhost:5432` and matching the `POSTGRES_*` block in `.env.example`. Wipe it with `docker compose down -v` for a clean slate.
 
-`check` runs `ruff check`, `mypy src`, and `pytest` (excluding the `live_contract` marker). It is the same gate the CI workflow enforces.
+`check` runs `ruff check`, `mypy src`, `djlint` over the Jinja templates, and `pytest` (excluding the `live_contract` marker). It is the same gate the CI workflow enforces.
+
+The template step can be run on its own, which is useful before committing a markup change:
+
+```powershell
+djlint src/wodbuster_worker/templates --lint
+```
+
+It is configured under `[tool.djlint]` in `pyproject.toml` and reports malformed HTML, unclosed tags, invalid nesting, and Jinja syntax errors. Purely stylistic rules are off: djlint never reformats the templates here.
 
 ### 2.3 Configuration
 

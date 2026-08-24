@@ -80,7 +80,7 @@
                 </form>
               {% else %}
                 <form method="post" action="{{ lang_url('/admin/users/' ~ u.id ~ '/ban') }}" class="wb-ban-form"
-                  onsubmit="return wbConfirm(this, event, '{{ t('admin.users.ban_confirm') }}')">
+                  data-wb-confirm="{{ t('admin.users.ban_confirm') }}">
                   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                   <select name="duration" class="wb-ban-duration" aria-label="{{ t('admin.users.ban.duration_label') }}">
                     <option value="1d">{{ t("admin.users.ban.duration.1d") }}</option>
@@ -100,7 +100,7 @@
                   method="post"
                   action="{{ lang_url('/admin/users/' ~ u.id ~ '/delete') }}"
                   class="wb-inline-form"
-                  onsubmit="return wbConfirm(this, event, '{{ t('admin.users.delete_confirm') }}')"
+                  data-wb-confirm="{{ t('admin.users.delete_confirm') }}"
                 >
                   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                   <button type="submit" class="wb-btn wb-btn--danger">{{- t("admin.users.delete.button") -}}</button>

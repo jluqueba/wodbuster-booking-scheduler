@@ -1165,7 +1165,7 @@ def test_unticking_the_control_drops_the_suppression(
     ],
     ids=["en", "es"],
 )
-def test_form_confirmations_survive_entity_decoding(
+def test_form_confirmations_carry_the_prompt(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],
     postgres_engine: Engine,
@@ -1177,11 +1177,11 @@ def test_form_confirmations_survive_entity_decoding(
 ) -> None:
     """Both destructive actions must still ask before they fire.
 
-    The English revert copy carries an apostrophe, so a single-quoted JS
-    literal in a double-quoted attribute is closed early by the entity
-    Jinja emits and the handler never compiles: the form then submits
-    without confirming. Rendered in both languages because the defect is
-    invisible in Spanish, whose copy has no apostrophe.
+    The English revert copy carries an apostrophe, which is exactly the
+    character that used to break the confirmation while it lived inside
+    a JavaScript attribute. As plain text in ``data-wb-confirm`` it is
+    just an entity the parser decodes back. Rendered in both languages
+    because the Spanish copy has no apostrophe.
     """
     freeze_now(BEFORE_CUTOFF)
     op_id, subject = seed_operator(provider="microsoft", display_name="Alice")

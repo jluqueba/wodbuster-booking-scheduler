@@ -112,7 +112,7 @@
         <form
           method="post"
           action="{{ lang_url('/telegram/unbind') }}"
-          onsubmit="return wbConfirm(this, event, '{{ t('telegram.confirm.unbind') }}')"
+          data-wb-confirm="{{ t('telegram.confirm.unbind') }}"
         >
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button type="submit" class="wb-btn wb-btn--danger">{{- t("telegram.unbind_button") -}}</button>

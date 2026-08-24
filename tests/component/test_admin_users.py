@@ -19,6 +19,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from .conftest import confirm_messages
+
 
 def _sign_in(
     app: FastAPI, subject_id: str, display_name: str, monkeypatch: pytest.MonkeyPatch
@@ -112,6 +114,50 @@ def test_admin_lists_pending_and_active(
     assert resp.status_code == 200
     assert "Newcomer Nadia" in resp.text  # pending
     assert "Boss" in resp.text  # active users section lists the admin
+
+
+@pytest.mark.parametrize(
+    ("prefix", "ban_message", "delete_message"),
+    [
+        (
+            "",
+            "Ban this user? They will lose access until the ban expires.",
+            "Delete this user and all their data? This cannot be undone.",
+        ),
+        (
+            "/es",
+            "\u00bfBanear a este usuario? Perder\u00e1 el acceso hasta que expire el baneo.",
+            "\u00bfEliminar este usuario y todos sus datos? No se puede deshacer.",
+        ),
+    ],
+    ids=["en", "es"],
+)
+def test_admin_confirmations_carry_the_prompt(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    prefix: str,
+    ban_message: str,
+    delete_message: str,
+) -> None:
+    """Ban and delete must still ask before they fire.
+
+    The prompt travels as text in ``data-wb-confirm``, so the assertion
+    is on the value a browser hands the listener after entity decoding.
+    Both languages are rendered because only one of them carries an
+    apostrophe.
+    """
+    admin_id, admin_subject = seed_operator(provider="microsoft", display_name="Boss")
+    _make_admin(postgres_engine, admin_id)
+    seed_operator(provider="microsoft", display_name="Regular Rita")
+    app = app_factory()
+
+    with _sign_in(app, admin_subject, "Boss", monkeypatch) as client:
+        resp = client.get(f"{prefix}/admin/users")
+
+    assert resp.status_code == 200
+    assert confirm_messages(resp.text) == [ban_message, delete_message]
 
 
 def test_non_admin_cannot_reach_admin_page(

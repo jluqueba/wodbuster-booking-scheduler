@@ -105,7 +105,9 @@
           <th>{{ t("vacation.table.start") }}</th>
           <th>{{ t("vacation.table.end") }}</th>
           <th>{{ t("vacation.table.status") }}</th>
-          <th></th>
+          {# Action column carries no header, so the cell is a td: an empty th
+             is announced as a header with no name. #}
+          <td></td>
         </tr>
       </thead>
       <tbody>
@@ -125,7 +127,7 @@
                 method="post"
                 action="{{ lang_url('/vacation/' ~ w.id ~ '/close') }}"
                 class="wb-inline-form"
-                onsubmit="return wbConfirm(this, event, '{{ t('vacation.confirm.close') }}')"
+                data-wb-confirm="{{ t('vacation.confirm.close') }}"
               >
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                 <button type="submit" class="wb-btn wb-btn--danger">{{- t("vacation.actions.end_early") -}}</button>

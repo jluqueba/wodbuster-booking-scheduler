@@ -1,4 +1,4 @@
-.PHONY: check lint type test install db-upgrade
+.PHONY: check lint type templates test install db-upgrade
 
 PYTHON ?= python
 
@@ -11,10 +11,13 @@ lint:
 type:
 	mypy src
 
+templates:
+	djlint src/wodbuster_worker/templates --lint
+
 test:
 	pytest -m "not live_contract"
 
 db-upgrade:
 	alembic upgrade head
 
-check: lint type test
+check: lint type templates test
