@@ -180,7 +180,7 @@
                           method="post"
                           action="{{ slot.revert_url }}"
                           class="wb-inline-form"
-                          onsubmit="return wbConfirm(this, event, '{{ t('override.confirm.revert') }}')"
+                          onsubmit='return wbConfirm(this, event, {{ t("override.confirm.revert")|tojson }})'
                         >
                           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                           <button type="submit" class="wb-btn wb-btn--danger">{{- t("override.revert_button") -}}</button>
@@ -200,7 +200,7 @@
                           method="post"
                           action="{{ slot.revert_url }}"
                           class="wb-inline-form"
-                          onsubmit="return wbConfirm(this, event, '{{ t('override.confirm.revert') }}')"
+                          onsubmit='return wbConfirm(this, event, {{ t("override.confirm.revert")|tojson }})'
                         >
                           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                           <button type="submit" class="wb-btn wb-btn--danger">{{- t("override.revert_button") -}}</button>

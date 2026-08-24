@@ -34,7 +34,7 @@ from wodbuster_worker.persistence.models import (
 from wodbuster_worker.security.cipher import Cipher
 from wodbuster_worker.wodbuster_client.client import LoadClassResponse
 
-from .conftest import gym_account_id_for
+from .conftest import confirm_messages, gym_account_id_for
 
 # Class on Wednesday 6 May 2026 at 18:30 Madrid. The window opens two
 # days before at 21:30 Madrid (19:30 UTC), so the edit cutoff is
@@ -1142,3 +1142,63 @@ def test_unticking_the_control_drops_the_suppression(
     assert len(rows) == 1
     assert rows[0].suppress_second_shot is False
     assert rows[0].class_time == "19:00"
+
+
+# ---------------------------------------------------------------------------
+# Confirmation handlers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("prefix", "skip_message", "revert_message"),
+    [
+        (
+            "",
+            "Skip this day? No booking will be attempted.",
+            "Discard this day's change and go back to the rule?",
+        ),
+        (
+            "/es",
+            "\u00bfSaltar este d\u00eda? No se intentar\u00e1 ninguna reserva.",
+            "\u00bfDescartar el cambio de este d\u00eda y volver a la regla?",
+        ),
+    ],
+    ids=["en", "es"],
+)
+def test_form_confirmations_survive_entity_decoding(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    freeze_now: Callable[[datetime], None],
+    prefix: str,
+    skip_message: str,
+    revert_message: str,
+) -> None:
+    """Both destructive actions must still ask before they fire.
+
+    The English revert copy carries an apostrophe, so a single-quoted JS
+    literal in a double-quoted attribute is closed early by the entity
+    Jinja emits and the handler never compiles: the form then submits
+    without confirming. Rendered in both languages because the defect is
+    invisible in Spanish, whose copy has no apostrophe.
+    """
+    freeze_now(BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, gym_account_id = _seed_rule(postgres_engine, op_id)
+    with postgres_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO booking_day_override "
+                "(rule_id, gym_account_id, target_date, class_time) "
+                "VALUES (:r, :ga, :d, '19:00')"
+            ),
+            {"r": rule_id, "ga": gym_account_id, "d": TARGET_DATE},
+        )
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get(f"{prefix}{_url(rule_id)}")
+
+    assert response.status_code == 200
+    assert confirm_messages(response.text) == [skip_message, revert_message]

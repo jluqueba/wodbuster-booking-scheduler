@@ -30,7 +30,7 @@ from sqlalchemy.orm import sessionmaker
 from wodbuster_worker.persistence.models import BookingOutcome, NotificationOutbox
 from wodbuster_worker.wodbuster_client.client import BookingActionResponse, LoadClassResponse
 
-from .conftest import gym_account_id_for
+from .conftest import confirm_messages, gym_account_id_for
 
 
 def _sign_in(
@@ -1048,3 +1048,52 @@ def test_history_renders_the_skipped_chip_in_spanish(
     assert "will be skipped" in english.text
     assert "se saltará" in spanish.text
     assert "chip.skipped_day" not in spanish.text
+
+
+# ---------------------------------------------------------------------------
+# Confirmation handlers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("skip_day", [False, True], ids=["modified", "skipped"])
+@pytest.mark.parametrize(
+    ("prefix", "revert_message"),
+    [
+        ("", "Discard this day's change and go back to the rule?"),
+        ("/es", "\u00bfDescartar el cambio de este d\u00eda y volver a la regla?"),
+    ],
+    ids=["en", "es"],
+)
+def test_upcoming_confirmations_survive_entity_decoding(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    skip_day: bool,
+    prefix: str,
+    revert_message: str,
+) -> None:
+    """Reverting must still ask before it fires, on either branch.
+
+    The English revert copy carries an apostrophe, so a single-quoted JS
+    literal in a double-quoted attribute is closed early by the entity
+    Jinja emits and the handler never compiles: the form then submits
+    without confirming. Rendered in both languages because the defect is
+    invisible in Spanish, whose copy has no apostrophe.
+    """
+    _freeze(monkeypatch, _BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, gym_account_id = _seed_rule(postgres_engine, op_id)
+    _seed_override(
+        postgres_engine,
+        rule_id=rule_id,
+        gym_account_id=gym_account_id,
+        skip_day=skip_day,
+    )
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get(f"{prefix}/history")
+
+    assert response.status_code == 200
+    assert confirm_messages(response.text) == [revert_message]
