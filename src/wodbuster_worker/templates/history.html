@@ -50,6 +50,15 @@
   .wb-upcoming__item--vacation .wb-upcoming__class {
     text-decoration: line-through;
   }
+  .wb-upcoming__item--skipped {
+    opacity: 0.72;
+  }
+  .wb-upcoming__item--skipped .wb-upcoming__class {
+    text-decoration: line-through;
+  }
+  .wb-upcoming__warning {
+    color: var(--wb-warning);
+  }
   .wb-flash {
     padding: 0.75rem 1rem;
     border-radius: var(--wb-radius);
@@ -90,15 +99,23 @@
 
   {# ---- Upcoming (H.1 full) -------------------------------------
 
-     Three flavours share this section:
+     Four flavours share this section:
        - ``granted`` slots come from real ``booking_outcome`` rows
          and expose the Cancel form.
        - ``vacation`` slots are rule projections that fall inside an
          open vacation window; they will be skipped, so we show a
          muted "on vacation" chip and no cancel button.
+       - ``modified`` slots are rule projections a single-day override
+         retargeted; they show the effective class, the rule's own
+         values as a muted annotation, and both an edit and a revert
+         action while the edit cutoff has not passed.
+       - ``skipped`` slots are rule projections a single-day override
+         marked as skipped; they stay on the rule's own time, offer no
+         cancel action because nothing will be booked, and offer edit
+         and revert while the cutoff has not passed.
        - ``pending`` slots come from rule projections; the scheduler
          has not fired yet, so there is nothing to cancel and we
-         show a "scheduled" chip instead.
+         show a "scheduled" chip plus the edit action.
   #}
   <section class="wb-upcoming">
     <h2 class="wb-section-title">{{ t("history.upcoming.title") }}</h2>
@@ -108,7 +125,11 @@
       <div class="wb-upcoming__grid">
         {% for day in upcoming_days %}
           {% set day_kinds = day.rows | map(attribute="kind") | list %}
-          {% set day_kind = "granted" if "granted" in day_kinds else ("pending" if "pending" in day_kinds else "vacation") %}
+          {% if "granted" in day_kinds %}{% set day_kind = "granted" %}
+          {% elif "pending" in day_kinds %}{% set day_kind = "pending" %}
+          {% elif "modified" in day_kinds %}{% set day_kind = "modified" %}
+          {% elif "skipped" in day_kinds %}{% set day_kind = "skipped" %}
+          {% else %}{% set day_kind = "vacation" %}{% endif %}
           <article class="wb-upcoming__day wb-upcoming__day--{{ day_kind }}">
             <header class="wb-upcoming__date">{{ wb_time(day.date_dt, "date", day.date_label) }}</header>
             <div class="wb-upcoming__list">
@@ -136,10 +157,65 @@
                     <span class="wb-chip wb-chip--vacation wb-upcoming__chip">
                       🏖️ {{ t("chip.vacation") }}
                     </span>
+                  {% elif slot.kind == "modified" %}
+                    <span class="wb-chip wb-chip--modified wb-upcoming__chip">
+                      ✏️ {{ t("chip.modified") }}
+                    </span>
+                    <span class="wb-muted wb-note--xs">
+                      {{ t("override.rule_original",
+                            class_type=slot.rule_class_type,
+                            class_time=slot.rule_class_time) }}
+                    </span>
+                    {% if slot.validated is sameas false %}
+                      <span class="wb-note--xs wb-upcoming__warning">
+                        {{ t("override.warning.not_validated") }}
+                      </span>
+                    {% endif %}
+                    <div class="wb-upcoming__actions">
+                      {% if slot.edit_url %}
+                        <a class="wb-btn" href="{{ slot.edit_url }}">{{- t("override.edit_button") -}}</a>
+                      {% endif %}
+                      {% if slot.revert_url %}
+                        <form
+                          method="post"
+                          action="{{ slot.revert_url }}"
+                          class="wb-inline-form"
+                          onsubmit='return wbConfirm(this, event, {{ t("override.confirm.revert")|tojson }})'
+                        >
+                          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                          <button type="submit" class="wb-btn wb-btn--danger">{{- t("override.revert_button") -}}</button>
+                        </form>
+                      {% endif %}
+                    </div>
+                  {% elif slot.kind == "skipped" %}
+                    <span class="wb-chip wb-chip--skipped-day wb-upcoming__chip">
+                      🚫 {{ t("chip.skipped_day") }}
+                    </span>
+                    <div class="wb-upcoming__actions">
+                      {% if slot.edit_url %}
+                        <a class="wb-btn" href="{{ slot.edit_url }}">{{- t("override.edit_button") -}}</a>
+                      {% endif %}
+                      {% if slot.revert_url %}
+                        <form
+                          method="post"
+                          action="{{ slot.revert_url }}"
+                          class="wb-inline-form"
+                          onsubmit='return wbConfirm(this, event, {{ t("override.confirm.revert")|tojson }})'
+                        >
+                          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                          <button type="submit" class="wb-btn wb-btn--danger">{{- t("override.revert_button") -}}</button>
+                        </form>
+                      {% endif %}
+                    </div>
                   {% else %}
                     <span class="wb-chip wb-chip--pending wb-upcoming__chip">
                       ⏱️ {{ t("chip.scheduled") }}
                     </span>
+                    {% if slot.edit_url %}
+                      <div class="wb-upcoming__actions">
+                        <a class="wb-btn" href="{{ slot.edit_url }}">{{- t("override.edit_button") -}}</a>
+                      </div>
+                    {% endif %}
                   {% endif %}
                 </div>
               {% endfor %}
@@ -189,6 +265,11 @@
               <span class="wb-chip wb-chip--{{ row.terminal_status | replace('_', '-') }}">
                 {{ t("chip." ~ row.terminal_status) }}
               </span>
+              {% if row.outcome_source in ("override", "override_fallback", "override_skip") %}
+                <span class="wb-chip wb-chip--modified">
+                  {{ t("chip.source." ~ row.outcome_source) }}
+                </span>
+              {% endif %}
             </td>
             <td class="wb-tabular">
               {{ wb_time(row.attempted_at, "stamp", row.attempted_at.strftime("%d %b %H:%M")) }}

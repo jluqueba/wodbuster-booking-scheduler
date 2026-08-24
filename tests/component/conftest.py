@@ -18,7 +18,10 @@ so unit tests keep running without a Postgres dependency.
 
 from __future__ import annotations
 
+import html
+import json
 import os
+import re
 import socket
 import uuid
 from collections.abc import Callable, Iterator
@@ -229,3 +232,45 @@ def gym_account_id_for(conn: Any, operator_id: int) -> int:
             {"op": operator_id, "idu": f"idu{operator_id:032d}"[:32]},
         ).scalar_one()
     )
+
+
+# ---------------------------------------------------------------------------
+# Rendered-markup helpers
+# ---------------------------------------------------------------------------
+
+# A browser reads an attribute up to its own delimiter, so the lazy body
+# below is the same slice the browser would take.
+_ONSUBMIT_ATTRIBUTE = re.compile(r"""onsubmit=(?P<quote>["'])(?P<body>.*?)(?P=quote)""", re.DOTALL)
+
+# ``return wbConfirm(this, event, <js string literal>)`` and nothing else.
+# The literal may carry backslash escapes but no bare copy of its own
+# delimiter, which is exactly the property an entity-decoded apostrophe
+# destroys.
+_WB_CONFIRM_CALL = re.compile(
+    r"""^return wbConfirm\(this, event, """
+    r"""(?P<quote>["'])(?P<message>(?:\\.|(?!(?P=quote)).)*)(?P=quote)\)$""",
+    re.DOTALL,
+)
+
+
+def confirm_messages(body: str) -> list[str]:
+    """Return the message of every ``wbConfirm`` handler rendered in ``body``.
+
+    Reproduces the browser's own order of operations: take the attribute
+    up to its delimiter, decode HTML entities, then parse the result as
+    JavaScript. A handler that survives Jinja's autoescape but not the
+    entity decoding (an apostrophe in the copy closing a single-quoted JS
+    literal early, for instance) never compiles, so the confirmation is
+    silently skipped and the form submits unguarded. Raises rather than
+    returning, because that failure is invisible in the markup.
+    """
+    messages: list[str] = []
+    for attribute in _ONSUBMIT_ATTRIBUTE.finditer(body):
+        decoded = html.unescape(attribute.group("body"))
+        call = _WB_CONFIRM_CALL.match(decoded)
+        assert call is not None, f"onsubmit handler is not valid JavaScript once decoded: {decoded}"
+        literal = call.group("message")
+        if call.group("quote") == "'":
+            literal = literal.replace('\\"', '"').replace('"', '\\"').replace("\\'", "'")
+        messages.append(json.loads(f'"{literal}"'))
+    return messages

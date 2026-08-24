@@ -51,12 +51,19 @@ EN: dict[str, str] = {
     "chip.granted": "granted",
     "chip.scheduled": "scheduled",
     "chip.vacation": "on vacation",
+    "chip.modified": "modified",
+    "chip.skipped_day": "will be skipped",
     "chip.full": "full",
     "chip.cancelled": "cancelled",
     "chip.skipped": "skipped",
     "chip.cookie_invalid": "cookie invalid",
     "chip.class_not_visible": "class not visible",
     "chip.upstream_unavailable": "upstream unavailable",
+    # Attempt lineage, orthogonal to the terminal status chip above
+    # (ADR-0012 Decision 4): which plan drove the attempt, not how it ended.
+    "chip.source.override": "modified day",
+    "chip.source.override_fallback": "substituted",
+    "chip.source.override_skip": "skipped by you",
     # -- nav ---------------------------------------------------------
     "nav.dashboard": "🏠 Dashboard",
     "nav.rules": "📅 Rules",
@@ -246,6 +253,62 @@ EN: dict[str, str] = {
     "history.second_shot_tag": "(second shot)",
     "history.cancel_button": "🚫 Cancel",
     "history.confirm.cancel": "Cancel this booking on WodBuster?",
+    # -- single-day override (ADR-0012) ------------------------------
+    "override.eyebrow": "Single day",
+    "override.title": "✏️ Edit this day",
+    "override.back_to_history": "← Back to history",
+    "override.rule_values": "This day comes from a rule: {class_type} at {class_time}.",
+    "override.rule_original": "Rule: {class_type} at {class_time}",
+    "override.form.target": "Class for this day only",
+    "override.form.class_type": "Class type",
+    "override.form.class_time": "Class time",
+    "override.form.target_hint": ("Applies to this date only. The weekly rule is not modified."),
+    "override.form.second_shot": "Second shot",
+    "override.form.second_shot_value": (
+        "The rule's second shot still runs on this day: {class_type} at {class_time}."
+    ),
+    "override.form.second_shot_none": "This rule has no second shot.",
+    "override.form.second_shot_clear": "Skip the second shot on this date only",
+    "override.form.second_shot_clear_hint": (
+        "The rule keeps its second shot for every other date."
+    ),
+    "override.warning.not_published": (
+        "The gym has not published the schedule for this date yet. The "
+        "options below are the combinations known for this weekday; the "
+        "class will be re-checked when the booking window opens."
+    ),
+    "override.warning.probe_unavailable": (
+        "Live class list unavailable, so the class cannot be checked "
+        "against this date. You can still save; it will be re-checked "
+        "when the booking window opens. Paste a fresh cookie:"
+    ),
+    "override.warning.not_validated": (
+        "This day is not validated against a published schedule. If the "
+        "class is unavailable when the window opens, the rule's class is "
+        "booked instead."
+    ),
+    "override.error.combination_unavailable": (
+        "That class does not run at that time on this date."
+    ),
+    "override.error.invalid_time": "Use HH:MM in 24-hour format.",
+    "override.error.invalid_class_type": "Choose a class type.",
+    "override.error.skip_exclusive": (
+        "A skipped day carries no class: clear the class type and the class "
+        "time, or save a class instead of skipping."
+    ),
+    "override.skip_hint": (
+        "Or skip this day entirely: no booking is attempted and the weekly rule is not modified."
+    ),
+    "override.skip_active": (
+        "This day is skipped. No booking will be attempted. Save a class "
+        "above, or go back to the rule, to undo it."
+    ),
+    "override.edit_button": "✏️ Edit day",
+    "override.save_button": "💾 Save this day",
+    "override.skip_button": "🚫 Skip this day",
+    "override.revert_button": "🚫 Back to rule",
+    "override.confirm.revert": "Discard this day's change and go back to the rule?",
+    "override.confirm.skip": "Skip this day? No booking will be attempted.",
     # -- cookie ------------------------------------------------------
     "cookie.eyebrow": "Access",
     "cookie.title": "🍪 WodBuster cookie",
@@ -360,7 +423,9 @@ EN: dict[str, str] = {
     # -- auth --------------------------------------------------------
     "auth.landing.title": "WodBuster Booking Scheduler",
     "auth.denied.title": "🚫 Access denied",
-    "auth.denied.body": ("This account is not authorized to access the WodBuster Booking Scheduler."),
+    "auth.denied.body": (
+        "This account is not authorized to access the WodBuster Booking Scheduler."
+    ),
     "auth.denied.contact": (
         "If you believe this is a mistake, contact the operator who set up this deployment."
     ),
@@ -615,6 +680,21 @@ EN: dict[str, str] = {
         "Vacation window closed. Automated bookings resume for future dates."
     ),
     "flash.vacation.invalid_date": ("Invalid date. Use YYYY-MM-DD for both start and end."),
+    "flash.override.saved": "Day updated. The weekly rule is unchanged.",
+    "flash.override.skipped": "Day skipped. No booking will be attempted.",
+    "flash.override.reverted": "Day back to the rule.",
+    "flash.override.window_closed": (
+        "The booking window for that day has already opened, so it can no "
+        "longer be edited. Nothing was saved."
+    ),
+    "flash.override.already_executed": (
+        "That day already ran. Check the result below. Nothing was saved."
+    ),
+    "flash.override.discarded": (
+        "The rule now runs on a different weekday, so the single-day "
+        "changes you had saved for {dates} no longer apply and have been "
+        "discarded."
+    ),
     "flash.telegram.test_sent": "Test message sent. Check your Telegram chat.",
     "flash.telegram.unbound": "Telegram unbound.",
     "flash.telegram.no_token": (
@@ -658,6 +738,32 @@ EN: dict[str, str] = {
     ),
     "tg.booking.cancelled": "\U0001f6ab [{gym}] Cancelled #{id}: {klass} \u2014 {when}.",
     "tg.booking.unknown": ("\u2139\ufe0f [{gym}] Booking #{id}: {klass} \u2014 {when} ({status})."),
+    # Single-day override branches (ADR-0012). Keyed on ``outcome_source``
+    # rather than ``terminal_status``: a substitution is never silent
+    # (INV-008), so the copy names the booked class, the requested class
+    # and the reason.
+    "tg.booking.override_skip": (
+        "\u23ed\ufe0f [{gym}] Booking #{id} skipped \u2014 {when}. You marked this day "
+        "as skipped, so {klass} was not contested."
+    ),
+    "tg.booking.fallback_granted": (
+        "\u26a0\ufe0f [{gym}] Substitution \u2014 booked #{id}: {klass} \u2014 {when}. "
+        "You had asked for {requested_class} at {requested_time}, but {reason}, so the "
+        "rule's class was booked instead."
+    ),
+    "tg.booking.fallback_exhausted": (
+        "\u26a0\ufe0f [{gym}] Nothing booked #{id} \u2014 {when}. Your {requested_class} "
+        "at {requested_time} failed: {reason}. The rule's {klass} also failed: {rule_reason}."
+    ),
+    # Reason fragments shared by the Telegram copy, the email body (which
+    # reuses it) and the dashboard banner. Deliberately namespace-neutral:
+    # duplicating the same sentence under ``tg.*`` and ``banner.*`` would
+    # guarantee the two drift apart.
+    "booking.reason.class_not_visible": "that class never appeared on the schedule",
+    "booking.reason.full": "that class was full",
+    "booking.reason.upstream_unavailable": "WodBuster returned an unexpected response",
+    "booking.reason.cookie_invalid": "the WodBuster session was rejected",
+    "booking.reason.unknown": "it was unavailable",
     "tg.alert.cookie_expiring": (
         "\u23f0 [{gym}] WodBuster cookie expires before the next booking window "
         "({when}). Refresh it to keep bookings running."
@@ -784,6 +890,11 @@ EN: dict[str, str] = {
     "banner.anomaly.body": (
         "No booking outcome was recorded for a window that should have closed. Check the worker."
     ),
+    "banner.booking_fallback.heading": "Class substituted",
+    "banner.booking_fallback.body": (
+        "Booked {klass} \u2014 {when} instead of the {requested_class} at "
+        "{requested_time} you asked for, because {reason}."
+    ),
     "banner.unknown.heading": "Alert: {kind}",
     "banner.unknown.body": "See logs for details.",
 }
@@ -816,12 +927,19 @@ ES: dict[str, str] = {
     "chip.granted": "reservado",
     "chip.scheduled": "programado",
     "chip.vacation": "en vacaciones",
+    "chip.modified": "modificado",
+    "chip.skipped_day": "se saltará",
     "chip.full": "completo",
     "chip.cancelled": "cancelado",
     "chip.skipped": "omitido",
     "chip.cookie_invalid": "cookie inválida",
     "chip.class_not_visible": "clase no visible",
     "chip.upstream_unavailable": "servicio no disponible",
+    # Origen del intento, ortogonal al estado terminal de arriba
+    # (ADR-0012 Decisión 4): qué plan condujo el intento, no cómo acabó.
+    "chip.source.override": "día modificado",
+    "chip.source.override_fallback": "sustituida",
+    "chip.source.override_skip": "saltado por ti",
     # -- nav ---------------------------------------------------------
     "nav.dashboard": "🏠 Panel",
     "nav.rules": "📅 Reglas",
@@ -1023,6 +1141,63 @@ ES: dict[str, str] = {
     "history.second_shot_tag": "(alternativa)",
     "history.cancel_button": "🚫 Cancelar",
     "history.confirm.cancel": "¿Cancelar esta reserva en WodBuster?",
+    # -- single-day override (ADR-0012) ------------------------------
+    "override.eyebrow": "Un solo día",
+    "override.title": "✏️ Editar este día",
+    "override.back_to_history": "← Volver al historial",
+    "override.rule_values": "Este día viene de una regla: {class_type} a las {class_time}.",
+    "override.rule_original": "Regla: {class_type} a las {class_time}",
+    "override.form.target": "Clase solo para este día",
+    "override.form.class_type": "Tipo de clase",
+    "override.form.class_time": "Hora de la clase",
+    "override.form.target_hint": ("Se aplica solo a esta fecha. La regla semanal no se modifica."),
+    "override.form.second_shot": "Alternativa",
+    "override.form.second_shot_value": (
+        "La alternativa de la regla se sigue intentando este día: {class_type} a las {class_time}."
+    ),
+    "override.form.second_shot_none": "Esta regla no tiene alternativa.",
+    "override.form.second_shot_clear": "Saltar la alternativa solo en esta fecha",
+    "override.form.second_shot_clear_hint": (
+        "La regla mantiene su alternativa para el resto de fechas."
+    ),
+    "override.warning.not_published": (
+        "El gimnasio aún no ha publicado el horario de esta fecha. Las "
+        "opciones de abajo son las combinaciones conocidas para este día "
+        "de la semana; la clase se vuelve a comprobar cuando se abra la "
+        "ventana de reserva."
+    ),
+    "override.warning.probe_unavailable": (
+        "Lista de clases no disponible, así que la clase no se puede "
+        "comprobar contra esta fecha. Puedes guardar igualmente; se "
+        "volverá a comprobar cuando se abra la ventana de reserva. Pega "
+        "una cookie fresca:"
+    ),
+    "override.warning.not_validated": (
+        "Este día no está validado contra un horario publicado. Si la "
+        "clase no está disponible al abrirse la ventana, se reserva la "
+        "clase de la regla."
+    ),
+    "override.error.combination_unavailable": ("Esa clase no se imparte a esa hora en esta fecha."),
+    "override.error.invalid_time": "Usa HH:MM en formato de 24 horas.",
+    "override.error.invalid_class_type": "Elige un tipo de clase.",
+    "override.error.skip_exclusive": (
+        "Un día saltado no lleva clase: vacía el tipo y la hora, o guarda "
+        "una clase en lugar de saltar el día."
+    ),
+    "override.skip_hint": (
+        "O salta este día por completo: no se intenta ninguna reserva y la "
+        "regla semanal no se modifica."
+    ),
+    "override.skip_active": (
+        "Este día está saltado. No se intentará ninguna reserva. Guarda una "
+        "clase arriba, o vuelve a la regla, para deshacerlo."
+    ),
+    "override.edit_button": "✏️ Editar día",
+    "override.save_button": "💾 Guardar este día",
+    "override.skip_button": "🚫 Saltar este día",
+    "override.revert_button": "🚫 Volver a la regla",
+    "override.confirm.revert": "¿Descartar el cambio de este día y volver a la regla?",
+    "override.confirm.skip": "¿Saltar este día? No se intentará ninguna reserva.",
     # -- cookie ------------------------------------------------------
     "cookie.eyebrow": "Acceso",
     "cookie.title": "🍪 Cookie de WodBuster",
@@ -1413,6 +1588,21 @@ ES: dict[str, str] = {
         "Ventana de vacaciones cerrada. Las reservas automáticas se reanudan para fechas futuras."
     ),
     "flash.vacation.invalid_date": ("Fecha inválida. Usa YYYY-MM-DD para inicio y fin."),
+    "flash.override.saved": "Día actualizado. La regla semanal no cambia.",
+    "flash.override.skipped": "Día saltado. No se intentará ninguna reserva.",
+    "flash.override.reverted": "Día devuelto a la regla.",
+    "flash.override.window_closed": (
+        "La ventana de reserva de ese día ya se ha abierto, así que ya no "
+        "se puede editar. No se ha guardado nada."
+    ),
+    "flash.override.already_executed": (
+        "Ese día ya se ha ejecutado. Consulta el resultado más abajo. No se ha guardado nada."
+    ),
+    "flash.override.discarded": (
+        "La regla pasa a otro día de la semana, así que los cambios de un "
+        "solo día que tenías guardados para {dates} ya no se aplican y se "
+        "han descartado."
+    ),
     "flash.telegram.test_sent": "Mensaje de prueba enviado. Revisa tu chat de Telegram.",
     "flash.telegram.unbound": "Telegram desvinculado.",
     "flash.telegram.no_token": (
@@ -1458,6 +1648,33 @@ ES: dict[str, str] = {
     ),
     "tg.booking.cancelled": "\U0001f6ab [{gym}] Cancelada #{id}: {klass} \u2014 {when}.",
     "tg.booking.unknown": ("\u2139\ufe0f [{gym}] Reserva #{id}: {klass} \u2014 {when} ({status})."),
+    # Ramas del override de un solo día (ADR-0012). Se eligen por
+    # ``outcome_source``, no por ``terminal_status``: una sustitución
+    # nunca es silenciosa (INV-008), así que el texto nombra la clase
+    # reservada, la clase pedida y el motivo.
+    "tg.booking.override_skip": (
+        "\u23ed\ufe0f [{gym}] Reserva #{id} saltada \u2014 {when}. Marcaste este día "
+        "para saltarlo, así que no se intentó reservar {klass}."
+    ),
+    "tg.booking.fallback_granted": (
+        "\u26a0\ufe0f [{gym}] Sustitución \u2014 reservado #{id}: {klass} \u2014 {when}. "
+        "Habías pedido {requested_class} a las {requested_time}, pero {reason}, así que "
+        "se reservó la clase de la regla."
+    ),
+    "tg.booking.fallback_exhausted": (
+        "\u26a0\ufe0f [{gym}] No se reservó nada #{id} \u2014 {when}. Tu {requested_class} "
+        "a las {requested_time} falló: {reason}. La clase de la regla, {klass}, también "
+        "falló: {rule_reason}."
+    ),
+    # Fragmentos de motivo compartidos por el texto de Telegram, el cuerpo
+    # del email (que lo reutiliza) y el banner del panel. A propósito sin
+    # namespace de canal: duplicar la misma frase bajo ``tg.*`` y
+    # ``banner.*`` garantizaría que ambas acaben divergiendo.
+    "booking.reason.class_not_visible": "esa clase no apareció en el horario",
+    "booking.reason.full": "esa clase estaba completa",
+    "booking.reason.upstream_unavailable": "WodBuster devolvió una respuesta inesperada",
+    "booking.reason.cookie_invalid": "WodBuster rechazó la sesión",
+    "booking.reason.unknown": "no estaba disponible",
     "tg.alert.cookie_expiring": (
         "\u23f0 [{gym}] La cookie de WodBuster caduca antes de la próxima ventana "
         "de reserva ({when}). Renuévala para que las reservas sigan funcionando."
@@ -1596,6 +1813,11 @@ ES: dict[str, str] = {
     "banner.anomaly.body": (
         "No se registró ningún resultado de reserva para una ventana que debería "
         "haberse cerrado. Revisa el worker."
+    ),
+    "banner.booking_fallback.heading": "Clase sustituida",
+    "banner.booking_fallback.body": (
+        "Se reservó {klass} \u2014 {when} en lugar de {requested_class} a las "
+        "{requested_time}, que es lo que habías pedido, porque {reason}."
     ),
     "banner.unknown.heading": "Alerta: {kind}",
     "banner.unknown.body": "Consulta los registros para más detalles.",

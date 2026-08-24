@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -23,10 +23,13 @@ import pytest
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 
-from wodbuster_worker.persistence.models import GymAccount, SchedulerRule
+from wodbuster_worker.booking.overrides import DEFAULT_EDIT_MARGIN_S, OverridePlan
+from wodbuster_worker.persistence.models import BookingDayOverride, GymAccount, SchedulerRule
 from wodbuster_worker.scheduler.rule_jobs import (
     BOOKING_JOB_ID_PREFIX,
+    DEFAULT_PREWARM_LEAD_S,
     book_rule,
+    edit_cutoff_for_window,
     next_window_open_for_rule,
     register_rule_job,
     target_slot_for_window,
@@ -311,9 +314,16 @@ def test_register_rule_job_malformed_hhmm_raises() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _session_factory_returning(rule: SchedulerRule | None) -> Any:
+def _session_factory_returning(
+    rule: SchedulerRule | None, *, override: BookingDayOverride | None = None
+) -> Any:
     """Return a context-manager factory whose session.get(SchedulerRule, ...)
-    yields ``rule``. Any other .get lookup returns MagicMock."""
+    yields ``rule``. Any other .get lookup returns MagicMock.
+
+    ``override`` answers the single-day override lookup (ADR-0012); ``None``
+    means "no override for this date".
+    """
+    sessions: list[Any] = []
 
     @contextmanager
     def factory() -> Iterator[Any]:
@@ -330,9 +340,46 @@ def _session_factory_returning(rule: SchedulerRule | None) -> Any:
             return None
 
         session.get.side_effect = _get
+        # ``book_rule`` also issues ``session.scalar(select(BookingDayOverride)...)``;
+        # an unconfigured MagicMock answers it with a truthy sentinel that then
+        # parses as a real override row, so the double must answer it explicitly.
+        session.scalar.return_value = override
+        sessions.append(session)
         yield session
 
+    factory.sessions = sessions
     return factory
+
+
+def _override_row(
+    *,
+    override_id: int = 5,
+    rule_id: int = 42,
+    target_date: date | None = None,
+    class_type: str | None = None,
+    class_time: str | None = None,
+    skip_day: bool = False,
+    validated: bool = True,
+    suppress_second_shot: bool = False,
+) -> BookingDayOverride:
+    row = BookingDayOverride(
+        rule_id=rule_id,
+        gym_account_id=1,
+        target_date=target_date or date(2026, 7, 15),
+        class_type=class_type,
+        class_time=class_time,
+        skip_day=skip_day,
+        validated=validated,
+        suppress_second_shot=suppress_second_shot,
+    )
+    row.id = override_id
+    return row
+
+
+def _rule_derived_slot(rule: SchedulerRule) -> datetime:
+    """Re-derive the slot ``book_rule`` computes from the rule alone."""
+    window_open = next_window_open_for_rule(rule, now=datetime.now(tz=UTC) - timedelta(seconds=1))
+    return target_slot_for_window(rule, window_open)
 
 
 def test_book_rule_fires_executor_with_derived_target_slot() -> None:
@@ -442,3 +489,92 @@ def test_book_rule_swallows_executor_exception_and_still_reschedules() -> None:
     # Reschedule still happened.
     job = scheduler.get_job(f"{BOOKING_JOB_ID_PREFIX}{rule.id}")
     assert job is not None
+
+
+# ---------------------------------------------------------------------------
+# book_rule single-day override read (T-BDO-009, ADR-0012 Decision 3)
+# ---------------------------------------------------------------------------
+
+
+def test_book_rule_without_override_takes_the_pre_feature_path() -> None:
+    """FR-010 regression guard: a day with no override derives exactly the
+    slot it derived before the feature existed and hands the executor
+    ``override=None``, inside the single session the job already opens."""
+    rule = _rule()
+    factory = _session_factory_returning(rule)
+    executor = MagicMock()
+    executor.for_gym_account.return_value = executor
+
+    expected_slot = _rule_derived_slot(rule)
+    book_rule(rule.id, executor_provider=executor, session_factory=factory, scheduler=None)
+
+    call = executor.book.call_args
+    assert call.kwargs["override"] is None
+    assert call.kwargs["target_slot"] == expected_slot
+    assert len(factory.sessions) == 1
+
+
+def test_book_rule_time_override_recomputes_target_slot() -> None:
+    """FR-010: a time-only override moves the slot through
+    ``effective_slot_for`` and travels to the executor as a frozen plan."""
+    rule = _rule(class_time="21:30")
+    factory = _session_factory_returning(rule, override=_override_row(class_time="19:00"))
+    executor = MagicMock()
+    executor.for_gym_account.return_value = executor
+
+    rule_slot = _rule_derived_slot(rule)
+    book_rule(rule.id, executor_provider=executor, session_factory=factory, scheduler=None)
+
+    call = executor.book.call_args
+    assert call.kwargs["target_slot"] == rule_slot.replace(hour=19, minute=0)
+    plan = call.kwargs["override"]
+    assert isinstance(plan, OverridePlan)
+    assert plan.override_id == 5
+    assert plan.class_time == "19:00"
+    assert plan.class_type is None
+
+
+def test_book_rule_type_override_leaves_the_target_slot_alone() -> None:
+    """FR-010: a type-only override changes what is contested, not when."""
+    rule = _rule()
+    factory = _session_factory_returning(rule, override=_override_row(class_type="Halterofilia"))
+    executor = MagicMock()
+    executor.for_gym_account.return_value = executor
+
+    rule_slot = _rule_derived_slot(rule)
+    book_rule(rule.id, executor_provider=executor, session_factory=factory, scheduler=None)
+
+    call = executor.book.call_args
+    assert call.kwargs["target_slot"] == rule_slot
+    plan = call.kwargs["override"]
+    assert plan.class_type == "Halterofilia"
+    assert plan.class_time is None
+
+
+def test_book_rule_override_changing_both_passes_both() -> None:
+    """FR-010: type and time move together on the same plan."""
+    rule = _rule()
+    factory = _session_factory_returning(
+        rule, override=_override_row(class_type="Halterofilia", class_time="19:00")
+    )
+    executor = MagicMock()
+    executor.for_gym_account.return_value = executor
+
+    rule_slot = _rule_derived_slot(rule)
+    book_rule(rule.id, executor_provider=executor, session_factory=factory, scheduler=None)
+
+    call = executor.book.call_args
+    assert call.kwargs["target_slot"] == rule_slot.replace(hour=19, minute=0)
+    plan = call.kwargs["override"]
+    assert plan.class_type == "Halterofilia"
+    assert plan.class_time == "19:00"
+
+
+def test_edit_cutoff_for_window_subtracts_prewarm_and_margin() -> None:
+    """FR-006: the cutoff is derived from the constant the scheduler
+    actually registers the job with, so the two cannot drift apart."""
+    window_open = datetime(2026, 7, 13, 21, 30, tzinfo=UTC)
+
+    cutoff = edit_cutoff_for_window(window_open)
+
+    assert cutoff == window_open - timedelta(seconds=DEFAULT_PREWARM_LEAD_S + DEFAULT_EDIT_MARGIN_S)

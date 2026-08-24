@@ -12,7 +12,7 @@ would just re-implement the queries.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
@@ -383,3 +383,265 @@ def test_operator_scope_isolation(
 
     assert slots_a == []
     assert len(slots_b) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Single-day overrides (T-BDO-007)
+# ---------------------------------------------------------------------------
+
+
+def _make_override(
+    engine: Engine,
+    *,
+    operator_id: int,
+    rule_id: int,
+    target_date: date,
+    class_type: str | None = None,
+    class_time: str | None = None,
+    skip_day: bool = False,
+    validated: bool = False,
+) -> int:
+    with engine.begin() as conn:
+        ga = gym_account_id_for(conn, operator_id)
+        return int(
+            conn.execute(
+                text(
+                    "INSERT INTO booking_day_override ("
+                    " rule_id, gym_account_id, target_date, class_type, class_time, "
+                    " skip_day, validated"
+                    ") VALUES (:rule, :ga, :d, :ct, :ctime, :skip, :v) RETURNING id"
+                ),
+                {
+                    "rule": rule_id,
+                    "ga": ga,
+                    "d": target_date,
+                    "ct": class_type,
+                    "ctime": class_time,
+                    "skip": skip_day,
+                    "v": validated,
+                },
+            ).scalar_one()
+        )
+
+
+def test_time_override_projects_as_modified_and_keeps_the_rule_values(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    op_id = _make_operator(postgres_engine)
+    rule_id = _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=2,
+        booking_opens_days_before=0,
+        booking_opens_at="00:01",
+        class_time="21:30",
+    )
+    override_id = _make_override(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=rule_id,
+        target_date=date(2026, 7, 15),
+        class_type="Endurance",
+        class_time="07:00",
+    )
+    now = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        slots = list_upcoming_slots(session, op_id, now=now, horizon_days=6)
+
+    assert len(slots) == 1
+    slot = slots[0]
+    assert slot.kind == "modified"
+    assert slot.target_slot == datetime(2026, 7, 15, 7, 0, tzinfo=UTC)
+    assert slot.target_class == "Endurance"
+    assert slot.rule_class_type == "WOD"
+    assert slot.rule_class_time == "21:30"
+    assert slot.target_date == date(2026, 7, 15)
+    assert slot.override_id == override_id
+    assert slot.validated is False
+
+
+def test_ordering_follows_the_effective_time_not_the_rule_time(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """A day moved to a later hour must reorder against the other rules."""
+    op_id = _make_operator(postgres_engine)
+    early = _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=2,
+        booking_opens_days_before=0,
+        booking_opens_at="00:01",
+        class_type="Early",
+        class_time="08:00",
+    )
+    late = _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=2,
+        booking_opens_days_before=0,
+        booking_opens_at="00:01",
+        class_type="Late",
+        class_time="20:00",
+    )
+    _make_override(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=early,
+        target_date=date(2026, 7, 15),
+        class_time="22:00",
+    )
+    now = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        slots = list_upcoming_slots(session, op_id, now=now, horizon_days=6)
+
+    assert [s.rule_id for s in slots] == [late, early]
+
+
+def test_vacation_covering_the_effective_slot_wins_over_the_override(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """Coverage is evaluated against the moved slot, not the rule's."""
+    op_id = _make_operator(postgres_engine)
+    rule_id = _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=2,
+        booking_opens_days_before=0,
+        booking_opens_at="00:01",
+        class_time="21:30",
+    )
+    _make_override(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=rule_id,
+        target_date=date(2026, 7, 15),
+        class_time="07:00",
+    )
+    # Morning-only window: covers the override's 07:00 slot, not the
+    # rule's own 21:30 one.
+    _make_vacation(
+        postgres_engine,
+        operator_id=op_id,
+        start=datetime(2026, 7, 15, 0, 0, tzinfo=UTC),
+        end=datetime(2026, 7, 15, 12, 0, tzinfo=UTC),
+    )
+    now = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        slots = list_upcoming_slots(session, op_id, now=now, horizon_days=6)
+
+    assert len(slots) == 1
+    assert slots[0].kind == "vacation"
+
+
+def test_outcome_at_another_time_still_suppresses_the_days_projection(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """Regression for the suppression-key change (slot -> local date).
+
+    The executor books the override's class, so the outcome lands at a
+    time the rule never projects. Keyed on the slot, the rule's own
+    projection would reappear as a second, phantom pending row.
+    """
+    op_id = _make_operator(postgres_engine)
+    rule_id = _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=2,
+        booking_opens_days_before=0,
+        booking_opens_at="00:01",
+        class_time="21:30",
+    )
+    _make_outcome(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=rule_id,
+        target_class="Endurance",
+        target_slot=datetime(2026, 7, 15, 7, 0, tzinfo=UTC),
+        terminal_status="granted",
+    )
+    now = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        slots = list_upcoming_slots(session, op_id, now=now, horizon_days=6)
+
+    assert len(slots) == 1
+    assert slots[0].kind == "granted"
+    assert slots[0].target_slot == datetime(2026, 7, 15, 7, 0, tzinfo=UTC)
+
+
+# ---------------------------------------------------------------------------
+# Skipped days (T-BDO-011)
+# ---------------------------------------------------------------------------
+
+
+def test_skip_override_projects_as_skipped_on_the_rules_own_slot(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """FR-019, FR-021: a skip carries no alternative time, so the row stays
+    where the rule put it and keeps the rule's own class."""
+    op_id = _make_operator(postgres_engine)
+    rule_id = _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=2,
+        booking_opens_days_before=0,
+        booking_opens_at="00:01",
+        class_time="21:30",
+    )
+    override_id = _make_override(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=rule_id,
+        target_date=date(2026, 7, 15),
+        skip_day=True,
+    )
+    now = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        slots = list_upcoming_slots(session, op_id, now=now, horizon_days=6)
+
+    assert len(slots) == 1
+    slot = slots[0]
+    assert slot.kind == "skipped"
+    assert slot.target_slot == datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    assert slot.target_class == "WOD"
+    assert slot.rule_class_time == "21:30"
+    assert slot.override_id == override_id
+
+
+def test_vacation_covering_a_skipped_day_still_wins(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """FR-029: vacation is the outer state, so it outranks the skip."""
+    op_id = _make_operator(postgres_engine)
+    rule_id = _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=2,
+        booking_opens_days_before=0,
+        booking_opens_at="00:01",
+        class_time="21:30",
+    )
+    _make_override(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=rule_id,
+        target_date=date(2026, 7, 15),
+        skip_day=True,
+    )
+    _make_vacation(
+        postgres_engine,
+        operator_id=op_id,
+        start=datetime(2026, 7, 15, 0, 0, tzinfo=UTC),
+        end=datetime(2026, 7, 16, 0, 0, tzinfo=UTC),
+    )
+    now = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        slots = list_upcoming_slots(session, op_id, now=now, horizon_days=6)
+
+    assert len(slots) == 1
+    assert slots[0].kind == "vacation"

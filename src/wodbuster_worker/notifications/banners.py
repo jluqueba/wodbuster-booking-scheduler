@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from ..i18n import get_language, t
 from ..persistence.models import Alert, GymAccount
-from .messages import format_slot
+from .messages import format_slot, reason_key
 
 
 @dataclass(frozen=True)
@@ -105,6 +105,25 @@ def _render(kind: str, payload: dict[str, Any]) -> tuple[str, str, str]:
             t("banner.anomaly.body"),
             "error",
         )
+    if kind == "booking_fallback":
+        # The one channel the operator cannot switch off, so it carries
+        # the substitution whatever their Telegram and email preferences
+        # are (INV-008). The payload is the outbox payload the outcome
+        # wrote, so everything named here is already on the row.
+        return (
+            t("banner.booking_fallback.heading"),
+            t(
+                "banner.booking_fallback.body",
+                klass=str(payload.get("class_type") or "?"),
+                when=_format_instant(payload.get("target_slot")) or "?",
+                requested_class=str(
+                    payload.get("requested_class") or payload.get("class_type") or "?"
+                ),
+                requested_time=str(payload.get("requested_time") or "?"),
+                reason=t(reason_key(payload.get("fallback_reason"))),
+            ),
+            "warning",
+        )
     # Unknown kind — surface as a generic warning so the operator at
     # least sees that something happened.
     return (
@@ -116,12 +135,17 @@ def _render(kind: str, payload: dict[str, Any]) -> tuple[str, str, str]:
 
 def _format_window(value: Any) -> str:
     """Localised gym-tz label for an ISO window instant, or a fallback phrase."""
+    return _format_instant(value) or t("banner.window_fallback")
+
+
+def _format_instant(value: Any) -> str | None:
+    """Localised gym-tz label for an ISO instant, or ``None`` when unusable."""
     if not value:
-        return t("banner.window_fallback")
+        return None
     try:
         parsed = datetime.fromisoformat(str(value))
     except ValueError:
-        return t("banner.window_fallback")
+        return None
     return format_slot(parsed, get_language())
 
 

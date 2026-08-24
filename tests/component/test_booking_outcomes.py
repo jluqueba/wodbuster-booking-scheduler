@@ -17,11 +17,12 @@ Validates the transactional contract against a real Postgres schema:
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from wodbuster_worker.booking.outcomes import persist_outcome
 from wodbuster_worker.persistence.models import (
@@ -33,15 +34,28 @@ from wodbuster_worker.persistence.models import (
 from .conftest import gym_account_id_for
 
 
-def _seed_operator(engine: Engine, *, telegram_chat_id: str | None = None) -> int:
+def _seed_operator(
+    engine: Engine,
+    *,
+    telegram_chat_id: str | None = None,
+    email: str | None = None,
+    email_preferences: dict[str, bool] | None = None,
+) -> int:
     with engine.begin() as conn:
         op_id = int(
             conn.execute(
                 text(
-                    "INSERT INTO operator_profile (display_name, telegram_chat_id) "
-                    "VALUES (:n, :tg) RETURNING id"
+                    "INSERT INTO operator_profile "
+                    "(display_name, telegram_chat_id, email, email_preferences) "
+                    "VALUES (:n, :tg, :email, COALESCE(CAST(:prefs AS jsonb), '{}'::jsonb)) "
+                    "RETURNING id"
                 ),
-                {"n": "Op", "tg": telegram_chat_id},
+                {
+                    "n": "Op",
+                    "tg": telegram_chat_id,
+                    "email": email,
+                    "prefs": json.dumps(email_preferences) if email_preferences else None,
+                },
             ).scalar_one()
         )
         conn.execute(
@@ -279,4 +293,214 @@ def test_rollback_undoes_outcome_and_outbox_together(
     with factory() as session:
         assert session.query(BookingOutcome).count() == 0
         assert session.query(NotificationOutbox).count() == 0
+        assert session.query(Alert).count() == 0
+
+
+# ---------------------------------------------------------------------------
+# Single-day override fallback (T-BDO-014, ADR-0012 Decision 5)
+# ---------------------------------------------------------------------------
+
+
+def _persist_fallback_granted(
+    session: Session,
+    *,
+    gym_account_id: int,
+    rule_id: int,
+    now: datetime,
+    target_class: str = "WOD",
+) -> None:
+    """Persist one ``granted`` outcome sourced to the override fallback."""
+    persist_outcome(
+        session,
+        gym_account_id=gym_account_id,
+        rule_id=rule_id,
+        target_class=target_class,
+        target_slot=now,
+        terminal_status="granted",
+        outcome_source="override_fallback",
+        granted_fallback_index=0,
+        response_payload="Res='Ok'",
+        telegram_text=f"Booked {target_class}.",
+        requested_class="Halterofilia",
+        requested_time="19:00",
+        fallback_reason="class_not_visible",
+        now=now,
+    )
+
+
+def test_fallback_granted_opens_alert_naming_booked_and_requested_class(
+    postgres_engine: Engine,
+) -> None:
+    """FR-015, INV-008: the fallback banner carries everything a message
+    needs (booked class, requested class, reason) without a second query."""
+    op_id = _seed_operator(postgres_engine, telegram_chat_id="tg-1")
+    rule_id = _seed_rule(postgres_engine, operator_id=op_id)
+    ga_id = _gym_account_id(postgres_engine, op_id)
+    factory = _session_factory(postgres_engine)
+    now = datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+
+    with factory() as session:
+        _persist_fallback_granted(session, gym_account_id=ga_id, rule_id=rule_id, now=now)
+        session.commit()
+
+    with factory() as session:
+        alerts = session.query(Alert).filter_by(gym_account_id=ga_id).all()
+        assert len(alerts) == 1
+        alert = alerts[0]
+        assert alert.kind == "booking_fallback"
+        assert alert.closed_at is None
+        assert alert.payload["class_type"] == "WOD"
+        assert alert.payload["requested_class"] == "Halterofilia"
+        assert alert.payload["requested_time"] == "19:00"
+        assert alert.payload["fallback_reason"] == "class_not_visible"
+
+        # The same detail rides the outbox payload, so Telegram and email
+        # render from the row rather than re-reading the override.
+        telegram_row = session.query(NotificationOutbox).filter_by(kind="telegram").one()
+        assert telegram_row.payload["outcome_source"] == "override_fallback"
+        assert telegram_row.payload["requested_class"] == "Halterofilia"
+
+
+def test_second_fallback_refreshes_the_same_alert_row(postgres_engine: Engine) -> None:
+    """ADR-0012 accepted limitation: the partial unique index on ``alert``
+    collapses two fallbacks in the same period into one refreshed row."""
+    op_id = _seed_operator(postgres_engine, telegram_chat_id="tg-1")
+    rule_id = _seed_rule(postgres_engine, operator_id=op_id)
+    ga_id = _gym_account_id(postgres_engine, op_id)
+    factory = _session_factory(postgres_engine)
+    first_now = datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    second_now = datetime(2026, 7, 16, 21, 30, tzinfo=UTC)
+
+    with factory() as session:
+        _persist_fallback_granted(session, gym_account_id=ga_id, rule_id=rule_id, now=first_now)
+        session.commit()
+
+    with factory() as session:
+        _persist_fallback_granted(
+            session,
+            gym_account_id=ga_id,
+            rule_id=rule_id,
+            now=second_now,
+            target_class="Gimnasia",
+        )
+        session.commit()
+
+    with factory() as session:
+        alerts = session.query(Alert).filter_by(gym_account_id=ga_id).all()
+        assert len(alerts) == 1
+        alert = alerts[0]
+        assert alert.first_emitted_at.replace(tzinfo=UTC) == first_now
+        assert alert.last_emitted_at.replace(tzinfo=UTC) == second_now
+        # The banner describes the most recent event; the per-event detail
+        # lives on the two outcome rows.
+        assert alert.payload["class_type"] == "Gimnasia"
+        assert session.query(BookingOutcome).count() == 2
+
+
+def test_fallback_alert_opens_even_with_the_bookings_email_category_off(
+    postgres_engine: Engine,
+) -> None:
+    """The banner is not a user-toggleable channel, so a disabled email
+    category removes the email row and leaves the alert standing."""
+    op_id = _seed_operator(
+        postgres_engine,
+        telegram_chat_id="tg-1",
+        email="op@example.com",
+        email_preferences={"bookings": False},
+    )
+    rule_id = _seed_rule(postgres_engine, operator_id=op_id)
+    ga_id = _gym_account_id(postgres_engine, op_id)
+    factory = _session_factory(postgres_engine)
+    now = datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+
+    with factory() as session:
+        _persist_fallback_granted(session, gym_account_id=ga_id, rule_id=rule_id, now=now)
+        session.commit()
+
+    with factory() as session:
+        kinds = {row.kind for row in session.query(NotificationOutbox).all()}
+        assert kinds == {"banner", "telegram"}
+        assert session.query(Alert).filter_by(kind="booking_fallback").count() == 1
+
+
+def test_fallback_alert_opens_even_without_a_telegram_chat(postgres_engine: Engine) -> None:
+    """Same guarantee on the other channel: an unbound chat enqueues no
+    Telegram row and the alert is still opened."""
+    op_id = _seed_operator(postgres_engine, telegram_chat_id=None)
+    rule_id = _seed_rule(postgres_engine, operator_id=op_id)
+    ga_id = _gym_account_id(postgres_engine, op_id)
+    factory = _session_factory(postgres_engine)
+    now = datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+
+    with factory() as session:
+        _persist_fallback_granted(session, gym_account_id=ga_id, rule_id=rule_id, now=now)
+        session.commit()
+
+    with factory() as session:
+        kinds = {row.kind for row in session.query(NotificationOutbox).all()}
+        assert kinds == {"banner"}
+        assert session.query(Alert).filter_by(kind="booking_fallback").count() == 1
+
+
+def test_exhausted_fallback_records_the_source_without_opening_an_alert(
+    postgres_engine: Engine,
+) -> None:
+    """FR-016: an exhausted chain is a plain failure. The fallback banner is
+    reserved for a substituted booking, which is the case FR-015 covers."""
+    op_id = _seed_operator(postgres_engine, telegram_chat_id="tg-1")
+    rule_id = _seed_rule(postgres_engine, operator_id=op_id)
+    ga_id = _gym_account_id(postgres_engine, op_id)
+    factory = _session_factory(postgres_engine)
+
+    with factory() as session:
+        persist_outcome(
+            session,
+            gym_account_id=ga_id,
+            rule_id=rule_id,
+            target_class="WOD",
+            target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC),
+            terminal_status="class_not_visible",
+            outcome_source="override_fallback",
+            response_payload="not visible",
+            telegram_text="Could not book WOD.",
+            requested_class="Halterofilia",
+            requested_time="19:00",
+            fallback_reason="class_not_visible",
+        )
+        session.commit()
+
+    with factory() as session:
+        outcome = session.query(BookingOutcome).one()
+        assert outcome.outcome_source == "override_fallback"
+        assert session.query(Alert).count() == 0
+
+
+def test_plain_rule_success_carries_no_fallback_payload(postgres_engine: Engine) -> None:
+    """Regression guard: the new keys stay off the payload of every outcome
+    the override feature did not touch."""
+    op_id = _seed_operator(postgres_engine, telegram_chat_id="tg-1")
+    rule_id = _seed_rule(postgres_engine, operator_id=op_id)
+    ga_id = _gym_account_id(postgres_engine, op_id)
+    factory = _session_factory(postgres_engine)
+
+    with factory() as session:
+        persist_outcome(
+            session,
+            gym_account_id=ga_id,
+            rule_id=rule_id,
+            target_class="WOD",
+            target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC),
+            terminal_status="granted",
+            granted_fallback_index=0,
+            response_payload="Res='Ok'",
+            telegram_text="Booked WOD.",
+        )
+        session.commit()
+
+    with factory() as session:
+        payload = session.query(NotificationOutbox).filter_by(kind="banner").one().payload
+        assert payload["outcome_source"] == "rule"
+        assert "requested_class" not in payload
+        assert "requested_time" not in payload
+        assert "fallback_reason" not in payload
         assert session.query(Alert).count() == 0

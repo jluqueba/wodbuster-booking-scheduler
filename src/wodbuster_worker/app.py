@@ -31,6 +31,7 @@ from .auth.oauth import build_oauth
 from .auth.routes import router as auth_router
 from .auth.session import IdleTimeoutMiddleware, build_session_middleware
 from .booking.executor import BookingExecutorProvider
+from .booking.override_routes import router as override_router
 from .booking.routes import router as history_router
 from .booking.vacation_routes import router as vacation_router
 from .config import Settings, get_settings
@@ -436,6 +437,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(cookie_router)
     app.include_router(rules_router)
     app.include_router(history_router)
+    app.include_router(override_router)
     app.include_router(vacation_router)
     app.include_router(telegram_router)
     app.include_router(gyms_router)

@@ -1,0 +1,198 @@
+{# Single-day booking override form (T-BDO-006, ADR-0012).
+
+   Replaces one projected day's class time and class type without
+   touching the weekly rule. The selectors are seeded from a date-scoped
+   probe of the gym schedule when that date is published, from the
+   week-scoped reference set when it is not, and degrade to free-form
+   fields carrying the rule's values when neither probe answers.
+
+   The selectors are a convenience. Enforcement is server side: the save
+   route re-checks the edit cutoff, the already-executed guard and the
+   published combination.
+#}
+{% extends "base.html" %}
+{% import "_time_picker.html" as widgets %}
+
+{% block title %}{{ t("override.title") }} — WodBuster Booking Scheduler{% endblock %}
+
+{% block head_extra %}
+<style>
+  .wb-row2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+  @media (max-width: 640px) {
+    .wb-row2 { grid-template-columns: 1fr; }
+  }
+  .wb-override-note {
+    color: var(--wb-warning);
+    font-size: 0.82rem;
+    margin-top: 0.3rem;
+  }
+</style>
+{% endblock %}
+
+{% block nav %}
+  {% set active_nav = "history" %}
+  {% include "_nav.html" %}
+{% endblock %}
+
+{% block content %}
+  {% from "_datetime.html" import wb_time %}
+  <span class="wb-page-title__eyebrow">{{ t("override.eyebrow") }}</span>
+  <h1 class="wb-page-title">{{ t("override.title") }}</h1>
+  <p class="wb-page-subtitle">
+    {{ wb_time(target_slot, "date", target_date_label) }} —
+    <a href="{{ back_url }}">{{ t("override.back_to_history") }}</a>
+  </p>
+
+  <p class="wb-muted wb-note">
+    {{ t("override.rule_values", class_type=rule_class_type, class_time=rule_class_time) }}
+  </p>
+
+  {% if probe_notice == "not_published" %}
+    <p class="wb-override-note">{{ t("override.warning.not_published") }}</p>
+  {% elif probe_notice == "probe_unavailable" %}
+    <p class="wb-override-note">
+      {{ t("override.warning.probe_unavailable") }}
+      <a href="{{ lang_url('/cookie') }}">{{ t("nav.cookie") }}</a>
+    </p>
+  {% endif %}
+
+  {% if not_validated %}
+    <p class="wb-override-note">{{ t("override.warning.not_validated") }}</p>
+  {% endif %}
+
+  {% if is_skipped %}
+    <p class="wb-override-note">{{ t("override.skip_active") }}</p>
+  {% endif %}
+
+  <form class="wb-card" method="post" action="{{ action_url }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+    <fieldset>
+      <legend>{{ t("override.form.target") }}</legend>
+      <div class="wb-row2">
+        <div>
+          {% set current_class_type = form_values.get('class_type', '') %}
+          {% if picker_class_types %}
+            <label for="class_type">{{ t("override.form.class_type") }}</label>
+            <select id="class_type" name="class_type" required>
+              {% if current_class_type and current_class_type not in picker_class_types %}
+                <option value="{{ current_class_type }}" selected>
+                  {{ t("rules.form.not_in_schedule", name=current_class_type) }}
+                </option>
+              {% endif %}
+              {% for name in picker_class_types %}
+                <option value="{{ name }}"
+                  {% if current_class_type == name %}selected{% endif %}
+                >{{ name }}</option>
+              {% endfor %}
+            </select>
+          {% else %}
+            <label for="class_type_free">{{ t("override.form.class_type") }}</label>
+            <input
+              id="class_type_free"
+              name="class_type"
+              type="text"
+              value="{{ current_class_type }}"
+              maxlength="200"
+              required
+            >
+          {% endif %}
+          {% if errors.get('class_type') %}
+            <p class="wb-field-error">{{ errors['class_type'] }}</p>
+          {% endif %}
+        </div>
+        <div>
+          {% set current_class_time = form_values.get('class_time', '') %}
+          {% if picker_time_slots %}
+            <label for="class_time">{{ t("override.form.class_time") }}</label>
+            <select id="class_time" name="class_time" required>
+              {% if current_class_time and current_class_time not in picker_time_slots %}
+                <option value="{{ current_class_time }}" selected>
+                  {{ t("rules.form.not_in_schedule", name=current_class_time) }}
+                </option>
+              {% endif %}
+              {% for slot in picker_time_slots %}
+                <option value="{{ slot }}"
+                  {% if current_class_time == slot %}selected{% endif %}
+                >{{ slot }}</option>
+              {% endfor %}
+            </select>
+          {% else %}
+            <label for="class-time">{{ t("override.form.class_time") }}</label>
+            {{ widgets.time_picker("class_time", current_class_time, required=true) }}
+          {% endif %}
+          {% if errors.get('class_time') %}
+            <p class="wb-field-error">{{ errors['class_time'] }}</p>
+          {% endif %}
+        </div>
+      </div>
+      <p class="wb-muted wb-note--xs">{{ t("override.form.target_hint") }}</p>
+    </fieldset>
+
+    {# The rule's second shot runs as the last step of the attempt chain on
+       this day (FR-017). The control below clears it for this date only;
+       the rule keeps it for every other date (FR-018). #}
+    {% if has_second_shot %}
+      <fieldset>
+        <legend>{{ t("override.form.second_shot") }}</legend>
+        <p class="wb-muted wb-note--xs">
+          {{ t("override.form.second_shot_value",
+                class_type=second_shot_class_type,
+                class_time=second_shot_class_time) }}
+        </p>
+        <label for="suppress_second_shot" class="wb-checkbox">
+          <input
+            id="suppress_second_shot"
+            name="suppress_second_shot"
+            type="checkbox"
+            value="1"
+            {% if suppress_second_shot %}checked{% endif %}
+          >
+          {{ t("override.form.second_shot_clear") }}
+        </label>
+        <p class="wb-muted wb-note--xs">{{ t("override.form.second_shot_clear_hint") }}</p>
+      </fieldset>
+    {% endif %}
+
+    <div class="wb-form-actions">
+      <button type="submit" class="wb-btn wb-btn--primary">{{- t("override.save_button") -}}</button>
+    </div>
+  </form>
+
+  {# Skipping posts on its own rather than as a checkbox inside the form
+     above: a skip is exclusive, so it must not carry the class fields
+     the main form always submits (FR-003, INV-002). #}
+  <p class="wb-muted wb-note--xs">{{ t("override.skip_hint") }}</p>
+  <div class="wb-form-actions">
+    {% if not is_skipped %}
+      <form
+        method="post"
+        action="{{ action_url }}"
+        class="wb-inline-form"
+        onsubmit='return wbConfirm(this, event, {{ t("override.confirm.skip")|tojson }})'
+      >
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="skip_day" value="1">
+        <button type="submit" class="wb-btn wb-btn--danger">{{- t("override.skip_button") -}}</button>
+      </form>
+    {% endif %}
+    {% if revert_url %}
+      <form
+        method="post"
+        action="{{ revert_url }}"
+        class="wb-inline-form"
+        onsubmit='return wbConfirm(this, event, {{ t("override.confirm.revert")|tojson }})'
+      >
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button type="submit" class="wb-btn wb-btn--danger">{{- t("override.revert_button") -}}</button>
+      </form>
+    {% endif %}
+  </div>
+
+  {# Initialise every wb-time-picker widget on the page. #}
+  {% include "_time_picker_script.html" %}
+{% endblock %}

@@ -1,13 +1,15 @@
 """Component tests for the scheduler-rule CRUD routes (rule model v2).
 
 Exercises the multi-day fan-out create flow, single-day edit, delete,
-cross-operator isolation, second-shot pairing, and the ``/api/classes``
-picker endpoint.
+cross-operator isolation, second-shot pairing, the ``/api/classes``
+picker endpoint, and the override lifecycle hanging off a rule edit,
+a rule delete and the latent deactivation hook (T-BDO-017, T-BDO-018).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
@@ -16,7 +18,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
-from wodbuster_worker.persistence.models import SchedulerRule
+from wodbuster_worker.persistence.models import BookingDayOverride, SchedulerRule
+from wodbuster_worker.rules.service import deactivate_rule
 
 from .conftest import gym_account_id_for
 
@@ -536,3 +539,261 @@ def test_new_form_uses_flatpickr_for_time_inputs(
     # No native <input type="time"> anywhere — that would render
     # AM/PM on 12h-locale browsers.
     assert 'type="time"' not in response.text
+
+
+# --- Override lifecycle (T-BDO-017, T-BDO-018) --------------------------
+
+# Monday 4 May 2026, midday UTC. The operator-local day is the same,
+# so "today" for the discard cut is 2026-05-04. Dates are anchored to
+# this frozen instant rather than to the real calendar week.
+NOW = datetime(2026, 5, 4, 12, 0, tzinfo=UTC)
+FUTURE_DATE = date(2026, 5, 6)
+FUTURE_DATE_2 = date(2026, 5, 13)
+PAST_DATE = date(2026, 4, 29)
+
+
+@pytest.fixture
+def freeze_service_now(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin the clock the rule service reads and the operator timezone."""
+    monkeypatch.setenv("WORKER_TIMEZONE", "Europe/Madrid")
+    monkeypatch.setattr("wodbuster_worker.rules.service._utcnow", lambda: NOW)
+
+
+def _create_rule_and_read_ids(
+    client: TestClient,
+    csrf: str,
+    factory: sessionmaker[Any],
+    operator_id: int,
+) -> tuple[int, int]:
+    """Create the default Wednesday rule; return ``(rule_id, gym_account_id)``."""
+    client.post(
+        "/rules",
+        data=_valid_create_form(csrf, days=(2,)),
+        headers=_csrf_headers(client),
+    )
+    with factory() as session:
+        gym_account_id = gym_account_id_for(session, operator_id)
+        rule_id = session.query(SchedulerRule).filter_by(gym_account_id=gym_account_id).one().id
+    return int(rule_id), int(gym_account_id)
+
+
+def _seed_override(
+    factory: sessionmaker[Any],
+    *,
+    rule_id: int,
+    gym_account_id: int,
+    target_date: date,
+    class_time: str = "19:30",
+) -> None:
+    with factory() as session:
+        session.add(
+            BookingDayOverride(
+                rule_id=rule_id,
+                gym_account_id=gym_account_id,
+                target_date=target_date,
+                class_time=class_time,
+                validated=True,
+            )
+        )
+        session.commit()
+
+
+def _override_dates(factory: sessionmaker[Any], rule_id: int) -> list[date]:
+    with factory() as session:
+        rows = session.query(BookingDayOverride).filter_by(rule_id=rule_id).all()
+        return sorted(row.target_date for row in rows)
+
+
+def _edit_form(csrf: str, *, day_of_week: int, class_type: str = "WOD") -> dict[str, str]:
+    return {
+        "_csrf": csrf,
+        "day_of_week": str(day_of_week),
+        "class_type": class_type,
+        "class_time": "21:30",
+        "booking_opens_days_before": "2",
+        "booking_opens_at": "21:30",
+        "second_shot_class_type": "",
+        "second_shot_class_time": "",
+    }
+
+
+def test_weekday_change_discards_future_override_and_notifies(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    freeze_service_now: None,
+) -> None:
+    """CC-011: moving the rule's weekday drops the override and says so."""
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+    factory = sessionmaker(bind=postgres_engine)
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        csrf = client.cookies["wodbuster_csrf"]
+        rule_id, gym_account_id = _create_rule_and_read_ids(client, csrf, factory, op_id)
+        _seed_override(
+            factory,
+            rule_id=rule_id,
+            gym_account_id=gym_account_id,
+            target_date=FUTURE_DATE,
+        )
+
+        response = client.post(
+            f"/rules/{rule_id}",
+            data=_edit_form(csrf, day_of_week=4),  # Wed -> Fri
+            headers=_csrf_headers(client),
+        )
+        assert response.status_code == 303
+        location = response.headers["location"]
+        assert "flash=" in location
+        assert FUTURE_DATE.isoformat() in location
+
+        rendered = client.get(location)
+
+    assert rendered.status_code == 200
+    assert FUTURE_DATE.isoformat() in rendered.text
+    assert 'class="wb-flash' in rendered.text
+    assert _override_dates(factory, rule_id) == []
+
+
+def test_non_date_field_change_preserves_override(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    freeze_service_now: None,
+) -> None:
+    """FR-024: an edit that leaves the projected date alone keeps the override."""
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+    factory = sessionmaker(bind=postgres_engine)
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        csrf = client.cookies["wodbuster_csrf"]
+        rule_id, gym_account_id = _create_rule_and_read_ids(client, csrf, factory, op_id)
+        _seed_override(
+            factory,
+            rule_id=rule_id,
+            gym_account_id=gym_account_id,
+            target_date=FUTURE_DATE,
+        )
+
+        response = client.post(
+            f"/rules/{rule_id}",
+            data=_edit_form(csrf, day_of_week=2, class_type="Cross Training"),
+            headers=_csrf_headers(client),
+        )
+
+    assert response.status_code == 303
+    assert "flash=" not in response.headers["location"]
+    with factory() as session:
+        row = session.query(BookingDayOverride).filter_by(rule_id=rule_id).one()
+        assert row.target_date == FUTURE_DATE
+        assert row.class_time == "19:30"
+        assert row.class_type is None
+        assert row.skip_day is False
+        assert row.suppress_second_shot is False
+        assert row.validated is True
+
+
+def test_past_override_survives_weekday_change(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    freeze_service_now: None,
+) -> None:
+    """A spent override is inert history and is not rewritten."""
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+    factory = sessionmaker(bind=postgres_engine)
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        csrf = client.cookies["wodbuster_csrf"]
+        rule_id, gym_account_id = _create_rule_and_read_ids(client, csrf, factory, op_id)
+        _seed_override(
+            factory,
+            rule_id=rule_id,
+            gym_account_id=gym_account_id,
+            target_date=PAST_DATE,
+        )
+
+        response = client.post(
+            f"/rules/{rule_id}",
+            data=_edit_form(csrf, day_of_week=4),
+            headers=_csrf_headers(client),
+        )
+
+    assert response.status_code == 303
+    assert "flash=" not in response.headers["location"]
+    assert _override_dates(factory, rule_id) == [PAST_DATE]
+
+
+def test_delete_rule_cascades_its_overrides(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    freeze_service_now: None,
+) -> None:
+    """B1: the foreign key carries the overrides away with the rule."""
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+    factory = sessionmaker(bind=postgres_engine)
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        csrf = client.cookies["wodbuster_csrf"]
+        rule_id, gym_account_id = _create_rule_and_read_ids(client, csrf, factory, op_id)
+        for target_date in (PAST_DATE, FUTURE_DATE):
+            _seed_override(
+                factory,
+                rule_id=rule_id,
+                gym_account_id=gym_account_id,
+                target_date=target_date,
+            )
+
+        response = client.post(
+            f"/rules/{rule_id}/delete",
+            data={"_csrf": csrf},
+            headers=_csrf_headers(client),
+        )
+
+    assert response.status_code == 303
+    with factory() as session:
+        assert session.query(SchedulerRule).filter_by(id=rule_id).count() == 0
+    assert _override_dates(factory, rule_id) == []
+
+
+def test_deactivate_rule_discards_future_overrides(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    freeze_service_now: None,
+) -> None:
+    """CC-012: called directly, because the hook has no HTTP surface."""
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+    factory = sessionmaker(bind=postgres_engine)
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        csrf = client.cookies["wodbuster_csrf"]
+        rule_id, gym_account_id = _create_rule_and_read_ids(client, csrf, factory, op_id)
+    for target_date in (PAST_DATE, FUTURE_DATE, FUTURE_DATE_2):
+        _seed_override(
+            factory,
+            rule_id=rule_id,
+            gym_account_id=gym_account_id,
+            target_date=target_date,
+        )
+
+    with factory() as session:
+        rule = session.query(SchedulerRule).filter_by(id=rule_id).one()
+        discarded = deactivate_rule(session, rule)
+        session.commit()
+
+    assert discarded == [FUTURE_DATE, FUTURE_DATE_2]
+    assert _override_dates(factory, rule_id) == [PAST_DATE]
+    with factory() as session:
+        assert session.query(SchedulerRule).filter_by(id=rule_id).one().active is False

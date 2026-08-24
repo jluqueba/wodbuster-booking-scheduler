@@ -18,16 +18,25 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Iterator
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from wodbuster_worker.booking.overrides import effective_slot_for
+from wodbuster_worker.persistence.models import SchedulerRule
 from wodbuster_worker.rules import classes as classes_module
 from wodbuster_worker.rules.classes import (
     AvailableClasses,
     extract_available_classes,
     fetch_available_classes,
+    fetch_classes_for_date,
+)
+from wodbuster_worker.wodbuster_client.client import (
+    WodBusterAuthError,
+    WodBusterProtocolError,
+    WodBusterTransportError,
 )
 
 
@@ -269,3 +278,186 @@ def test_fetch_returns_none_when_no_cookie(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert result is None
     assert client.calls == []
+
+
+# ---------------------------------------------------------------------------
+# fetch_classes_for_date (T-BDO-004)
+# ---------------------------------------------------------------------------
+
+
+def _instance(slot_id: int, nombre: str, hora: str) -> dict[str, Any]:
+    return {
+        "Id": slot_id,
+        "Nombre": nombre,
+        "HoraComienzo": f"{hora}:00",
+        "TipoEstado": "Inscribible",
+        "Plazas": 12,
+    }
+
+
+def _day_payload(*instances: dict[str, Any]) -> dict[str, Any]:
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    for inst in instances:
+        buckets.setdefault(inst["HoraComienzo"], []).append({"Valor": inst})
+    return {"Data": [{"Hora": hora, "Valores": v} for hora, v in buckets.items()]}
+
+
+def _probe_rule() -> SchedulerRule:
+    rule = SchedulerRule(
+        gym_account_id=1,
+        day_of_week=2,
+        class_type="WOD",
+        class_time="07:00",
+        booking_opens_days_before=2,
+        booking_opens_at="21:30",
+        active=True,
+    )
+    rule.id = 7
+    return rule
+
+
+@pytest.fixture
+def _madrid(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WORKER_TIMEZONE", "Europe/Madrid")
+
+
+def _probe(
+    monkeypatch: pytest.MonkeyPatch,
+    client: _FakeClient,
+    *,
+    cookie: str | None = "cookie",
+    target_date: date = date(2026, 7, 15),
+    class_time: str = "07:00",
+) -> tuple[Any, _FakeClient]:
+    monkeypatch.setattr(classes_module, "get_session", _null_session)
+    slot = effective_slot_for(_probe_rule(), target_date, class_time)
+    result = fetch_classes_for_date(
+        _FakeStore(cookie),
+        client,  # type: ignore[arg-type]
+        1,
+        target_slot=slot,
+    )
+    return result, client
+
+
+def test_fetch_for_date_returns_published_schedule_with_real_pairs(
+    _madrid: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _FakeClient(
+        [
+            _day_payload(
+                _instance(1, "WOD", "07:00"),
+                _instance(2, "Endurance", "18:30"),
+            )
+        ]
+    )
+
+    schedule, client = _probe(monkeypatch, client)
+
+    assert schedule is not None
+    assert schedule.published is True
+    assert schedule.target_date == date(2026, 7, 15)
+    assert schedule.class_types == ["Endurance", "WOD"]
+    assert schedule.time_slots == ["07:00", "18:30"]
+    # One probe for the date, not seven for the week.
+    assert len(client.calls) == 1
+
+
+def test_fetch_for_date_has_matches_only_a_pair_present_on_that_date(
+    _madrid: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _FakeClient(
+        [
+            _day_payload(
+                _instance(1, "WOD", "07:00"),
+                _instance(2, "Endurance", "18:30"),
+            )
+        ]
+    )
+
+    schedule, _ = _probe(monkeypatch, client)
+
+    assert schedule is not None
+    assert schedule.has("WOD", "07:00") is True
+    # Endurance exists on this date, but not at 07:00.
+    assert schedule.has("Endurance", "07:00") is False
+    assert schedule.has("Yoga", "18:30") is False
+
+
+def test_fetch_for_date_reports_unpublished_when_the_day_carries_no_class(
+    _madrid: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    schedule, _ = _probe(monkeypatch, _FakeClient([{"Data": []}]))
+
+    assert schedule is not None
+    assert schedule.published is False
+    assert schedule.slots == []
+
+
+def test_fetch_for_date_returns_none_without_a_cookie(
+    _madrid: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _FakeClient([])
+
+    schedule, client = _probe(monkeypatch, client, cookie=None)
+
+    assert schedule is None
+    assert client.calls == []
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        WodBusterAuthError("rejected"),
+        WodBusterTransportError("boom"),
+        WodBusterProtocolError("not json"),
+    ],
+)
+def test_fetch_for_date_returns_none_when_the_probe_fails(
+    _madrid: None, monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    class _FailingClient(_FakeClient):
+        def load_class(self, _cookie_value: str, ticks: int) -> SimpleNamespace:
+            self.calls.append(ticks)
+            raise error
+
+    schedule, _ = _probe(monkeypatch, _FailingClient([]))
+
+    assert schedule is None
+
+
+def test_fetch_for_date_uses_utc_midnight_ticks_of_the_effective_slot(
+    _madrid: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The probe must read the day the executor will read.
+
+    A 00:30 Madrid class on 15 July is 22:30 UTC on the 14th, so the
+    ticks are UTC midnight of the 14th while the schedule is still
+    labelled with the operator-local 15th. Using the picker's
+    local-midnight convention here would probe the wrong day.
+    """
+    client = _FakeClient([_day_payload(_instance(1, "WOD", "00:30"))])
+
+    schedule, client = _probe(
+        monkeypatch, client, target_date=date(2026, 7, 15), class_time="00:30"
+    )
+
+    assert schedule is not None
+    assert schedule.target_date == date(2026, 7, 15)
+    assert client.calls == [int(datetime(2026, 7, 14, tzinfo=UTC).timestamp())]
+
+
+def test_fetch_for_date_ticks_survive_the_spring_forward_transition(
+    _madrid: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """29 March 2026 is the Madrid spring-forward day (CET -> CEST)."""
+    client = _FakeClient([_day_payload(_instance(1, "WOD", "07:00"))])
+
+    schedule, client = _probe(
+        monkeypatch, client, target_date=date(2026, 3, 29), class_time="07:00"
+    )
+
+    assert schedule is not None
+    assert schedule.target_date == date(2026, 3, 29)
+    # 07:00 CEST (UTC+2) = 05:00 UTC on the same calendar day.
+    assert client.calls == [int(datetime(2026, 3, 29, tzinfo=UTC).timestamp())]

@@ -23,20 +23,26 @@ crash inside the job" we revisit.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import structlog
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 
 from ..booking.executor import BookingExecutorProvider
+from ..booking.overrides import (
+    DEFAULT_EDIT_MARGIN_S,
+    OverridePlan,
+    effective_slot_for,
+    load_override,
+    local_date_for_slot,
+)
 from ..persistence.models import GymAccount, SchedulerRule
+from .clock import DEFAULT_PREWARM_LEAD_S, operator_timezone
 
 _log = structlog.get_logger(__name__)
 
@@ -56,12 +62,8 @@ class _GymRef:
     idu: str
 
 
-# US1.4 pre-warm lead. Schedule each booking job this many seconds
-# before the operator-facing ``booking_opens_at`` moment. The
-# executor uses the head start to poll ``SegundosHastaPublicacion``
-# (US1.5) and warm the httpx keep-alive pool so the ``inscribir``
-# call rides on a live TCP + TLS session.
-DEFAULT_PREWARM_LEAD_S = 30.0
+# US1.4 pre-warm lead lives in :mod:`scheduler.clock` so modules that
+# only need the constant do not import APScheduler and the executor.
 
 
 SessionFactory = Callable[[], AbstractContextManager[Any]]
@@ -70,18 +72,6 @@ SessionFactory = Callable[[], AbstractContextManager[Any]]
 # ---------------------------------------------------------------------------
 # Time arithmetic
 # ---------------------------------------------------------------------------
-
-
-def operator_timezone() -> ZoneInfo:
-    """Return the timezone in which every rule's ``HH:MM`` is interpreted.
-
-    Reads ``WORKER_TIMEZONE`` from the environment (default
-    ``Europe/Madrid``). Kept as a lazy lookup so tests can override
-    via ``monkeypatch.setenv``. The gym runs on the operator's local
-    clock; treating ``HH:MM`` as UTC (as an earlier draft did) fires
-    the scheduler at the wrong instant.
-    """
-    return ZoneInfo(os.environ.get("WORKER_TIMEZONE", "Europe/Madrid"))
 
 
 def next_window_open_for_rule(rule: SchedulerRule, now: datetime) -> datetime:
@@ -126,6 +116,22 @@ def target_slot_for_window(rule: SchedulerRule, window_open: datetime) -> dateti
 def _parse_hhmm(value: str) -> time:
     hh, mm = value.split(":")
     return time(hour=int(hh), minute=int(mm))
+
+
+def edit_cutoff_for_window(
+    window_open: datetime,
+    *,
+    prewarm_lead_s: float = DEFAULT_PREWARM_LEAD_S,
+    margin_s: float = DEFAULT_EDIT_MARGIN_S,
+) -> datetime:
+    """Last instant an override may be written for ``window_open`` (FR-006).
+
+    Window-open flavoured counterpart of
+    :func:`booking.overrides.edit_cutoff_for`, for callers that already
+    hold the window instant and would otherwise recompute it from the
+    target date.
+    """
+    return window_open - timedelta(seconds=prewarm_lead_s + margin_s)
 
 
 def _next_occurrence(*, now: datetime, day_of_week: int, at: time) -> datetime:
@@ -204,6 +210,15 @@ def book_rule(
         window_open = next_window_open_for_rule(rule, now=now - timedelta(seconds=1))
         target_slot = target_slot_for_window(rule, window_open)
 
+        # ADR-0012 Decision 3: the override is read here, in the session
+        # this job already opens, and handed to the executor as a frozen
+        # plan. The job itself is never rescheduled by an override.
+        target_date = local_date_for_slot(target_slot)
+        override_row = load_override(session, rule_id=int(rule.id), target_date=target_date)
+        override = OverridePlan.from_row(override_row) if override_row is not None else None
+        if override is not None and override.class_time is not None:
+            target_slot = effective_slot_for(rule, target_date, override.class_time)
+
         # Refresh SQLAlchemy session-tracked attributes onto local
         # variables before we close the session — the executor uses
         # its own session factory for the outcome write.
@@ -214,9 +229,10 @@ def book_rule(
         "scheduler.booking.fire",
         rule_id=rule_id,
         target_slot=target_slot.isoformat(),
+        override_id=override.override_id if override is not None else None,
     )
     try:
-        executor.book(rule=rule_snapshot, target_slot=target_slot)
+        executor.book(rule=rule_snapshot, target_slot=target_slot, override=override)
     except Exception:  # pragma: no cover - logged and swallowed
         _log.exception("scheduler.booking.executor_raised", rule_id=rule_id)
     finally:
@@ -340,8 +356,10 @@ def _job_id(rule_id: int) -> str:
 
 __all__ = [
     "BOOKING_JOB_ID_PREFIX",
+    "DEFAULT_PREWARM_LEAD_S",
     "SessionFactory",
     "book_rule",
+    "edit_cutoff_for_window",
     "next_window_open_for_rule",
     "operator_timezone",
     "register_rule_job",
