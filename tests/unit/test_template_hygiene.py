@@ -12,7 +12,10 @@ where the browser parses server-rendered text as JavaScript.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from pathlib import Path
+
+import html5lib
 
 _TEMPLATES = Path(__file__).resolve().parents[2] / "src" / "wodbuster_worker" / "templates"
 
@@ -59,3 +62,50 @@ def test_confirmation_forms_use_the_data_attribute() -> None:
         assert "wbConfirm(" not in source, (
             f"{template.relative_to(_TEMPLATES)} still calls wbConfirm"
         )
+
+
+def test_head_survives_parsing_the_template_source() -> None:
+    """Whatever sits inside ``<head>`` in the source must parse into it.
+
+    A parser has no idea what Jinja is, so ``{# ... #}`` above a real
+    element in the head is character data: it ends the head early and
+    every element below it is reparented into an implied body. The page
+    renders correctly, which is why the rendered sweep cannot see this,
+    but the editor analyses the source and reports each displaced
+    element. Use an HTML comment in that region.
+
+    Asserting the whole head rather than one meta keeps this from
+    becoming a list of individually discovered symptoms.
+    """
+    offenders: list[str] = []
+    for template in _html_templates():
+        source = template.read_text(encoding="utf-8")
+        head = re.search(r"<head[^>]*>(?P<body>.*?)</head>", source, re.DOTALL | re.IGNORECASE)
+        if head is None:
+            continue
+        # Counted, not just named: a comment halfway down the head leaves
+        # the elements above it in place, so comparing sets of tag names
+        # would call that a pass. Comments are stripped first, or a tag
+        # named in prose inside one counts as a declaration.
+        declared_source = re.sub(r"<!--.*?-->", "", head.group("body"), flags=re.DOTALL)
+        declared = Counter(
+            tag.lower()
+            for tag in re.findall(
+                r"<(meta|title|link|style|script)\b", declared_source, re.IGNORECASE
+            )
+        )
+        parsed = html5lib.parse(source, treebuilder="etree", namespaceHTMLElements=False)
+        parsed_head = parsed.find("head")
+        survived = Counter(
+            child.tag
+            for child in (parsed_head if parsed_head is not None else [])
+            if isinstance(child.tag, str)
+        )
+        displaced = declared - survived
+        if displaced:
+            detail = ", ".join(f"{count} {tag}" for tag, count in sorted(displaced.items()))
+            offenders.append(
+                f"{template.relative_to(_TEMPLATES)}: {detail} "
+                "declared in <head> but parsed outside it"
+            )
+    assert not offenders, "head content displaced by a Jinja construct:\n" + "\n".join(offenders)
