@@ -1,8 +1,15 @@
 <!doctype html>
-{# ``lang`` follows the URL prefix, not the default: a Spanish page
-   tagged as English is read out with English pronunciation rules. #}
 <html lang="{{ current_language() }}" data-theme="dark">
   <head>
+    <!--
+      Jinja comments are text to an HTML parser, so one placed before a
+      real element closes the head early and every meta below it lands
+      in the body. Use an HTML comment in this region.
+
+      lang follows the URL prefix rather than the default, because a
+      Spanish page tagged as English is read out with English
+      pronunciation rules.
+    -->
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <!--
@@ -21,9 +28,11 @@
     -->
     <title>{% block title %}WodBuster Booking Scheduler{% endblock %}</title>
     <meta name="csrf-token" content="{{ csrf_token | default('') }}">
-    {# Gym timezone for client-side date rendering (static/wb-datetime.js).
-       Locale picks the format; this pins the instant so class times
-       never shift with the viewer's device timezone. #}
+    <!--
+      Gym timezone for client-side date rendering (static/wb-datetime.js).
+      Locale picks the format; this pins the instant so class times never
+      shift with the viewer's device timezone.
+    -->
     <meta name="wb-timezone" content="{{ worker_timezone | default('Europe/Madrid') }}">
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -35,9 +44,11 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/@picocss/pico@2.0.6/css/pico.min.css">
     <link rel="stylesheet" href="/static/brand.css">
-    {# Loaded synchronously (no defer) so window.wbDateTime is defined
-       before inline page scripts (e.g. the dashboard countdown) run.
-       The DOM scan itself waits for DOMContentLoaded internally. #}
+    <!--
+      Loaded synchronously (no defer) so window.wbDateTime is defined
+      before inline page scripts (e.g. the dashboard countdown) run. The
+      DOM scan itself waits for DOMContentLoaded internally.
+    -->
     <script src="/static/wb-datetime.js"></script>
     <script src="/static/wb-usermenu.js" defer></script>
     <script src="https://unpkg.com/htmx.org@2.0.3" defer></script>

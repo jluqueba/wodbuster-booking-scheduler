@@ -71,6 +71,18 @@ switches).
 - Literal HTML tags inside Jinja comments (`{# ... <input> ... #}`) are parsed
   by axe as real elements and produce phantom errors (e.g. "form elements must
   have labels"). Describe in words inside comments; never put tags in them.
+- **Use an HTML comment, not a Jinja one, anywhere above the first real element
+  of `<head>`.** A Jinja comment is text to an HTML parser, so one sitting there
+  closes the head early and every `<meta>` below it is reported as being in the
+  `<body>`. Verified by parsing `base.html` with html5lib: moving the comment
+  did nothing, changing `{# #}` to `<!-- -->` moved `charset` and `viewport`
+  back into the head.
+- `<html lang="{{ ... }}">` will always warn in the editor, which reads the
+  unrendered expression as the language code. There is no source-level fix, and
+  no check could flag it without demanding that the language stop being
+  dynamic. `.hintrc` turns `axe/language` off for that reason and leaves the
+  rest of axe on. The rendered sweep in `tests/component/test_accessibility.py`
+  asserts the real value in both languages, which is where the check belongs.
 - CSS `user-select` needs `-webkit-user-select` alongside it (Safari).
 - Prefer `background-color` over the `background` shorthand on inputs, or the
   shorthand wipes a picker `background-image` icon.
