@@ -207,6 +207,11 @@ def _outcome_to_row(outcome: BookingOutcome) -> dict[str, Any]:
         "day_label": _DAY_LABELS[slot.weekday()],
         "slot_datetime_label": slot.strftime("%d %b at %H:%M"),
         "terminal_status": outcome.terminal_status,
+        # Orthogonal to the status (ADR-0012 Decision 4). It is the only
+        # thing on the row that tells a plain granted from one substituted
+        # after an unavailable override, and a vacation skip from a day
+        # the user marked as skipped.
+        "outcome_source": outcome.outcome_source,
         "fallback_index": outcome.granted_fallback_index,
         "attempted_at": outcome.attempted_at.astimezone(tz),
         "cancellable": outcome.terminal_status == "granted"

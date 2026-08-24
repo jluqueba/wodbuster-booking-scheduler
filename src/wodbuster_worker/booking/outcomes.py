@@ -19,7 +19,11 @@ For ``cookie_invalid`` terminal outcomes we also open (or refresh) a
 ``cookie_invalid`` alert so the dashboard banner surfaces the
 condition. That mirrors the heartbeat evaluator's contract for
 ``cookie_expiring`` (see ``heartbeat/alerts.py``): the operator sees
-a persistent banner alongside the one-shot Telegram burst.
+a persistent banner alongside the one-shot Telegram burst. A booking
+granted through the single-day override fallback opens a
+``booking_fallback`` alert the same way (ADR-0012 Decision 5), which
+is what keeps INV-008 (no silent substitution) a property of the
+design rather than of the operator's channel preferences.
 """
 
 from __future__ import annotations
@@ -43,6 +47,10 @@ from ..persistence.models import (
 # gone bad (cookie_invalid Res value or auth failure mid-call).
 _COOKIE_INVALID_ALERT_KIND = "cookie_invalid"
 
+# Alert kind opened when the override's class was unavailable and the
+# rule's own class was booked instead (ADR-0012 Decision 5).
+_BOOKING_FALLBACK_ALERT_KIND = "booking_fallback"
+
 
 def persist_outcome(
     session: Session,
@@ -56,6 +64,9 @@ def persist_outcome(
     granted_fallback_index: int | None = None,
     response_payload: str | None = None,
     telegram_text: str,
+    requested_class: str | None = None,
+    requested_time: str | None = None,
+    fallback_reason: str | None = None,
     now: datetime | None = None,
 ) -> BookingOutcome:
     """Persist one booking attempt and enqueue its notifications.
@@ -78,10 +89,18 @@ def persist_outcome(
       (ADR-0012, Decision 4): it says which plan drove the attempt
       (``rule`` or ``override``), not how it ended. It defaults to
       ``rule`` so every pre-override caller stays correct.
+    - ``requested_class``, ``requested_time`` and ``fallback_reason``
+      describe the override target that could not be honoured. They
+      are only meaningful when ``outcome_source`` is
+      ``override_fallback``, and they are what makes INV-008 hold:
+      every surface can name the booked class, the requested class and
+      the reason without querying the override back.
 
     For ``terminal_status == "cookie_invalid"`` an ``Alert`` row is
     opened (or refreshed if one is already open) so the banner
-    surfaces the persistent condition.
+    surfaces the persistent condition. A ``granted`` outcome sourced to
+    ``override_fallback`` opens a ``booking_fallback`` alert the same
+    way, in this same transaction.
     """
     _now = now or datetime.now(tz=UTC)
 
@@ -99,19 +118,40 @@ def persist_outcome(
     session.add(outcome)
     session.flush()  # populate outcome.id for outbox payload
 
-    _enqueue_outbox_rows(
+    payload = _enqueue_outbox_rows(
         session,
         gym_account_id=gym_account_id,
         outcome_id=int(outcome.id),
         terminal_status=terminal_status,
+        outcome_source=outcome_source,
         target_class=target_class,
         target_slot=target_slot,
         text=telegram_text,
+        requested_class=requested_class,
+        requested_time=requested_time,
+        fallback_reason=fallback_reason,
         now=_now,
     )
 
     if terminal_status == "cookie_invalid":
-        _open_or_refresh_cookie_invalid_alert(session, gym_account_id=gym_account_id, now=_now)
+        _open_or_refresh_alert(
+            session,
+            gym_account_id=gym_account_id,
+            kind=_COOKIE_INVALID_ALERT_KIND,
+            payload={"kind": _COOKIE_INVALID_ALERT_KIND},
+            now=_now,
+        )
+    elif outcome_source == "override_fallback" and terminal_status == "granted":
+        # The banner is not a user-toggleable channel, so this is the one
+        # surface that carries the substitution whatever the operator's
+        # Telegram and email preferences are (INV-008).
+        _open_or_refresh_alert(
+            session,
+            gym_account_id=gym_account_id,
+            kind=_BOOKING_FALLBACK_ALERT_KIND,
+            payload={**payload, "kind": _BOOKING_FALLBACK_ALERT_KIND},
+            now=_now,
+        )
 
     return outcome
 
@@ -122,11 +162,15 @@ def _enqueue_outbox_rows(
     gym_account_id: int,
     outcome_id: int,
     terminal_status: str,
+    outcome_source: str,
     target_class: str,
     target_slot: datetime,
     text: str,
+    requested_class: str | None,
+    requested_time: str | None,
+    fallback_reason: str | None,
     now: datetime,
-) -> None:
+) -> dict[str, Any]:
     """Append one banner + one Telegram outbox row for the outcome.
 
     Outbox delivery is user-scoped (ADR-0007): rows carry the owning
@@ -138,19 +182,28 @@ def _enqueue_outbox_rows(
     ``class_type`` and ``target_slot`` are stored structured so the
     dispatcher can render the Telegram body in the recipient's language
     at send time (ADR-0008); ``text`` is kept as a pre-rendered fallback.
+
+    Returns the payload so the caller can reuse it for the alert row.
     """
     payload: dict[str, Any] = {
         "kind": "booking_result",
         "terminal_status": terminal_status,
+        "outcome_source": outcome_source,
         "outcome_id": outcome_id,
         "class_type": target_class,
         "target_slot": target_slot.astimezone(UTC).isoformat(),
         "text": text,
     }
+    if requested_class is not None:
+        payload["requested_class"] = requested_class
+    if requested_time is not None:
+        payload["requested_time"] = requested_time
+    if fallback_reason is not None:
+        payload["fallback_reason"] = fallback_reason
 
     gym_account = session.get(GymAccount, gym_account_id)
     if gym_account is None:  # pragma: no cover - FK guarantees presence
-        return
+        return payload
     user_id = gym_account.user_id
 
     session.add(
@@ -169,7 +222,7 @@ def _enqueue_outbox_rows(
         session, operator=operator, gym_account_id=gym_account_id, payload=payload, now=now
     )
     if operator is None or not operator.telegram_chat_id:
-        return
+        return payload
     session.add(
         NotificationOutbox(
             user_id=user_id,
@@ -180,31 +233,42 @@ def _enqueue_outbox_rows(
             enqueued_at=now,
         )
     )
+    return payload
 
 
-def _open_or_refresh_cookie_invalid_alert(
-    session: Session, *, gym_account_id: int, now: datetime
+def _open_or_refresh_alert(
+    session: Session,
+    *,
+    gym_account_id: int,
+    kind: str,
+    payload: dict[str, Any],
+    now: datetime,
 ) -> None:
-    """Insert or update the gym account's open ``cookie_invalid`` alert.
+    """Insert or update the gym account's open alert of ``kind``.
 
-    The partial unique index on ``alert`` (open per gym_account+kind)
-    means we cannot naively insert; look up the existing row first.
+    The partial unique index on ``alert`` (one open row per
+    gym_account + kind) means we cannot naively insert; look up the
+    existing row first. A refresh overwrites the payload, so an open
+    banner always describes the most recent event of that kind. For
+    ``booking_fallback`` that is the accepted collapse documented in
+    ADR-0012 Decision 5: the per-event detail lives on the outcome row.
     """
     existing = session.scalar(
         select(Alert).where(
             Alert.gym_account_id == gym_account_id,
-            Alert.kind == _COOKIE_INVALID_ALERT_KIND,
+            Alert.kind == kind,
             Alert.closed_at.is_(None),
         )
     )
     if existing is not None:
+        existing.payload = payload
         existing.last_emitted_at = now
         return
     session.add(
         Alert(
             gym_account_id=gym_account_id,
-            kind=_COOKIE_INVALID_ALERT_KIND,
-            payload={"kind": _COOKIE_INVALID_ALERT_KIND},
+            kind=kind,
+            payload=payload,
             first_emitted_at=now,
             last_emitted_at=now,
         )

@@ -42,6 +42,18 @@ Because the rule now carries at most one "second shot" alternative
 (rather than the plan-era 5-preference chain), the fallback walk has
 a fixed depth of 2. ``granted_fallback_index`` follows the plan:
 ``0`` for the primary, ``1`` for the second shot.
+
+Single-day override (ADR-0012 Decision 6):
+
+A day carrying an override prepends a third candidate, so the walk
+becomes override target, rule primary, rule second shot. The rule's
+own two steps are neither reordered nor re-targeted, and
+``granted_fallback_index`` keeps meaning "position in the rule's
+chain": ``0`` for the override target and the rule primary alike,
+``1`` for the second shot. What distinguishes a substituted booking
+from a plain one is the orthogonal ``outcome_source`` column, which
+turns to ``override_fallback`` the moment the walk advances past the
+override's target.
 """
 
 from __future__ import annotations
@@ -77,7 +89,7 @@ from ..wodbuster_client.parsers import (
     read_target_enrollment,
 )
 from .outcomes import persist_outcome
-from .overrides import OverridePlan
+from .overrides import OverridePlan, effective_slot_for
 from .vacation import find_covering_window
 
 _log = structlog.get_logger(__name__)
@@ -230,23 +242,10 @@ class BookingExecutor:
             raise ValueError("target_slot must be timezone-aware")
 
         ticks = midnight_utc_ticks(target_slot)
-        # The override replaces the rule's target for this date only; a
-        # run without one resolves to the rule's own pair, so the whole
-        # walk below is byte-for-byte what it was before ADR-0012.
-        contests_override = (
-            override is not None and not override.skip_day and override.changes_target
-        )
-        primary_class_type = (
-            override.effective_class_type(rule)
-            if contests_override and override
-            else rule.class_type
-        )
-        primary_class_time = (
-            override.effective_class_time(rule)
-            if contests_override and override
-            else rule.class_time
-        )
-        outcome_source = "override" if contests_override else "rule"
+        # The override is prepended to the rule's own walk; a run without
+        # one yields the same two candidates the executor had before
+        # ADR-0012, so the attempt sequence is byte-for-byte unchanged.
+        chain = _build_chain(rule=rule, target_slot=target_slot, override=override)
         _log.info(
             "booking.start",
             rule_id=rule.id,
@@ -254,6 +253,7 @@ class BookingExecutor:
             target_slot=target_slot.isoformat(),
             ticks=ticks,
             override_id=override.override_id if override is not None else None,
+            candidates=len(chain),
         )
 
         # US7.2 skip guard: if the target class sits inside an open
@@ -298,13 +298,13 @@ class BookingExecutor:
         if cookie is None:
             return self._persist_terminal(
                 rule=rule,
-                target_class=primary_class_type,
-                target_slot=target_slot,
+                target_class=chain[0].class_type,
+                target_slot=chain[0].target_slot,
                 terminal_status="cookie_invalid",
                 fallback_index=None,
                 response="no cookie on file",
                 telegram_text=self._render_no_cookie_text(rule, target_slot),
-                outcome_source=outcome_source,
+                outcome_source=chain[0].outcome_source,
             )
 
         # US1.5: align on WodBuster's own ``SegundosHastaPublicacion``
@@ -314,42 +314,67 @@ class BookingExecutor:
         # call that follows.
         self._align_to_publication(cookie=cookie, ticks=ticks, rule_id=int(rule.id))
 
-        # -- primary attempt ------------------------------------------
-        primary_result = self._attempt(
-            rule=rule,
-            target_slot=target_slot,
-            ticks=ticks,
-            cookie=cookie,
-            class_type=primary_class_type,
-            class_time=primary_class_time,
-            fallback_index=0,
-        )
-        if primary_result.done:
-            return self._persist_terminal(**primary_result.payload, outcome_source=outcome_source)
+        return self._walk_chain(rule=rule, chain=chain, cookie=cookie)
 
-        # -- second shot ---------------------------------------------
-        # Only reached when primary came back "full" AND a second-shot
-        # pair is configured on the rule. The second shot keeps the pair
-        # configured on the rule and is never re-targeted to the
-        # override's values (ADR-0012 Decision 6).
-        if not rule.second_shot_class_type or not rule.second_shot_class_time:
+    def _walk_chain(
+        self,
+        *,
+        rule: SchedulerRule,
+        chain: list[_Candidate],
+        cookie: str,
+    ) -> BookingResult:
+        """Contest each candidate in order until one produces a terminal row.
+
+        Advancing to the next candidate happens in exactly two cases:
+
+        - the candidate came back ``full``, which is the pre-override
+          walk's own second-shot condition; and
+        - the candidate is the override's target and its class never
+          appeared on the schedule (FR-012). That branch is scoped to the
+          override's target alone: on the rule's own candidates a
+          ``class_not_visible`` stays terminal exactly as it does today.
+
+        Anything else (``granted``, ``cookie_invalid``,
+        ``upstream_unavailable``) is terminal wherever it happens: a bad
+        cookie or a broken upstream will not behave differently one
+        candidate later.
+        """
+        # Only set when the chain opens with an override target, so a row
+        # sourced to ``override_fallback`` always carries what the user
+        # asked for and why it could not be honoured (FR-015, INV-008).
+        requested_class = chain[0].class_type if chain[0].is_override_target else None
+        requested_time = chain[0].class_time if chain[0].is_override_target else None
+        fallback_reason: str | None = None
+
+        for position, candidate in enumerate(chain):
+            is_last = position == len(chain) - 1
+            result = self._attempt(
+                rule=rule,
+                target_slot=candidate.target_slot,
+                ticks=midnight_utc_ticks(candidate.target_slot),
+                cookie=cookie,
+                class_type=candidate.class_type,
+                class_time=candidate.class_time,
+                fallback_index=candidate.fallback_index,
+            )
+            if not is_last and (
+                not result.done
+                or (candidate.is_override_target and result.terminal_status == "class_not_visible")
+            ):
+                if candidate.is_override_target:
+                    fallback_reason = result.terminal_status
+                continue
+
+            is_fallback = candidate.outcome_source == "override_fallback"
             return self._persist_terminal(
-                **primary_result.full_payload, outcome_source=outcome_source
+                **result.payload,
+                outcome_source=candidate.outcome_source,
+                requested_class=requested_class if is_fallback else None,
+                requested_time=requested_time if is_fallback else None,
+                fallback_reason=fallback_reason if is_fallback else None,
             )
 
-        second_result = self._attempt(
-            rule=rule,
-            target_slot=target_slot,
-            ticks=ticks,
-            cookie=cookie,
-            class_type=rule.second_shot_class_type,
-            class_time=rule.second_shot_class_time,
-            fallback_index=1,
-        )
-        if second_result.done:
-            return self._persist_terminal(**second_result.payload, outcome_source=outcome_source)
-        # Second shot also full — persist the second-shot outcome.
-        return self._persist_terminal(**second_result.full_payload, outcome_source=outcome_source)
+        raise AssertionError("attempt chain is never empty")  # pragma: no cover
 
     # ------------------------------------------------------------------
     # Internals
@@ -665,6 +690,9 @@ class BookingExecutor:
         response: str | None,
         telegram_text: str,
         outcome_source: str = "rule",
+        requested_class: str | None = None,
+        requested_time: str | None = None,
+        fallback_reason: str | None = None,
     ) -> BookingResult:
         """Open a session, persist outcome + outbox rows, commit."""
         with self._session_factory() as session:
@@ -679,6 +707,9 @@ class BookingExecutor:
                 granted_fallback_index=fallback_index,
                 response_payload=response,
                 telegram_text=telegram_text,
+                requested_class=requested_class,
+                requested_time=requested_time,
+                fallback_reason=fallback_reason,
             )
             session.commit()
             _log.info(
@@ -793,6 +824,86 @@ class BookingExecutor:
 
 
 @dataclass(frozen=True)
+class _Candidate:
+    """One step of the trigger-time attempt chain (ADR-0012 Decision 6).
+
+    ``outcome_source`` is fixed when the chain is built rather than
+    derived at persist time: every candidate after the override's own
+    target is a fallback whatever terminal status it ends on.
+    """
+
+    class_type: str
+    class_time: str
+    target_slot: datetime
+    fallback_index: int
+    outcome_source: str
+    is_override_target: bool = False
+
+
+def _build_chain(
+    *,
+    rule: SchedulerRule,
+    target_slot: datetime,
+    override: OverridePlan | None,
+) -> list[_Candidate]:
+    """Return the ordered candidates for one booking run.
+
+    The order is override target, rule primary, rule second shot
+    (FR-012). The override is prepended; the rule's own walk is neither
+    reordered nor re-targeted, so an ``override`` of ``None`` yields the
+    exact two candidates the executor contested before ADR-0012.
+    """
+    contests_override = override is not None and not override.skip_day and override.changes_target
+    rule_source = "override_fallback" if contests_override else "rule"
+    # Where the rule's own class sits on this day. It only diverges from
+    # the slot the scheduler resolved when the override moved the time.
+    rule_slot = target_slot
+    chain: list[_Candidate] = []
+
+    if contests_override and override is not None:
+        chain.append(
+            _Candidate(
+                class_type=override.effective_class_type(rule),
+                class_time=override.effective_class_time(rule),
+                target_slot=target_slot,
+                fallback_index=0,
+                outcome_source="override",
+                is_override_target=True,
+            )
+        )
+        if override.class_time is not None:
+            rule_slot = effective_slot_for(rule, override.target_date, str(rule.class_time))
+
+    chain.append(
+        _Candidate(
+            class_type=str(rule.class_type),
+            class_time=str(rule.class_time),
+            target_slot=rule_slot,
+            fallback_index=0,
+            outcome_source=rule_source,
+        )
+    )
+
+    # ``suppress_second_shot`` drops the last candidate for this date
+    # only; the rule's own configuration is never read back or written
+    # (FR-017, FR-018).
+    suppressed = override is not None and override.suppress_second_shot
+    if rule.second_shot_class_type and rule.second_shot_class_time and not suppressed:
+        chain.append(
+            _Candidate(
+                class_type=str(rule.second_shot_class_type),
+                class_time=str(rule.second_shot_class_time),
+                # Unchanged from the pre-override walk: the second shot's
+                # row carries the primary candidate's slot.
+                target_slot=rule_slot,
+                fallback_index=1,
+                outcome_source=rule_source,
+            )
+        )
+    return chain
+
+
+@dataclass(frozen=True)
 class _AttemptResult:
     """Internal helper: outcome of one primary/second-shot attempt.
 
@@ -806,6 +917,10 @@ class _AttemptResult:
     done: bool
     payload: dict[str, Any]
     full_payload: dict[str, Any]
+
+    @property
+    def terminal_status(self) -> str:
+        return str(self.payload["terminal_status"])
 
     @classmethod
     def done_terminal(cls, **payload: Any) -> _AttemptResult:

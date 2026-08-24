@@ -93,7 +93,13 @@ def _csrf(client: TestClient) -> dict[str, str]:
     return {"X-CSRF-Token": token}
 
 
-def _seed_rule(engine: Engine, operator_id: int, *, class_type: str = "WOD") -> tuple[int, int]:
+def _seed_rule(
+    engine: Engine,
+    operator_id: int,
+    *,
+    class_type: str = "WOD",
+    second_shot: tuple[str, str] | None = None,
+) -> tuple[int, int]:
     """Insert a Wednesday 18:30 rule. Returns ``(rule_id, gym_account_id)``."""
     with engine.begin() as conn:
         gym_account_id = gym_account_id_for(conn, operator_id)
@@ -102,10 +108,16 @@ def _seed_rule(engine: Engine, operator_id: int, *, class_type: str = "WOD") -> 
                 text(
                     "INSERT INTO scheduler_rule "
                     "(gym_account_id, day_of_week, class_type, class_time, "
+                    " second_shot_class_type, second_shot_class_time, "
                     " booking_opens_days_before, booking_opens_at, active) "
-                    "VALUES (:ga, 2, :ct, '18:30', 2, '21:30', true) RETURNING id"
+                    "VALUES (:ga, 2, :ct, '18:30', :sct, :stm, 2, '21:30', true) RETURNING id"
                 ),
-                {"ga": gym_account_id, "ct": class_type},
+                {
+                    "ga": gym_account_id,
+                    "ct": class_type,
+                    "sct": second_shot[0] if second_shot else None,
+                    "stm": second_shot[1] if second_shot else None,
+                },
             ).scalar_one()
         )
     return rule_id, gym_account_id
@@ -883,3 +895,243 @@ def test_reverting_a_skip_returns_the_day_to_pending(
     assert "wb-chip--skipped-day" not in reverted.text
     assert "wb-chip--pending" in reverted.text
     assert _overrides(session_factory) == []
+
+
+# ---------------------------------------------------------------------------
+# Second attempt: display and per-date suppression (T-BDO-016)
+# ---------------------------------------------------------------------------
+
+
+def _assert_rule_second_shot(
+    session_factory: sessionmaker[Session],
+    rule_id: int,
+    *,
+    class_type: str | None,
+    class_time: str | None,
+) -> None:
+    """FR-018: suppression is a property of the date, never of the rule."""
+    with session_factory() as session:
+        rule = session.get(SchedulerRule, rule_id)
+        assert rule is not None
+        assert rule.second_shot_class_type == class_type
+        assert rule.second_shot_class_time == class_time
+        assert rule.class_type == "WOD"
+        assert rule.class_time == "18:30"
+        assert rule.day_of_week == 2
+        assert rule.active is True
+
+
+def test_form_shows_the_rules_second_shot_and_offers_the_clear_control(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    freeze_now: Callable[[datetime], None],
+) -> None:
+    """FR-017: the user sees what still runs after the override's own target."""
+    freeze_now(BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, _ = _seed_rule(postgres_engine, op_id, second_shot=("Endurance", "19:30"))
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        form = client.get(_url(rule_id))
+
+    assert form.status_code == 200
+    assert 'name="suppress_second_shot"' in form.text
+    assert "Endurance" in form.text
+    assert "19:30" in form.text
+
+
+def test_clear_control_is_absent_when_the_rule_has_no_second_shot(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    freeze_now: Callable[[datetime], None],
+) -> None:
+    """T-BDO-016 acceptance 3: nothing to suppress means no control."""
+    freeze_now(BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, _ = _seed_rule(postgres_engine, op_id)
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        form = client.get(_url(rule_id))
+
+    assert form.status_code == 200
+    assert "suppress_second_shot" not in form.text
+
+
+def test_save_with_the_clear_control_persists_suppression_and_leaves_the_rule_alone(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+    freeze_now: Callable[[datetime], None],
+) -> None:
+    """FR-018: the suppression lands on the override row only."""
+    freeze_now(BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, _ = _seed_rule(postgres_engine, op_id, second_shot=("Endurance", "19:30"))
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.post(
+            _url(rule_id),
+            data={
+                "class_type": "WOD",
+                "class_time": "19:00",
+                "suppress_second_shot": "1",
+            },
+            headers=_csrf(client),
+        )
+
+    assert response.status_code == 303
+    rows = _overrides(session_factory)
+    assert len(rows) == 1
+    assert rows[0].suppress_second_shot is True
+    assert rows[0].class_time == "19:00"
+    _assert_rule_second_shot(session_factory, rule_id, class_type="Endurance", class_time="19:30")
+
+
+def test_suppression_alone_is_a_valid_override(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+    freeze_now: Callable[[datetime], None],
+) -> None:
+    """T-BDO-016 acceptance 4: it satisfies ``ck_..._has_change`` on its own.
+
+    Submitting the rule's own class values would otherwise be read as
+    "back to the rule"; the suppression is what makes the row carry an
+    effect.
+    """
+    freeze_now(BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, _ = _seed_rule(postgres_engine, op_id, second_shot=("Endurance", "19:30"))
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.post(
+            _url(rule_id),
+            data={
+                "class_type": "WOD",
+                "class_time": "18:30",
+                "suppress_second_shot": "on",
+            },
+            headers=_csrf(client),
+        )
+        form = client.get(_url(rule_id))
+
+    assert response.status_code == 303
+    rows = _overrides(session_factory)
+    assert len(rows) == 1
+    assert rows[0].suppress_second_shot is True
+    assert rows[0].class_type is None
+    assert rows[0].class_time is None
+    # The re-rendered form remembers the stored suppression.
+    assert "checked" in form.text
+    _assert_rule_second_shot(session_factory, rule_id, class_type="Endurance", class_time="19:30")
+
+
+def test_suppression_is_ignored_when_the_rule_has_no_second_shot(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+    freeze_now: Callable[[datetime], None],
+) -> None:
+    """A crafted POST cannot store an override whose only effect is nothing."""
+    freeze_now(BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, _ = _seed_rule(postgres_engine, op_id)
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.post(
+            _url(rule_id),
+            data={
+                "class_type": "WOD",
+                "class_time": "18:30",
+                "suppress_second_shot": "1",
+            },
+            headers=_csrf(client),
+        )
+
+    assert response.status_code == 303
+    assert _overrides(session_factory) == []
+
+
+def test_reverting_clears_the_suppression(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+    freeze_now: Callable[[datetime], None],
+) -> None:
+    """FR-022: back to the rule means the second shot runs again."""
+    freeze_now(BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, _ = _seed_rule(postgres_engine, op_id, second_shot=("Endurance", "19:30"))
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        headers = _csrf(client)
+        client.post(
+            _url(rule_id),
+            data={
+                "class_type": "WOD",
+                "class_time": "18:30",
+                "suppress_second_shot": "1",
+            },
+            headers=headers,
+        )
+        response = client.post(_url(rule_id, revert=True), headers=headers)
+
+    assert response.status_code == 303
+    assert _overrides(session_factory) == []
+    _assert_rule_second_shot(session_factory, rule_id, class_type="Endurance", class_time="19:30")
+
+
+def test_unticking_the_control_drops_the_suppression(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+    freeze_now: Callable[[datetime], None],
+) -> None:
+    """An unticked checkbox posts nothing, so the upsert must clear the flag."""
+    freeze_now(BEFORE_CUTOFF)
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    rule_id, _ = _seed_rule(postgres_engine, op_id, second_shot=("Endurance", "19:30"))
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        headers = _csrf(client)
+        client.post(
+            _url(rule_id),
+            data={
+                "class_type": "WOD",
+                "class_time": "19:00",
+                "suppress_second_shot": "1",
+            },
+            headers=headers,
+        )
+        response = client.post(
+            _url(rule_id),
+            data={"class_type": "WOD", "class_time": "19:00"},
+            headers=headers,
+        )
+
+    assert response.status_code == 303
+    rows = _overrides(session_factory)
+    assert len(rows) == 1
+    assert rows[0].suppress_second_shot is False
+    assert rows[0].class_time == "19:00"

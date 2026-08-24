@@ -265,6 +265,11 @@
               <span class="wb-chip wb-chip--{{ row.terminal_status | replace('_', '-') }}">
                 {{ t("chip." ~ row.terminal_status) }}
               </span>
+              {% if row.outcome_source in ("override", "override_fallback", "override_skip") %}
+                <span class="wb-chip wb-chip--modified">
+                  {{ t("chip.source." ~ row.outcome_source) }}
+                </span>
+              {% endif %}
             </td>
             <td class="wb-tabular">
               {{ wb_time(row.attempted_at, "stamp", row.attempted_at.strftime("%d %b %H:%M")) }}

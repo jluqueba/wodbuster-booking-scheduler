@@ -18,10 +18,10 @@ Both writes are CSRF-protected and re-check the edit cutoff and the
 already-executed guard server side. What the form rendered is a UI
 convenience, never the enforcement point (FR-007, INV-005).
 
-This task covers class time, class type and the skip mark. The
-second-attempt controls (T-BDO-016) land later; the rule's second shot
-is displayed read-only here because FR-017 requires the user to see what
-will still run.
+The rule's second attempt is displayed as read-only context (FR-017)
+and can be suppressed for this one date (FR-018). Suppression is a
+column on the override row; the rule's own second-attempt fields are
+never written by these routes.
 """
 
 from __future__ import annotations
@@ -150,6 +150,7 @@ def override_save(
     class_type: str = Form(default=""),
     class_time: str = Form(default=""),
     skip_day: str = Form(default=""),
+    suppress_second_shot: str = Form(default=""),
     operator_id: int = Depends(require_session),
 ) -> Response:
     """Upsert the override for one projected day (FR-001, FR-002, FR-003)."""
@@ -165,6 +166,11 @@ def override_save(
         submitted_type = class_type.strip()
         submitted_time = class_time.strip()
         form_values = {"class_type": submitted_type, "class_time": submitted_time}
+        # Ignored on a rule that configures no second shot: the control is
+        # not rendered there, and honouring a crafted post would store an
+        # override whose only effect is suppressing something that does
+        # not run.
+        suppress = _checked(suppress_second_shot) and _has_second_shot(rule)
 
         if _checked(skip_day):
             return _skip(
@@ -189,23 +195,33 @@ def override_save(
                     request, rule=rule, target_date=target_date, class_time=submitted_time
                 ),
                 status_code=422,
+                suppress_second_shot=suppress,
             )
 
         # NULL on a dimension the override leaves alone, so the row
         # records what changed rather than a copy of the rule.
         override_type = submitted_type if submitted_type != str(rule.class_type) else None
         override_time = submitted_time if submitted_time != str(rule.class_time) else None
-        if override_type is None and override_time is None:
+        changes_target = override_type is not None or override_time is not None
+        if not changes_target and not suppress:
             # Submitting the rule's own values carries no effect, which
             # ``ck_booking_day_override_has_change`` rejects. Treat it as
             # what the user meant: back to the rule (FR-022).
             return _revert(session, rule=rule, target_date=target_date, now=now)
 
-        schedule = _probe_date(
-            request,
-            rule=rule,
-            target_date=target_date,
-            class_time=submitted_time,
+        # Only a target change is worth probing. Clearing the second shot
+        # leaves the rule's own pair in play, so blocking it on a schedule
+        # that does not carry that pair would refuse an edit the user did
+        # not make (FR-018).
+        schedule = (
+            _probe_date(
+                request,
+                rule=rule,
+                target_date=target_date,
+                class_time=submitted_time,
+            )
+            if changes_target
+            else None
         )
         blocked = (
             schedule is not None
@@ -224,6 +240,7 @@ def override_save(
                 existing=load_override(session, rule_id=int(rule.id), target_date=target_date),
                 schedule=schedule,
                 status_code=422,
+                suppress_second_shot=suppress,
             )
 
         try:
@@ -233,6 +250,7 @@ def override_save(
                 target_date=target_date,
                 class_type=override_type,
                 class_time=override_time,
+                suppress_second_shot=suppress,
                 # True only against a published schedule that confirmed
                 # the pair; anything else re-validates at trigger time.
                 validated=schedule is not None and schedule.published,
@@ -331,6 +349,15 @@ def _skip(
 def _checked(raw: str) -> bool:
     """Whether a checkbox-shaped form value was submitted as set."""
     return raw.strip().lower() in {"1", "true", "on", "yes"}
+
+
+def _has_second_shot(rule: SchedulerRule) -> bool:
+    """Whether the rule configures a second attempt (FR-017).
+
+    Both halves of the pair are required: the executor only walks the
+    second shot when it has a class type *and* a time to attempt.
+    """
+    return bool(rule.second_shot_class_type) and bool(rule.second_shot_class_time)
 
 
 def _closed_message(rule: SchedulerRule, target_date: date, now: datetime) -> str:
@@ -443,8 +470,14 @@ def _render(
     existing: BookingDayOverride | None,
     schedule: DateSchedule | None,
     status_code: int = 200,
+    suppress_second_shot: bool | None = None,
 ) -> Response:
-    """Render the override form."""
+    """Render the override form.
+
+    ``suppress_second_shot`` is the value the *submission* carried, so a
+    re-render after a field error keeps the box the user ticked. On a
+    plain GET it is ``None`` and the stored override answers instead.
+    """
     gym_account_id = int(rule.gym_account_id)
     class_types, time_slots, notice = _seed_selectors(
         request, gym_account_id=gym_account_id, schedule=schedule
@@ -470,8 +503,14 @@ def _render(
             "errors": errors,
             "rule_class_type": str(rule.class_type),
             "rule_class_time": str(rule.class_time),
+            "has_second_shot": _has_second_shot(rule),
             "second_shot_class_type": rule.second_shot_class_type,
             "second_shot_class_time": rule.second_shot_class_time,
+            "suppress_second_shot": (
+                suppress_second_shot
+                if suppress_second_shot is not None
+                else (existing is not None and bool(existing.suppress_second_shot))
+            ),
             "picker_class_types": class_types,
             "picker_time_slots": time_slots,
             "probe_notice": notice,

@@ -59,6 +59,11 @@ EN: dict[str, str] = {
     "chip.cookie_invalid": "cookie invalid",
     "chip.class_not_visible": "class not visible",
     "chip.upstream_unavailable": "upstream unavailable",
+    # Attempt lineage, orthogonal to the terminal status chip above
+    # (ADR-0012 Decision 4): which plan drove the attempt, not how it ended.
+    "chip.source.override": "modified day",
+    "chip.source.override_fallback": "substituted",
+    "chip.source.override_skip": "skipped by you",
     # -- nav ---------------------------------------------------------
     "nav.dashboard": "🏠 Dashboard",
     "nav.rules": "📅 Rules",
@@ -263,6 +268,10 @@ EN: dict[str, str] = {
         "The rule's second shot still runs on this day: {class_type} at {class_time}."
     ),
     "override.form.second_shot_none": "This rule has no second shot.",
+    "override.form.second_shot_clear": "Skip the second shot on this date only",
+    "override.form.second_shot_clear_hint": (
+        "The rule keeps its second shot for every other date."
+    ),
     "override.warning.not_published": (
         "The gym has not published the schedule for this date yet. The "
         "options below are the combinations known for this weekday; the "
@@ -724,6 +733,32 @@ EN: dict[str, str] = {
     ),
     "tg.booking.cancelled": "\U0001f6ab [{gym}] Cancelled #{id}: {klass} \u2014 {when}.",
     "tg.booking.unknown": ("\u2139\ufe0f [{gym}] Booking #{id}: {klass} \u2014 {when} ({status})."),
+    # Single-day override branches (ADR-0012). Keyed on ``outcome_source``
+    # rather than ``terminal_status``: a substitution is never silent
+    # (INV-008), so the copy names the booked class, the requested class
+    # and the reason.
+    "tg.booking.override_skip": (
+        "\u23ed\ufe0f [{gym}] Booking #{id} skipped \u2014 {when}. You marked this day "
+        "as skipped, so {klass} was not contested."
+    ),
+    "tg.booking.fallback_granted": (
+        "\u26a0\ufe0f [{gym}] Substitution \u2014 booked #{id}: {klass} \u2014 {when}. "
+        "You had asked for {requested_class} at {requested_time}, but {reason}, so the "
+        "rule's class was booked instead."
+    ),
+    "tg.booking.fallback_exhausted": (
+        "\u26a0\ufe0f [{gym}] Nothing booked #{id} \u2014 {when}. Your {requested_class} "
+        "at {requested_time} failed: {reason}. The rule's {klass} also failed: {rule_reason}."
+    ),
+    # Reason fragments shared by the Telegram copy, the email body (which
+    # reuses it) and the dashboard banner. Deliberately namespace-neutral:
+    # duplicating the same sentence under ``tg.*`` and ``banner.*`` would
+    # guarantee the two drift apart.
+    "booking.reason.class_not_visible": "that class never appeared on the schedule",
+    "booking.reason.full": "that class was full",
+    "booking.reason.upstream_unavailable": "WodBuster returned an unexpected response",
+    "booking.reason.cookie_invalid": "the WodBuster session was rejected",
+    "booking.reason.unknown": "it was unavailable",
     "tg.alert.cookie_expiring": (
         "\u23f0 [{gym}] WodBuster cookie expires before the next booking window "
         "({when}). Refresh it to keep bookings running."
@@ -850,6 +885,11 @@ EN: dict[str, str] = {
     "banner.anomaly.body": (
         "No booking outcome was recorded for a window that should have closed. Check the worker."
     ),
+    "banner.booking_fallback.heading": "Class substituted",
+    "banner.booking_fallback.body": (
+        "Booked {klass} \u2014 {when} instead of the {requested_class} at "
+        "{requested_time} you asked for, because {reason}."
+    ),
     "banner.unknown.heading": "Alert: {kind}",
     "banner.unknown.body": "See logs for details.",
 }
@@ -890,6 +930,11 @@ ES: dict[str, str] = {
     "chip.cookie_invalid": "cookie inválida",
     "chip.class_not_visible": "clase no visible",
     "chip.upstream_unavailable": "servicio no disponible",
+    # Origen del intento, ortogonal al estado terminal de arriba
+    # (ADR-0012 Decisión 4): qué plan condujo el intento, no cómo acabó.
+    "chip.source.override": "día modificado",
+    "chip.source.override_fallback": "sustituida",
+    "chip.source.override_skip": "saltado por ti",
     # -- nav ---------------------------------------------------------
     "nav.dashboard": "🏠 Panel",
     "nav.rules": "📅 Reglas",
@@ -1106,6 +1151,10 @@ ES: dict[str, str] = {
         "La alternativa de la regla se sigue intentando este día: {class_type} a las {class_time}."
     ),
     "override.form.second_shot_none": "Esta regla no tiene alternativa.",
+    "override.form.second_shot_clear": "Saltar la alternativa solo en esta fecha",
+    "override.form.second_shot_clear_hint": (
+        "La regla mantiene su alternativa para el resto de fechas."
+    ),
     "override.warning.not_published": (
         "El gimnasio aún no ha publicado el horario de esta fecha. Las "
         "opciones de abajo son las combinaciones conocidas para este día "
@@ -1589,6 +1638,33 @@ ES: dict[str, str] = {
     ),
     "tg.booking.cancelled": "\U0001f6ab [{gym}] Cancelada #{id}: {klass} \u2014 {when}.",
     "tg.booking.unknown": ("\u2139\ufe0f [{gym}] Reserva #{id}: {klass} \u2014 {when} ({status})."),
+    # Ramas del override de un solo día (ADR-0012). Se eligen por
+    # ``outcome_source``, no por ``terminal_status``: una sustitución
+    # nunca es silenciosa (INV-008), así que el texto nombra la clase
+    # reservada, la clase pedida y el motivo.
+    "tg.booking.override_skip": (
+        "\u23ed\ufe0f [{gym}] Reserva #{id} saltada \u2014 {when}. Marcaste este día "
+        "para saltarlo, así que no se intentó reservar {klass}."
+    ),
+    "tg.booking.fallback_granted": (
+        "\u26a0\ufe0f [{gym}] Sustitución \u2014 reservado #{id}: {klass} \u2014 {when}. "
+        "Habías pedido {requested_class} a las {requested_time}, pero {reason}, así que "
+        "se reservó la clase de la regla."
+    ),
+    "tg.booking.fallback_exhausted": (
+        "\u26a0\ufe0f [{gym}] No se reservó nada #{id} \u2014 {when}. Tu {requested_class} "
+        "a las {requested_time} falló: {reason}. La clase de la regla, {klass}, también "
+        "falló: {rule_reason}."
+    ),
+    # Fragmentos de motivo compartidos por el texto de Telegram, el cuerpo
+    # del email (que lo reutiliza) y el banner del panel. A propósito sin
+    # namespace de canal: duplicar la misma frase bajo ``tg.*`` y
+    # ``banner.*`` garantizaría que ambas acaben divergiendo.
+    "booking.reason.class_not_visible": "esa clase no apareció en el horario",
+    "booking.reason.full": "esa clase estaba completa",
+    "booking.reason.upstream_unavailable": "WodBuster devolvió una respuesta inesperada",
+    "booking.reason.cookie_invalid": "WodBuster rechazó la sesión",
+    "booking.reason.unknown": "no estaba disponible",
     "tg.alert.cookie_expiring": (
         "\u23f0 [{gym}] La cookie de WodBuster caduca antes de la próxima ventana "
         "de reserva ({when}). Renuévala para que las reservas sigan funcionando."
@@ -1727,6 +1803,11 @@ ES: dict[str, str] = {
     "banner.anomaly.body": (
         "No se registró ningún resultado de reserva para una ventana que debería "
         "haberse cerrado. Revisa el worker."
+    ),
+    "banner.booking_fallback.heading": "Clase sustituida",
+    "banner.booking_fallback.body": (
+        "Se reservó {klass} \u2014 {when} en lugar de {requested_class} a las "
+        "{requested_time}, que es lo que habías pedido, porque {reason}."
     ),
     "banner.unknown.heading": "Alerta: {kind}",
     "banner.unknown.body": "Consulta los registros para más detalles.",

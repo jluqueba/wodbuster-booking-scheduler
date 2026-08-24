@@ -68,6 +68,7 @@ def _seed_booking(
     target_slot: datetime | None = None,
     terminal_status: str = "granted",
     attempted_at: datetime | None = None,
+    outcome_source: str | None = None,
 ) -> int:
     """Insert a booking outcome directly. Returns the row id."""
     if target_slot is None:
@@ -83,6 +84,10 @@ def _seed_booking(
         columns += ", attempted_at"
         values += ", :attempted"
         params["attempted"] = attempted_at
+    if outcome_source is not None:
+        columns += ", outcome_source"
+        values += ", :source"
+        params["source"] = outcome_source
     columns += ")"
     values += ")"
     with engine.begin() as conn:
@@ -333,6 +338,57 @@ def test_history_attempts_table_renders_operator_local_time(
     assert "Wednesday" in body
     assert "15 Jul at 21:30" in body
     assert "UTC" not in body
+
+
+def test_history_attempts_table_distinguishes_the_outcome_sources(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR-0012 Decision 4: ``outcome_source`` is what tells the three apart.
+
+    All three rows carry a ``terminal_status`` that already exists, so
+    the status chip alone reads a substitution as an ordinary booking
+    and an override skip as a vacation skip.
+    """
+    monkeypatch.setenv("WORKER_TIMEZONE", "Europe/Madrid")
+    monkeypatch.setattr(
+        "wodbuster_worker.booking.routes._utcnow",
+        lambda: datetime(2026, 7, 16, 12, 0, tzinfo=UTC),
+    )
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    for target_class, status, source, hour in (
+        ("PlainWod", "granted", None, 6),
+        ("FallbackWod", "granted", "override_fallback", 7),
+        ("SkippedWod", "skipped", "override_skip", 8),
+    ):
+        _seed_booking(
+            postgres_engine,
+            operator_id=op_id,
+            target_class=target_class,
+            target_slot=datetime(2026, 7, 15, hour, 0, tzinfo=UTC),
+            terminal_status=status,
+            attempted_at=datetime(2026, 7, 15, hour, 5, tzinfo=UTC),
+            outcome_source=source,
+        )
+
+    app = app_factory()
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/history")
+
+    assert response.status_code == 200
+    body = response.text
+    for target_class in ("PlainWod", "FallbackWod", "SkippedWod"):
+        assert target_class in body
+    # Two of the three rows carry a source chip; the plain rule booking
+    # carries none, which is what keeps the pre-feature history intact.
+    assert body.count("wb-chip--modified") == 2
+    assert "substituted" in body
+    assert "skipped by you" in body
+    # The status chips on their own cannot separate them.
+    assert body.count('wb-chip--granted"') == 2
+    assert body.count('wb-chip--skipped"') == 1
 
 
 def test_history_upcoming_section_groups_future_granted_bookings(

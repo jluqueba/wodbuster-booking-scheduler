@@ -148,6 +148,58 @@ def test_dashboard_banner_renders_in_spanish_under_es_prefix(
     assert "15 jul" in response.text  # Spanish, gym-tz date format
 
 
+_FALLBACK_PAYLOAD: dict[str, Any] = {
+    "kind": "booking_fallback",
+    "terminal_status": "granted",
+    "outcome_source": "override_fallback",
+    "outcome_id": 51,
+    "class_type": "WOD",
+    "target_slot": "2026-07-15T18:30:00+00:00",
+    "requested_class": "Gymnastics",
+    "requested_time": "19:00",
+    "fallback_reason": "full",
+}
+
+
+@pytest.mark.parametrize(
+    ("path", "heading", "reason"),
+    [
+        ("/", "Class substituted", "that class was full"),
+        ("/es", "Clase sustituida", "esa clase estaba completa"),
+    ],
+)
+def test_dashboard_renders_localized_booking_fallback_banner(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+    heading: str,
+    reason: str,
+) -> None:
+    """FR-015, INV-008: the one channel the operator cannot switch off."""
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    _open_alert(
+        postgres_engine,
+        operator_id=op_id,
+        kind="booking_fallback",
+        payload=_FALLBACK_PAYLOAD,
+    )
+    app = app_factory()
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get(path)
+
+    assert response.status_code == 200
+    assert 'data-alert-kind="booking_fallback"' in response.text
+    assert heading in response.text
+    assert "WOD" in response.text  # booked class
+    assert "Gymnastics" in response.text  # requested class
+    assert "19:00" in response.text  # requested time
+    assert reason in response.text
+    assert "2026-07-15T18:30:00+00:00" not in response.text
+
+
 def test_closed_alerts_are_not_shown(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],

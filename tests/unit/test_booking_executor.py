@@ -27,8 +27,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from wodbuster_worker.booking.executor import BookingExecutor, BookingExecutorProvider
-from wodbuster_worker.booking.overrides import OverridePlan
+from wodbuster_worker.booking.overrides import OverridePlan, effective_slot_for
 from wodbuster_worker.persistence.models import SchedulerRule
+from wodbuster_worker.scheduler.clock import midnight_utc_ticks
 from wodbuster_worker.wodbuster_client.client import (
     BookingActionResponse,
     LoadClassResponse,
@@ -1206,9 +1207,48 @@ def test_vacation_guard_wins_over_an_override_and_stays_sourced_to_the_rule(
 def test_second_shot_keeps_the_rule_pair_and_is_never_retargeted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ADR-0012 Decision 6 (AMB-001): when the override target comes back
-    full, the second shot contests the pair configured on the rule, not the
-    override's values."""
+    """CC-009, ADR-0012 Decision 6 (AMB-001): the chain is override target,
+    rule primary, rule second shot, and the second shot contests the pair
+    configured on the rule rather than the override's values.
+
+    Rewritten from its T-BDO-009 form, where the override's ``full`` walked
+    straight to the second shot because the rule primary was not yet a
+    candidate.
+    """
+    ex, client, writer = _executor(
+        load_class_responses=[_mixed_schedule()],
+        inscribir_responses=[_inscribir_full(), _inscribir_full(), _inscribir_ok()],
+        monkeypatch=monkeypatch,
+    )
+
+    result = ex.book(
+        rule=_rule(
+            second_shot_class_type="Halterofilia",
+            second_shot_class_time="21:30",
+        ),
+        target_slot=datetime(2026, 7, 15, 19, 0, tzinfo=UTC),
+        override=_override(class_time="19:00"),
+    )
+
+    assert result.terminal_status == "granted"
+    assert result.fallback_index == 1
+    # 77777 = the override's WOD 19:00, 45654 = the rule's own WOD 21:30,
+    # 88888 = the rule's second shot. 99999 (Halterofilia at the override's
+    # time) is the re-targeted pair option 6B would have contested; it never
+    # appears.
+    assert [c["class_id"] for c in client.inscribir_calls] == [77777, 45654, 88888]
+    assert 99999 not in [c["class_id"] for c in client.inscribir_calls]
+    call = writer.calls[0]
+    assert call["target_class"] == "Halterofilia"
+    assert call["outcome_source"] == "override_fallback"
+    assert call["fallback_reason"] == "full"
+
+
+def test_override_target_full_advances_to_the_rule_primary_not_the_second_shot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T-BDO-013 acceptance: a full override target consumes the middle step
+    of the chain before the second shot is even considered."""
     ex, client, writer = _executor(
         load_class_responses=[_mixed_schedule()],
         inscribir_responses=[_inscribir_full(), _inscribir_ok()],
@@ -1225,39 +1265,220 @@ def test_second_shot_keeps_the_rule_pair_and_is_never_retargeted(
     )
 
     assert result.terminal_status == "granted"
-    assert result.fallback_index == 1
-    # 77777 = the override's WOD 19:00; 88888 = the rule's own second shot.
-    # Neither 99999 (Halterofilia at the override's time) nor any other
-    # override-flavoured pair is contested.
-    assert [c["class_id"] for c in client.inscribir_calls] == [77777, 88888]
-    assert writer.calls[0]["target_class"] == "Halterofilia"
+    assert result.fallback_index == 0
+    assert [c["class_id"] for c in client.inscribir_calls] == [77777, 45654]
+    call = writer.calls[0]
+    assert call["target_class"] == "WOD"
+    assert call["outcome_source"] == "override_fallback"
 
 
-def test_override_target_not_visible_is_terminal_without_falling_back(
+def test_suppress_second_shot_shortens_the_chain_for_that_date_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """T-BDO-009 acceptance 8: the fallback to the rule's class arrives in
-    T-BDO-013. Until then an invisible override target is terminal, even
-    though the rule's own class is published and bookable."""
+    """CC-010, FR-017, FR-018: the suppression mark drops the last candidate
+    for this execution and leaves the rule's own configuration untouched."""
+    ex, client, writer = _executor(
+        load_class_responses=[_mixed_schedule()],
+        inscribir_responses=[_inscribir_full(), _inscribir_full()],
+        monkeypatch=monkeypatch,
+    )
+    rule = _rule(second_shot_class_type="Halterofilia", second_shot_class_time="21:30")
+
+    result = ex.book(
+        rule=rule,
+        target_slot=datetime(2026, 7, 15, 19, 0, tzinfo=UTC),
+        override=_override(class_time="19:00", suppress_second_shot=True),
+    )
+
+    assert result.terminal_status == "full"
+    # Exactly two candidates: the override target and the rule primary.
+    assert [c["class_id"] for c in client.inscribir_calls] == [77777, 45654]
+    assert len(writer.calls) == 1
+    # The rule keeps its second shot for every other date.
+    assert rule.second_shot_class_type == "Halterofilia"
+    assert rule.second_shot_class_time == "21:30"
+
+
+def test_override_target_not_visible_falls_back_to_the_rule_class(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CC-006, FR-012, FR-014: an override target that never appears is not
+    terminal. The rule's own class is booked and the row is sourced to
+    ``override_fallback``, which is what distinguishes it from a plain
+    success.
+
+    Replaces the T-BDO-009 placeholder test that asserted the opposite while
+    the fallback was explicitly out of scope (T-BDO-009 acceptance 8).
+    """
     ex, client, writer = _executor(
         load_class_responses=[_load_class_payload()],  # WOD 21:30 only
+        inscribir_responses=[_inscribir_ok()],
         monkeypatch=monkeypatch,
-        # One poll and out: the retry budget is smaller than the interval.
+        # One poll per candidate: the retry budget is smaller than the interval.
         retry_interval_s=1.0,
         retry_timeout_s=0.05,
     )
 
     result = ex.book(
         rule=_rule(),
-        target_slot=datetime(2026, 7, 15, 19, 0, tzinfo=UTC),
-        override=_override(class_time="19:00"),
+        target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC),
+        override=_override(class_type="Halterofilia"),
+    )
+
+    assert result.terminal_status == "granted"
+    assert result.fallback_index == 0
+    assert [c["class_id"] for c in client.inscribir_calls] == [45654]
+    call = writer.calls[0]
+    assert call["outcome_source"] == "override_fallback"
+    assert call["target_class"] == "WOD"
+    # FR-015, INV-008: everything a message needs, without a second query.
+    assert call["requested_class"] == "Halterofilia"
+    assert call["requested_time"] == "21:30"
+    assert call["fallback_reason"] == "class_not_visible"
+
+
+def test_fallback_row_carries_the_rule_slot_when_the_override_moved_the_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T-BDO-013 acceptance 6: the persisted row describes the candidate
+    actually attempted, so a fallback is booked and recorded at the rule's
+    own class time rather than the override's."""
+    ex, _client, writer = _executor(
+        load_class_responses=[_load_class_payload()],  # WOD 21:30 only
+        inscribir_responses=[_inscribir_ok()],
+        monkeypatch=monkeypatch,
+        retry_interval_s=1.0,
+        retry_timeout_s=0.05,
+    )
+    rule = _rule()
+    override_slot = datetime(2026, 7, 15, 19, 0, tzinfo=UTC)
+
+    ex.book(rule=rule, target_slot=override_slot, override=_override(class_time="19:00"))
+
+    call = writer.calls[0]
+    assert call["target_slot"] != override_slot
+    assert call["target_slot"] == effective_slot_for(rule, date(2026, 7, 15), "21:30")
+
+
+def test_chain_exhausted_books_nothing_and_records_the_rule_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CC-007, FR-016: when the override target and the rule's own class both
+    fail and no second shot is configured, the chain ends on the rule
+    candidate's standard failure status, with no booking made."""
+    ex, client, writer = _executor(
+        load_class_responses=[
+            _load_class_payload(slots=[{"Id": 11111, "Nombre": "Yoga", "HoraComienzo": "07:00:00"}])
+        ],
+        monkeypatch=monkeypatch,
+        retry_interval_s=1.0,
+        retry_timeout_s=0.05,
+    )
+
+    result = ex.book(
+        rule=_rule(),
+        target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC),
+        override=_override(class_type="Halterofilia"),
     )
 
     assert result.terminal_status == "class_not_visible"
     assert client.inscribir_calls == []
+    # One probe per candidate, and no third one: the chain is two long.
+    assert len(client.load_class_calls) == 2
+    assert len(writer.calls) == 1
+    call = writer.calls[0]
+    assert call["outcome_source"] == "override_fallback"
+    assert call["target_class"] == "WOD"
+    assert call["requested_class"] == "Halterofilia"
+    assert call["fallback_reason"] == "class_not_visible"
+
+
+def test_cookie_invalid_on_the_override_target_stays_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T-BDO-013 acceptance 2: only ``class_not_visible`` and ``full`` advance
+    the chain. A rejected cookie will not behave differently one candidate
+    later, so it ends the run on the override's own source."""
+    ex, client, writer = _executor(
+        load_class_responses=[_mixed_schedule()],
+        inscribir_responses=[_inscribir_cookie_invalid()],
+        monkeypatch=monkeypatch,
+    )
+
+    result = ex.book(
+        rule=_rule(),
+        target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC),
+        override=_override(class_type="Halterofilia"),
+    )
+
+    assert result.terminal_status == "cookie_invalid"
+    assert [c["class_id"] for c in client.inscribir_calls] == [88888]
     call = writer.calls[0]
     assert call["outcome_source"] == "override"
-    assert "19:00" in call["response_payload"]
+    assert call["requested_class"] is None
+
+
+def test_rule_primary_not_visible_stays_terminal_without_an_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T-BDO-013 acceptance 1 and 2: the non-terminal ``class_not_visible``
+    branch is scoped to the override's target. Without an override the rule
+    primary's invisibility ends the run exactly as it did before ADR-0012,
+    even with a second shot configured and published."""
+    ex, client, writer = _executor(
+        load_class_responses=[
+            _load_class_payload(
+                slots=[{"Id": 88888, "Nombre": "Halterofilia", "HoraComienzo": "21:30:00"}]
+            )
+        ],
+        monkeypatch=monkeypatch,
+        retry_interval_s=1.0,
+        retry_timeout_s=0.05,
+    )
+
+    result = ex.book(
+        rule=_rule(second_shot_class_type="Halterofilia", second_shot_class_time="21:30"),
+        target_slot=datetime(2026, 7, 15, 21, 30, tzinfo=UTC),
+    )
+
+    assert result.terminal_status == "class_not_visible"
+    assert client.inscribir_calls == []
+    assert len(client.load_class_calls) == 1
+    assert writer.calls[0]["outcome_source"] == "rule"
+
+
+def test_no_override_run_keeps_the_pre_feature_call_sequence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T-BDO-013 acceptance 1: removing the override from the plan restores
+    the two-step walk. Recorded end to end, including the ticks every call
+    carries, so an extra probe or a shifted day would fail here."""
+    ex, client, writer = _executor(
+        load_class_responses=[_mixed_schedule()],
+        inscribir_responses=[_inscribir_full(), _inscribir_ok()],
+        monkeypatch=monkeypatch,
+    )
+    target_slot = datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+    expected_ticks = midnight_utc_ticks(target_slot)
+
+    result = ex.book(
+        rule=_rule(second_shot_class_type="Halterofilia", second_shot_class_time="19:00"),
+        target_slot=target_slot,
+    )
+
+    assert result.terminal_status == "granted"
+    assert result.fallback_index == 1
+    # One probe plus one booking call per candidate, two candidates.
+    assert len(client.load_class_calls) == 2
+    assert [c["class_id"] for c in client.inscribir_calls] == [45654, 99999]
+    assert {c["ticks"] for c in client.load_class_calls} == {expected_ticks}
+    assert {c["ticks"] for c in client.inscribir_calls} == {expected_ticks}
+    call = writer.calls[0]
+    assert call["outcome_source"] == "rule"
+    assert call["target_slot"] == target_slot
+    assert call["requested_class"] is None
+    assert call["requested_time"] is None
+    assert call["fallback_reason"] is None
 
 
 # ---------------------------------------------------------------------------

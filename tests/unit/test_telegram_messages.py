@@ -115,3 +115,115 @@ def test_anomaly_singular_vs_plural() -> None:
 def test_unknown_kind_returns_none_for_text_fallback() -> None:
     assert messages.render({"kind": "mystery"}, lang="en", gym_name="Ant Work") is None
     assert messages.render(None, lang="en", gym_name="Ant Work") is None
+
+
+# --------------------------------------------------------------------------
+# Single-day override branches (T-BDO-015, ADR-0012 Decision 4)
+#
+# These three are keyed on ``outcome_source``, not ``terminal_status``:
+# a substitution reads as ``granted`` and a skip reads as ``skipped``,
+# so the status alone cannot tell them from an ordinary run.
+# --------------------------------------------------------------------------
+
+
+def _fallback_payload(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "kind": "booking_result",
+        "terminal_status": "granted",
+        "outcome_source": "override_fallback",
+        "outcome_id": 51,
+        "class_type": "WOD",
+        "target_slot": "2026-07-10T18:30+00:00",
+        "requested_class": "Gymnastics",
+        "requested_time": "19:00",
+        "fallback_reason": "full",
+    }
+    payload.update(overrides)
+    return payload
+
+
+@pytest.mark.parametrize(
+    ("lang", "reason"),
+    [("en", "that class was full"), ("es", "esa clase estaba completa")],
+)
+def test_fallback_granted_names_booked_requested_and_reason(lang: str, reason: str) -> None:
+    """FR-015, INV-008: a substitution is never silent."""
+    body = messages.render(_fallback_payload(), lang=lang, gym_name="Ant Work")
+
+    assert body is not None
+    assert "[Ant Work]" in body
+    assert "#51" in body
+    assert "WOD" in body  # booked class
+    assert "Gymnastics" in body  # requested class
+    assert "19:00" in body  # requested time
+    assert reason in body  # why the substitution happened
+
+
+@pytest.mark.parametrize(
+    ("lang", "override_reason", "rule_reason"),
+    [
+        ("en", "that class was full", "that class never appeared on the schedule"),
+        ("es", "esa clase estaba completa", "esa clase no apareció en el horario"),
+    ],
+)
+def test_fallback_exhausted_names_both_failures(
+    lang: str, override_reason: str, rule_reason: str
+) -> None:
+    """FR-016, CC-007: nothing booked, and both failures are named."""
+    body = messages.render(
+        _fallback_payload(terminal_status="class_not_visible"),
+        lang=lang,
+        gym_name="Ant Work",
+    )
+
+    assert body is not None
+    assert "Gymnastics" in body  # the override's own target
+    assert "WOD" in body  # the rule's class
+    assert override_reason in body
+    assert rule_reason in body
+
+
+@pytest.mark.parametrize(
+    ("lang", "phrase"),
+    [("en", "You marked this day"), ("es", "Marcaste este día")],
+)
+def test_override_skip_reads_as_a_decision_not_a_failure(lang: str, phrase: str) -> None:
+    """FR-030: a skip must not read as something that went wrong."""
+    body = messages.render(
+        {
+            "kind": "booking_result",
+            "terminal_status": "skipped",
+            "outcome_source": "override_skip",
+            "outcome_id": 77,
+            "class_type": "WOD",
+            "target_slot": "2026-07-10T18:30+00:00",
+        },
+        lang=lang,
+        gym_name="Ant Work",
+    )
+
+    assert body is not None
+    assert "[Ant Work]" in body
+    assert "#77" in body
+    assert phrase in body
+    # No failure vocabulary: the chain was never walked, so naming a
+    # reason would invent a problem the user does not have.
+    for reason in ("full", "completa", "horario", "schedule"):
+        assert reason not in body
+
+
+def test_fallback_branch_does_not_hijack_an_ordinary_granted_run() -> None:
+    """``outcome_source`` defaults to ``rule``: the pre-feature path is untouched."""
+    body = messages.render(
+        {
+            "kind": "booking_result",
+            "terminal_status": "granted",
+            "outcome_id": 42,
+            "class_type": "WOD",
+            "target_slot": "2026-07-10T18:30+00:00",
+        },
+        lang="en",
+        gym_name="Ant Work",
+    )
+    assert body is not None
+    assert "Substitution" not in body

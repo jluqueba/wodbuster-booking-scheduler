@@ -49,6 +49,21 @@ _BOOKING_KEYS: dict[str, str] = {
     "cancelled": "tg.booking.cancelled",
 }
 
+# terminal_status -> catalog key for the sentence fragment that explains
+# why a candidate could not be booked. Shared with the dashboard banner
+# (``banners.py``), hence the channel-neutral namespace.
+_REASON_KEYS: dict[str, str] = {
+    "class_not_visible": "booking.reason.class_not_visible",
+    "full": "booking.reason.full",
+    "upstream_unavailable": "booking.reason.upstream_unavailable",
+    "cookie_invalid": "booking.reason.cookie_invalid",
+}
+
+
+def reason_key(terminal_status: Any) -> str:
+    """Catalog key for the failure fragment of ``terminal_status``."""
+    return _REASON_KEYS.get(str(terminal_status or ""), "booking.reason.unknown")
+
 
 def format_slot(when: datetime, lang: str) -> str:
     """One canonical, localised slot label in the gym timezone.
@@ -90,10 +105,37 @@ def render(payload: dict[str, Any] | None, *, lang: str, gym_name: str) -> str |
 
 def _render_booking(payload: dict[str, Any], lang: str, gym_name: str) -> str:
     status = str(payload.get("terminal_status") or "")
-    key = _BOOKING_KEYS.get(status, "tg.booking.unknown")
+    source = str(payload.get("outcome_source") or "rule")
     klass = str(payload.get("class_type") or payload.get("target_class") or "?")
     booking_id = payload.get("outcome_id", "?")
     when = _when(payload.get("target_slot"), lang)
+
+    # ``outcome_source`` is orthogonal to ``terminal_status`` (ADR-0012
+    # Decision 4), and the override branches are exactly the ones the
+    # status alone cannot tell apart: a skip reads as "skipped" like a
+    # vacation day, and a substitution reads as "granted" like any other
+    # booking. Branching on the source first is what keeps INV-008 true.
+    if source == "override_skip":
+        return t_lang(
+            lang,
+            "tg.booking.override_skip",
+            gym=gym_name,
+            id=booking_id,
+            klass=klass,
+            when=when,
+        )
+    if source == "override_fallback":
+        return _render_fallback(
+            payload,
+            lang,
+            gym_name,
+            status=status,
+            klass=klass,
+            booking_id=booking_id,
+            when=when,
+        )
+
+    key = _BOOKING_KEYS.get(status, "tg.booking.unknown")
     if key == "tg.booking.unknown":
         return t_lang(
             lang,
@@ -105,6 +147,51 @@ def _render_booking(payload: dict[str, Any], lang: str, gym_name: str) -> str:
             status=status or "?",
         )
     return t_lang(lang, key, gym=gym_name, id=booking_id, klass=klass, when=when)
+
+
+def _render_fallback(
+    payload: dict[str, Any],
+    lang: str,
+    gym_name: str,
+    *,
+    status: str,
+    klass: str,
+    booking_id: Any,
+    when: str,
+) -> str:
+    """Render a run that advanced past the override's own target.
+
+    Two outcomes matter to the user and they are not the same message:
+    the rule's class was booked in place of the requested one (FR-015),
+    or the whole chain was exhausted and nothing was booked (FR-016).
+    """
+    requested_class = str(payload.get("requested_class") or klass)
+    requested_time = str(payload.get("requested_time") or "?")
+    reason = t_lang(lang, reason_key(payload.get("fallback_reason")))
+    if status == "granted":
+        return t_lang(
+            lang,
+            "tg.booking.fallback_granted",
+            gym=gym_name,
+            id=booking_id,
+            klass=klass,
+            when=when,
+            requested_class=requested_class,
+            requested_time=requested_time,
+            reason=reason,
+        )
+    return t_lang(
+        lang,
+        "tg.booking.fallback_exhausted",
+        gym=gym_name,
+        id=booking_id,
+        klass=klass,
+        when=when,
+        requested_class=requested_class,
+        requested_time=requested_time,
+        reason=reason,
+        rule_reason=t_lang(lang, reason_key(status)),
+    )
 
 
 def _render_anomaly(payload: dict[str, Any], lang: str, gym_name: str) -> str:
@@ -131,4 +218,4 @@ def _when(iso: Any, lang: str) -> str:
     return format_slot(parsed, lang)
 
 
-__all__ = ["format_slot", "render"]
+__all__ = ["format_slot", "reason_key", "render"]
