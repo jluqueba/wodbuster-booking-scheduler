@@ -148,7 +148,7 @@
                       method="post"
                       action="{{ lang_url('/bookings/' ~ slot.id ~ '/cancel') }}"
                       class="wb-inline-form wb-upcoming__cancel"
-                      onsubmit="return wbConfirm(this, event, '{{ t('history.confirm.cancel') }}')"
+                      data-wb-confirm="{{ t('history.confirm.cancel') }}"
                     >
                       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                       <button type="submit" class="wb-btn wb-btn--danger">{{ t("history.cancel_button") }}</button>
@@ -180,7 +180,7 @@
                           method="post"
                           action="{{ slot.revert_url }}"
                           class="wb-inline-form"
-                          onsubmit='return wbConfirm(this, event, {{ t("override.confirm.revert")|tojson }})'
+                          data-wb-confirm="{{ t('override.confirm.revert') }}"
                         >
                           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                           <button type="submit" class="wb-btn wb-btn--danger">{{- t("override.revert_button") -}}</button>
@@ -200,7 +200,7 @@
                           method="post"
                           action="{{ slot.revert_url }}"
                           class="wb-inline-form"
-                          onsubmit='return wbConfirm(this, event, {{ t("override.confirm.revert")|tojson }})'
+                          data-wb-confirm="{{ t('override.confirm.revert') }}"
                         >
                           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                           <button type="submit" class="wb-btn wb-btn--danger">{{- t("override.revert_button") -}}</button>
@@ -243,7 +243,9 @@
           <th>{{ t("history.table.class") }}</th>
           <th>{{ t("history.table.result") }}</th>
           <th>{{ t("history.table.attempted") }}</th>
-          <th></th>
+          {# Action column carries no header, so the cell is a td: an empty th
+             is announced as a header with no name. #}
+          <td></td>
         </tr>
       </thead>
       <tbody>
@@ -280,7 +282,7 @@
                   method="post"
                   action="{{ lang_url('/bookings/' ~ row.id ~ '/cancel') }}"
                   class="wb-inline-form"
-                  onsubmit="return wbConfirm(this, event, '{{ t('history.confirm.cancel') }}')"
+                  data-wb-confirm="{{ t('history.confirm.cancel') }}"
                 >
                   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                   <button type="submit" class="wb-btn wb-btn--danger">{{- t("history.cancel_button") -}}</button>

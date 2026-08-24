@@ -36,7 +36,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ..gyms.discovery import GymSelectorError
 from ..gyms.service import add_discovered_gym_accounts
-from ..i18n import lang_prefix, set_language, t_lang
+from ..i18n import DEFAULT_LANG, get_language, lang_prefix, set_language, t_lang
 from ..notifications.fanout import enqueue_email_row
 from ..notifications.telegram import TelegramError, send_message
 from ..persistence.cookie_store import CookieDecryptError
@@ -516,6 +516,13 @@ def _apply_oauth_language(request: Request) -> None:
     The OAuth callback URL carries no ``/es`` prefix and a signing-up user
     has no session language yet, so without this the pending/denied/banned
     pages would render in English regardless of where the user came from.
+
+    An explicit prefix in the URL still wins (ADR-0008): the banned page
+    is also reachable directly at ``/es/auth/suspended``, where the
+    middleware has already selected Spanish and there is no login to
+    restore.
     """
+    if get_language() != DEFAULT_LANG:
+        return
     prefix = request.session.get("oauth_lang_prefix") or ""
     set_language(prefix.lstrip("/"))

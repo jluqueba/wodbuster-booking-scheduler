@@ -21,7 +21,7 @@ from sqlalchemy.orm import sessionmaker
 from wodbuster_worker.persistence.models import BookingDayOverride, SchedulerRule
 from wodbuster_worker.rules.service import deactivate_rule
 
-from .conftest import gym_account_id_for
+from .conftest import confirm_messages, gym_account_id_for
 
 
 def _sign_in(
@@ -418,6 +418,45 @@ def test_edit_rule_of_other_operator_returns_404(
 
 
 # --- Delete ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("prefix", "delete_message"),
+    [
+        ("", "Delete this rule?"),
+        ("/es", "\u00bfBorrar esta regla?"),
+    ],
+    ids=["en", "es"],
+)
+def test_rule_delete_confirmations_carry_the_prompt(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    prefix: str,
+    delete_message: str,
+) -> None:
+    """Deleting a rule must still ask, from the list and from the editor.
+
+    The prompt travels as text in ``data-wb-confirm``, so the assertion
+    is on the value a browser hands the listener after entity decoding.
+    Both languages are rendered because only one of them carries an
+    apostrophe.
+    """
+    op_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+    factory = sessionmaker(bind=postgres_engine)
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        csrf = client.cookies["wodbuster_csrf"]
+        rule_id, _ = _create_rule_and_read_ids(client, csrf, factory, op_id)
+        listing = client.get(f"{prefix}/rules")
+        editor = client.get(f"{prefix}/rules/{rule_id}")
+
+    assert listing.status_code == 200
+    assert confirm_messages(listing.text) == [delete_message]
+    assert editor.status_code == 200
+    assert confirm_messages(editor.text) == [delete_message]
 
 
 def test_delete_rule_removes_row(

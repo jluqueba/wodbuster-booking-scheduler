@@ -19,7 +19,6 @@ so unit tests keep running without a Postgres dependency.
 from __future__ import annotations
 
 import html
-import json
 import os
 import re
 import socket
@@ -238,39 +237,24 @@ def gym_account_id_for(conn: Any, operator_id: int) -> int:
 # Rendered-markup helpers
 # ---------------------------------------------------------------------------
 
-# A browser reads an attribute up to its own delimiter, so the lazy body
-# below is the same slice the browser would take.
-_ONSUBMIT_ATTRIBUTE = re.compile(r"""onsubmit=(?P<quote>["'])(?P<body>.*?)(?P=quote)""", re.DOTALL)
-
-# ``return wbConfirm(this, event, <js string literal>)`` and nothing else.
-# The literal may carry backslash escapes but no bare copy of its own
-# delimiter, which is exactly the property an entity-decoded apostrophe
-# destroys.
-_WB_CONFIRM_CALL = re.compile(
-    r"""^return wbConfirm\(this, event, """
-    r"""(?P<quote>["'])(?P<message>(?:\\.|(?!(?P=quote)).)*)(?P=quote)\)$""",
+# A form asks for confirmation by carrying the prompt as text in a data
+# attribute; a delegated listener reads it back with getAttribute, which
+# is what html.unescape models here.
+_CONFIRM_ATTRIBUTE = re.compile(
+    r"""data-wb-confirm=(?P<quote>["'])(?P<message>(?!(?P=quote)).*?)(?P=quote)""",
     re.DOTALL,
 )
 
 
 def confirm_messages(body: str) -> list[str]:
-    """Return the message of every ``wbConfirm`` handler rendered in ``body``.
+    """Return the confirmation prompt of every guarded form in ``body``.
 
-    Reproduces the browser's own order of operations: take the attribute
-    up to its delimiter, decode HTML entities, then parse the result as
-    JavaScript. A handler that survives Jinja's autoescape but not the
-    entity decoding (an apostrophe in the copy closing a single-quoted JS
-    literal early, for instance) never compiles, so the confirmation is
-    silently skipped and the form submits unguarded. Raises rather than
-    returning, because that failure is invisible in the markup.
+    The prompt lives in ``data-wb-confirm`` as plain text, so the only
+    transformation between the markup and what the operator reads is the
+    HTML entity decoding every parser applies. Asserting on the decoded
+    value keeps the guard honest about apostrophes and quotes without
+    reproducing any JavaScript parsing.
     """
-    messages: list[str] = []
-    for attribute in _ONSUBMIT_ATTRIBUTE.finditer(body):
-        decoded = html.unescape(attribute.group("body"))
-        call = _WB_CONFIRM_CALL.match(decoded)
-        assert call is not None, f"onsubmit handler is not valid JavaScript once decoded: {decoded}"
-        literal = call.group("message")
-        if call.group("quote") == "'":
-            literal = literal.replace('\\"', '"').replace('"', '\\"').replace("\\'", "'")
-        messages.append(json.loads(f'"{literal}"'))
-    return messages
+    return [
+        html.unescape(attribute.group("message")) for attribute in _CONFIRM_ATTRIBUTE.finditer(body)
+    ]

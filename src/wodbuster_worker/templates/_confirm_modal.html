@@ -1,15 +1,28 @@
-{# Reusable custom confirm modal (wbConfirm).
+{# Reusable confirmation modal.
 
-   Renders a hidden dialog + inline script. Any form that wants to
-   ask for confirmation before submitting swaps its
-   ``onsubmit="return confirm('...')"`` handler for
-   ``onsubmit="return wbConfirm(this, event, '...')"``. The
-   function returns ``false`` on first invocation, opens the
-   modal, and re-submits the form when the operator taps Confirm.
+   Renders a hidden dialog plus an inline script that installs ONE
+   delegated submit listener on the document. Any form that wants to
+   ask for confirmation before submitting declares a data attribute:
 
-   Uses the native <dialog> element (baseline available in every
+     data-wb-confirm="{{ t('some.key') }}"
+
+   The value is TEXT, not code, so Jinja's autoescape is exactly the
+   right treatment: an apostrophe or a quote in the copy becomes an
+   entity, the HTML parser decodes it back, and the message reaches
+   the listener intact. Nothing is ever parsed as JavaScript, which
+   is what the earlier inline-handler form required and what made a
+   single apostrophe able to silently disable the confirmation.
+
+   Keeping the templates free of JavaScript also keeps the editor's
+   TypeScript analysis away from Jinja delimiters, which it reports
+   as syntax errors when they appear inside an event attribute.
+
+   The listener cancels the first submit, opens the modal, and
+   re-submits the form when the operator taps Confirm.
+
+   Uses the native dialog element (baseline available in every
    modern browser as of 2023+); no external JS dependency. Falls
-   back to the browser confirm() when <dialog> is missing.
+   back to the browser confirm() when dialog is missing.
 #}
 
 <dialog id="wb-confirm-dialog" class="wb-confirm">
@@ -50,27 +63,36 @@
       }
     }
 
-    window.wbConfirm = function (formEl, event, message) {
+    // One delegated listener for every guarded form on the page.
+    // Capture phase so the modal decides before any bubbling
+    // handler (HTMX included) gets to act on the submit.
+    document.addEventListener('submit', function (event) {
+      var form = event.target;
+      if (!form || typeof form.matches !== 'function') return;
+      if (!form.matches('form[data-wb-confirm]')) return;
+
+      var message = form.getAttribute('data-wb-confirm');
       var dialog = document.getElementById('wb-confirm-dialog');
+
       // Fallback: browser confirm if <dialog> is unavailable.
       if (!dialog || typeof dialog.showModal !== 'function') {
-        return window.confirm(message || 'Are you sure?');
+        if (!window.confirm(message || 'Are you sure?')) {
+          event.preventDefault();
+        }
+        return;
       }
-      // If we are the re-submit triggered by the Confirm click,
-      // let it through unchanged.
-      if (formEl.dataset.wbConfirmed === '1') {
-        formEl.dataset.wbConfirmed = '';
-        return true;
+      // The re-submit triggered by the Confirm click goes through
+      // untouched.
+      if (form.dataset.wbConfirmed === '1') {
+        form.dataset.wbConfirmed = '';
+        return;
       }
-      if (event && typeof event.preventDefault === 'function') {
-        event.preventDefault();
-      }
-      pendingForm = formEl;
+      event.preventDefault();
+      pendingForm = form;
       var bodyEl = document.getElementById('wb-confirm-body');
       if (bodyEl && message) bodyEl.textContent = message;
       dialog.showModal();
-      return false;
-    };
+    }, true);
 
     ready(function () {
       var dialog = document.getElementById('wb-confirm-dialog');
@@ -84,9 +106,9 @@
           dialog.close();
           if (form) {
             form.dataset.wbConfirmed = '1';
-            // requestSubmit fires the same submit/onsubmit lifecycle
-            // as a click on a submit button — critical so hx-post
-            // handlers still fire when we adopt HTMX for these.
+            // requestSubmit fires a real submit event (form.submit()
+            // does not), so the delegated listener above sees the
+            // re-submit and HTMX handlers still fire.
             if (typeof form.requestSubmit === 'function') {
               form.requestSubmit();
             } else {
