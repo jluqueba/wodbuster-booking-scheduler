@@ -12,6 +12,7 @@ where the browser parses server-rendered text as JavaScript.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from pathlib import Path
 
 import html5lib
@@ -82,18 +83,29 @@ def test_head_survives_parsing_the_template_source() -> None:
         head = re.search(r"<head[^>]*>(?P<body>.*?)</head>", source, re.DOTALL | re.IGNORECASE)
         if head is None:
             continue
-        declared = set(re.findall(r"<(meta|title|link|style)\b", head.group("body"), re.IGNORECASE))
+        # Counted, not just named: a comment halfway down the head leaves
+        # the elements above it in place, so comparing sets of tag names
+        # would call that a pass. Comments are stripped first, or a tag
+        # named in prose inside one counts as a declaration.
+        declared_source = re.sub(r"<!--.*?-->", "", head.group("body"), flags=re.DOTALL)
+        declared = Counter(
+            tag.lower()
+            for tag in re.findall(
+                r"<(meta|title|link|style|script)\b", declared_source, re.IGNORECASE
+            )
+        )
         parsed = html5lib.parse(source, treebuilder="etree", namespaceHTMLElements=False)
         parsed_head = parsed.find("head")
-        survived = (
-            {child.tag for child in parsed_head if isinstance(child.tag, str)}
-            if parsed_head is not None
-            else set()
+        survived = Counter(
+            child.tag
+            for child in (parsed_head if parsed_head is not None else [])
+            if isinstance(child.tag, str)
         )
-        displaced = {tag.lower() for tag in declared} - survived
+        displaced = declared - survived
         if displaced:
+            detail = ", ".join(f"{count} {tag}" for tag, count in sorted(displaced.items()))
             offenders.append(
-                f"{template.relative_to(_TEMPLATES)}: {', '.join(sorted(displaced))} "
+                f"{template.relative_to(_TEMPLATES)}: {detail} "
                 "declared in <head> but parsed outside it"
             )
     assert not offenders, "head content displaced by a Jinja construct:\n" + "\n".join(offenders)
