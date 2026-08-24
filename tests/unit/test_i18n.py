@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from string import Formatter
+
 import pytest
 
 from wodbuster_worker.i18n import (
@@ -134,3 +136,67 @@ def test_lang_url_returns_non_absolute_paths_unchanged() -> None:
         assert lang_url("#anchor") == "#anchor"
     finally:
         set_language("en")
+
+
+# ---------------------------------------------------------------------------
+# Single-day override catalog parity (T-BDO-019, FR-030, SC-007)
+# ---------------------------------------------------------------------------
+
+# Every namespace the single-day override feature introduced. Kept as
+# prefixes rather than a literal key list so a key added later to any of
+# them is covered without editing this test.
+_OVERRIDE_PREFIXES: tuple[str, ...] = (
+    "override.",
+    "flash.override.",
+    "banner.booking_fallback.",
+    "booking.reason.",
+    "chip.source.",
+    "tg.booking.override_",
+    "tg.booking.fallback_",
+)
+
+# Standalone keys that do not sit under a namespace of their own.
+_OVERRIDE_KEYS: tuple[str, ...] = ("chip.modified", "chip.skipped_day")
+
+
+def _override_keys(catalog: dict[str, str]) -> set[str]:
+    keys = {key for key in catalog if key.startswith(_OVERRIDE_PREFIXES)}
+    keys.update(key for key in _OVERRIDE_KEYS if key in catalog)
+    return keys
+
+
+def test_override_namespaces_are_populated() -> None:
+    # Guards the test itself: a renamed namespace would silently turn
+    # every assertion below into a comparison of two empty sets.
+    for prefix in _OVERRIDE_PREFIXES:
+        assert any(key.startswith(prefix) for key in EN), f"no key under {prefix}"
+    for key in _OVERRIDE_KEYS:
+        assert key in EN
+
+
+@pytest.mark.parametrize("lang", SUPPORTED_LANGUAGES)
+def test_override_keys_exist_in_every_language(lang: str) -> None:
+    # A key present in one language only resolves through the English
+    # fallback at runtime, so it never raises. FR-030 wants it to fail here.
+    diff = _override_keys(EN) ^ _override_keys(CATALOGS[lang])
+    assert diff == set(), f"override key drift in {lang}: {sorted(diff)}"
+
+
+def test_override_spanish_strings_are_translated() -> None:
+    # An untranslated copy passes the key-parity check above, so assert on
+    # the values too. Emoji-only or placeholder-only strings would be
+    # legitimate collisions; the feature has none, so any match is a gap.
+    copies = sorted(key for key in _override_keys(EN) if EN[key] == ES[key])
+    assert copies == [], f"Spanish left as an English copy: {copies}"
+
+
+def test_override_placeholders_match_across_languages() -> None:
+    # These strings are rendered at send time from the recipient's
+    # language (ADR-0008), so a placeholder that only exists in one
+    # catalog degrades to the raw template instead of raising.
+    for key in sorted(_override_keys(EN)):
+        assert _placeholders(EN[key]) == _placeholders(ES[key]), f"placeholder drift in {key}"
+
+
+def _placeholders(template: str) -> set[str]:
+    return {name for _, name, _, _ in Formatter().parse(template) if name}

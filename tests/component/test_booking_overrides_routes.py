@@ -26,7 +26,11 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from wodbuster_worker.persistence.cookie_store import CookieStore
-from wodbuster_worker.persistence.models import BookingDayOverride, SchedulerRule
+from wodbuster_worker.persistence.models import (
+    BookingDayOverride,
+    SchedulerRule,
+    VacationWindow,
+)
 from wodbuster_worker.security.cipher import Cipher
 from wodbuster_worker.wodbuster_client.client import LoadClassResponse
 
@@ -736,12 +740,15 @@ def test_skip_persists_the_mark_and_issues_no_probe(
     assert rows[0].class_type is None
     assert rows[0].class_time is None
 
-    # The rule is untouched (INV-003).
+    # The rule is untouched (INV-003), and the skip is not a vacation
+    # window in disguise: the workaround this feature replaces is exactly
+    # the one CC-002 forbids it from reintroducing.
     with session_factory() as session:
         rule = session.get(SchedulerRule, rule_id)
         assert rule is not None
         assert rule.class_time == "18:30"
         assert rule.active is True
+        assert session.query(VacationWindow).count() == 0
 
 
 def test_skip_replaces_an_existing_time_override_in_one_row(

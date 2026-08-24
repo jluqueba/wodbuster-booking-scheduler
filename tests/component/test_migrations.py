@@ -37,6 +37,7 @@ from typing import Any
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import DataError, IntegrityError
@@ -343,6 +344,15 @@ def _seed_rule(conn: Any) -> tuple[int, int]:
         {"ga": gym_account_id},
     ).scalar_one()
     return int(gym_account_id), int(rule_id)
+
+
+def test_revision_chain_has_exactly_one_head() -> None:
+    """A forked head chain makes ``upgrade head`` ambiguous, and the fork
+    only surfaces on the branch that introduced it. Asserted off the script
+    directory so it fails without a database."""
+    heads = ScriptDirectory.from_config(Config(str(_ALEMBIC_INI))).get_heads()
+
+    assert len(heads) == 1, f"forked revision chain: {sorted(heads)}"
 
 
 def test_override_revision_downgrades_and_upgrades_again(migrated_engine: Engine) -> None:
