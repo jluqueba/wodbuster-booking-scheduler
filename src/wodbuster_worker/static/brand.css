@@ -425,6 +425,14 @@ html {
   padding: 2.5rem 1.5rem 4rem;
 }
 
+/* Data-grid pages opt into a wider shell. The 56rem reading column is
+   too narrow for the nine-column rules table, which pushed the trailing
+   Delete button behind the wrapper's horizontal scrollbar. Widening only
+   these pages keeps forms and prose at a comfortable reading width. */
+.wb-body--wide .wb-main {
+  max-width: 72rem;
+}
+
 .wb-page-title {
   font-size: 2rem;
   margin: 0 0 0.5rem;
@@ -466,12 +474,17 @@ html {
 .wb-card--interactive {
   display: block;
   color: inherit;
+  /* Grey stripe on the left edge only. The accent-yellow stripe stays
+     reserved for the dashboard countdown block. */
+  border-left: 4px solid var(--wb-text-muted);
   transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .wb-card--interactive:hover {
   transform: translateY(-2px);
   border-color: var(--wb-border-strong);
-  box-shadow: var(--wb-shadow-lg);
+  /* Restated because the shorthand above would otherwise repaint the stripe. */
+  border-left-color: var(--wb-text-muted);
+  box-shadow: 0 10px 26px rgba(148, 163, 184, 0.22);
   text-decoration: none;
   color: inherit;
 }
@@ -796,6 +809,18 @@ select {
   width: 100%;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
+/* Paired form controls (class type + class time, days before + opens at) sit
+   in equal grid columns, so they must render the same height. Pico sets an
+   explicit ``height`` on text inputs computed from the ROOT font size but
+   leaves <select> to its own box, which made the picker input ~10px taller.
+   ``height: auto`` hands both back to our padding + line-height, and the
+   shared floor pins them to the same value. */
+.wb-row2 input:not([type="checkbox"]):not([type="radio"]),
+.wb-row2 select {
+  height: auto;
+  line-height: 1.4;
+  min-height: 2.6rem;
+}
 input:focus,
 textarea:focus,
 select:focus {
@@ -919,7 +944,7 @@ fieldset legend {
 
 .wb-toolbar {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 0.6rem;
   margin-bottom: 1.5rem;
 }
@@ -1520,6 +1545,7 @@ button.wb-confirm__cancel:focus-visible,
   padding: 0.9rem 1rem;
   background: var(--wb-bg-card);
   border: 1px solid var(--wb-border);
+  border-left: 4px solid var(--wb-border-strong);
   border-radius: var(--wb-radius);
   transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
@@ -1534,44 +1560,46 @@ button.wb-confirm__cancel:focus-visible,
 /* State-coloured upcoming day tiles (History): the tile borrows the
    colour of its bookings — green when already booked (granted), blue
    when only scheduled (pending), yellow when it will be skipped for a
-   vacation window. The border carries the colour at rest and the hover
-   lift shadow matches it. */
+   vacation window. Like the dashboard countdown block, only the left
+   edge carries the colour; the hover shadow matches it. Each variant
+   restates ``border-left-color`` on hover because the base hover rule
+   sets the shorthand ``border-color`` and outranks it. */
 .wb-upcoming__day--granted {
-  border-color: rgba(74, 222, 128, 0.5);
+  border-left-color: var(--wb-success);
 }
 .wb-upcoming__day--granted:hover {
-  border-color: var(--wb-success);
+  border-left-color: var(--wb-success);
   box-shadow: 0 10px 26px rgba(74, 222, 128, 0.28);
 }
 .wb-upcoming__day--pending {
-  border-color: rgba(96, 165, 250, 0.5);
+  border-left-color: var(--wb-info);
 }
 .wb-upcoming__day--pending:hover {
-  border-color: var(--wb-info);
+  border-left-color: var(--wb-info);
   box-shadow: 0 10px 26px rgba(96, 165, 250, 0.28);
 }
 .wb-upcoming__day--vacation {
-  border-color: rgba(248, 255, 64, 0.5);
+  border-left-color: var(--wb-accent);
 }
 .wb-upcoming__day--vacation:hover {
-  border-color: var(--wb-accent);
+  border-left-color: var(--wb-accent);
   box-shadow: 0 10px 26px rgba(248, 255, 64, 0.28);
 }
 .wb-upcoming__day--modified {
-  border-color: rgba(192, 132, 252, 0.5);
+  border-left-color: var(--wb-modified);
 }
 .wb-upcoming__day--modified:hover {
-  border-color: var(--wb-modified);
+  border-left-color: var(--wb-modified);
   box-shadow: 0 10px 26px rgba(192, 132, 252, 0.28);
 }
 /* A day a single-day override marked as skipped: nothing will be
    attempted, so the tile reads muted grey rather than borrowing any of
    the four active state colours. */
 .wb-upcoming__day--skipped {
-  border-color: rgba(148, 163, 184, 0.45);
+  border-left-color: var(--wb-text-muted);
 }
 .wb-upcoming__day--skipped:hover {
-  border-color: var(--wb-text-muted);
+  border-left-color: var(--wb-text-muted);
   box-shadow: 0 10px 26px rgba(148, 163, 184, 0.22);
 }
 
@@ -1582,6 +1610,23 @@ button.wb-confirm__cancel:focus-visible,
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 0.6rem;
+}
+
+/* Whole-card link to the day editor. The overlay anchor covers the card so a
+   click anywhere opens "edit day"; the real buttons inside sit above it. */
+.wb-upcoming__day--linked {
+  position: relative;
+}
+.wb-upcoming__day-link {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+}
+.wb-upcoming__day--linked .wb-upcoming__actions,
+.wb-upcoming__day--linked .wb-upcoming__cancel {
+  position: relative;
+  z-index: 2;
 }
 
 .wb-upcoming__list {

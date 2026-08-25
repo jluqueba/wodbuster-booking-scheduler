@@ -12,6 +12,8 @@
 
 {% block title %}{{ t("nav.history") }} — WodBuster Booking Scheduler{% endblock %}
 
+{% block body_class %}wb-body--wide{% endblock %}
+
 {% block head_extra %}
 <style>
   .wb-history-table td.wb-cell-actions {
@@ -130,7 +132,17 @@
           {% elif "modified" in day_kinds %}{% set day_kind = "modified" %}
           {% elif "skipped" in day_kinds %}{% set day_kind = "skipped" %}
           {% else %}{% set day_kind = "vacation" %}{% endif %}
-          <article class="wb-upcoming__day wb-upcoming__day--{{ day_kind }}">
+          {# First editable slot of the day: the whole card links there so a
+             click anywhere that is not a button opens the day editor. #}
+          {% set day_edit_url = day.rows | selectattr("edit_url") | map(attribute="edit_url") | first | default(none) %}
+          <article class="wb-upcoming__day wb-upcoming__day--{{ day_kind }}{% if day_edit_url %} wb-upcoming__day--linked{% endif %}">
+            {% if day_edit_url %}
+              <a
+                class="wb-upcoming__day-link"
+                href="{{ day_edit_url }}"
+                aria-label="{{ t('history.upcoming.edit_day_aria', date=day.date_label) }}"
+              ></a>
+            {% endif %}
             <header class="wb-upcoming__date">{{ wb_time(day.date_dt, "date", day.date_label) }}</header>
             <div class="wb-upcoming__list">
               {% for slot in day.rows %}
