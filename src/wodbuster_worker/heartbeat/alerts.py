@@ -5,11 +5,13 @@ against the next scheduled booking window and decides one of four
 actions:
 
 - :class:`Emit` — either the first emission of an alert, or a
-  re-emission because the underlying condition still holds and the
-  operator has not acknowledged since the previous cycle.
-- :class:`Suppress` — an open alert exists, the condition still holds,
-  but the operator acknowledged this alert since the last heartbeat.
-  US4.3 grants one grace cycle before re-nagging.
+  re-emission because the underlying condition still holds and at
+  least the re-fire interval has elapsed since the alert's last
+  emission.
+- :class:`Suppress` — an open alert exists, the condition still
+  holds, but less than the re-fire interval has elapsed since it was
+  last emitted. Acknowledgement state plays no role in this gate
+  (INV-001, FR-007).
 - :class:`Clear` — the condition no longer holds and an open alert
   exists. Close it so a subsequent successful window does not fire a
   stale banner. Also invoked from :meth:`CookieStore.save`'s
@@ -45,14 +47,14 @@ from ..notifications.fanout import enqueue_email_row
 from ..persistence.models import (
     Alert,
     GymAccount,
-    HeartbeatReading,
     NotificationOutbox,
     OperatorProfile,
 )
 from .next_window import compute_next_window
 
 _ALERT_KIND = "cookie_expiring"
-_DEFAULT_LEAD_TIME = timedelta(hours=24)
+_DEFAULT_LEAD_TIME = timedelta(hours=72)
+_DEFAULT_REFIRE_INTERVAL = timedelta(hours=8)
 
 
 @dataclass(frozen=True)
@@ -65,7 +67,7 @@ class Emit:
 
 @dataclass(frozen=True)
 class Suppress:
-    """Skip this cycle — operator acknowledged the open alert since last tick."""
+    """Skip this cycle — the alert last emitted less than the re-fire interval ago."""
 
 
 @dataclass(frozen=True)
@@ -88,7 +90,7 @@ def evaluate_cookie_expiring(
     projected_ttl_at: datetime | None,
     now: datetime,
     lead_time: timedelta = _DEFAULT_LEAD_TIME,
-    previous_heartbeat_at: datetime | None = None,
+    refire_interval: timedelta = _DEFAULT_REFIRE_INTERVAL,
 ) -> AlertAction:
     """Decide what to do with the ``cookie_expiring`` alert this cycle.
 
@@ -112,7 +114,7 @@ def evaluate_cookie_expiring(
         return NoOp()
 
     # Threshold: cookie will not survive the next window AND the window
-    # is close enough that a 24h lead time matters. Both must hold —
+    # is close enough that the lead time matters. Both must hold —
     # a far-future window is not an emergency, even if the cookie is
     # projected to expire before it.
     cookie_dies_before_window = projected_ttl_at < next_window_at
@@ -129,15 +131,11 @@ def evaluate_cookie_expiring(
             projected_ttl_at=projected_ttl_at,
         )
 
-    # An open alert already exists. Suppress if the operator
-    # acknowledged it since the previous heartbeat. ``acknowledged_at``
-    # persists across cycles; the "since previous heartbeat" comparison
-    # is what makes suppression a one-cycle grace, not permanent.
-    if (
-        open_alert.acknowledged_at is not None
-        and previous_heartbeat_at is not None
-        and open_alert.acknowledged_at >= previous_heartbeat_at
-    ):
+    # An open alert already exists. Suppress until the re-fire interval
+    # has elapsed since it was last emitted. Acknowledgement state is
+    # not read here — INV-001 requires the interval to hold regardless
+    # of ack, so the elapsed-time gate alone decides (FR-007).
+    if now - open_alert.last_emitted_at < refire_interval:
         return Suppress()
 
     return Emit(
@@ -226,10 +224,12 @@ def acknowledge_open_cookie_expiring(
     """Acknowledge the gym account's open ``cookie_expiring`` alert (US4/FR-027).
 
     Powers the Telegram ``/ack`` command. Sets ``acknowledged_at`` on
-    the single open ``cookie_expiring`` row for ``gym_account_id`` so the
-    evaluator suppresses re-emission for the current heartbeat cycle
-    (see :func:`evaluate_cookie_expiring`). The underlying condition is
-    not cleared — acknowledgement only quiets the nag for one cycle.
+    the single open ``cookie_expiring`` row for ``gym_account_id``.
+    :func:`evaluate_cookie_expiring` no longer reads this field for
+    timing (INV-001, FR-007) — the elapsed-time re-fire gate alone
+    decides when to re-emit. ``acknowledged_at`` remains an
+    audit-only, user-visible signal (the Telegram confirmation reply).
+    The underlying condition is not cleared by acknowledging it.
 
     Returns the acknowledged alert id, or ``None`` when the gym account
     has no open ``cookie_expiring`` alert (nothing to acknowledge).
@@ -252,27 +252,6 @@ def _open_alert(session: Session, gym_account_id: int) -> Alert | None:
             Alert.kind == _ALERT_KIND,
             Alert.closed_at.is_(None),
         )
-        .limit(1)
-    )
-
-
-def previous_heartbeat_at(
-    session: Session, gym_account_id: int, current_probed_at: datetime
-) -> datetime | None:
-    """Return the ``probed_at`` of the heartbeat that preceded ``current``.
-
-    Uses a strict less-than so a call made after the current row has
-    been written still sees the true previous row (there is no
-    equality collision unless two probes share a microsecond, which
-    would already indicate a scheduler bug).
-    """
-    return session.scalar(
-        select(HeartbeatReading.probed_at)
-        .where(
-            HeartbeatReading.gym_account_id == gym_account_id,
-            HeartbeatReading.probed_at < current_probed_at,
-        )
-        .order_by(HeartbeatReading.probed_at.desc())
         .limit(1)
     )
 
@@ -343,5 +322,4 @@ __all__ = [
     "apply_alert_action",
     "close_open_cookie_expiring",
     "evaluate_cookie_expiring",
-    "previous_heartbeat_at",
 ]

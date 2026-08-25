@@ -163,7 +163,8 @@ EN: dict[str, str] = {
     "dashboard.cards.rules.body": "Manage your recurring weekly bookings and preference chains.",
     "dashboard.cards.cookie.title": "🍪 Cookie",
     "dashboard.cards.cookie.body": (
-        "Paste or refresh the .WBAuth value the worker uses to authenticate against WodBuster."
+        "Paste or refresh the .WBAuth value the worker uses to authenticate against WodBuster. "
+        "Retrieving or renewing it requires a desktop or laptop browser, not a mobile device."
     ),
     "dashboard.cards.history.title": "📜 History",
     "dashboard.cards.history.body": (
@@ -414,8 +415,9 @@ EN: dict[str, str] = {
     "landing.cards.cookie.title": "💓 Cookie heartbeat",
     "landing.cards.cookie.body": (
         "Hourly probe against WodBuster. Projects expiry, alerts you "
-        "24 hours before the next booking window if the cookie is "
-        "about to die."
+        "72 hours before the next booking window if the cookie is "
+        "about to die. Retrieving or renewing the cookie value requires "
+        "a desktop or laptop browser, not a mobile device."
     ),
     "landing.cards.notifications.title": "🔔 Dual-channel notifications",
     "landing.cards.notifications.body": (
@@ -441,6 +443,10 @@ EN: dict[str, str] = {
     "auth.pending.title": "⏳ Request received",
     "auth.pending.body": "Your access request is awaiting approval by the administrator.",
     "auth.pending.hint": "You will be able to sign in here once it is approved.",
+    "auth.pending.desktop_note": (
+        "Once approved, the next step (pasting your WodBuster cookie) needs a desktop or "
+        "laptop browser — it will not work from a mobile browser or app."
+    ),
     "auth.pending.back": "⬅️ Back to sign-in",
     "auth.suspended.title": "⛔ Access suspended",
     "auth.suspended.body": "Your access has been suspended by the administrator.",
@@ -486,8 +492,9 @@ EN: dict[str, str] = {
     ),
     "faq.q.first_booking": "How do I make my first booking?",
     "faq.a.first_booking": (
-        "Three steps: (1) paste a fresh <code>.WBAuth</code> cookie on the "
-        "<a href='{cookie_url}'>Cookie</a> page, (2) create a rule on the "
+        "Three steps: (1) on a desktop or laptop browser (this step uses browser developer "
+        "tools, which most mobile browsers do not expose), paste a fresh <code>.WBAuth</code> "
+        "cookie on the <a href='{cookie_url}'>Cookie</a> page, (2) create a rule on the "
         "<a href='{rules_url}'>Rules</a> page describing which class you attend, at what time, "
         "and when WodBuster opens the reservation window for it, (3) wait — the scheduler "
         "fires automatically at the window-open instant."
@@ -532,7 +539,7 @@ EN: dict[str, str] = {
     "faq.q.cookie_refresh": "How often do I need to refresh the cookie?",
     "faq.a.cookie_refresh": (
         "WodBuster's session cookie lives for about 30 days. The app checks it hourly and "
-        "pushes a banner + Telegram alert 24 h before the projected expiry so you have time "
+        "pushes a banner + Telegram alert 72 h before the projected expiry so you have time "
         "to paste a fresh one without missing a booking window."
     ),
     "faq.q.cookie_rejected": "The dashboard says 'Cookie rejected'. What now?",
@@ -1057,7 +1064,9 @@ ES: dict[str, str] = {
     ),
     "dashboard.cards.cookie.title": "🍪 Cookie",
     "dashboard.cards.cookie.body": (
-        "Pega o actualiza el valor .WBAuth que usa el worker para autenticarse contra WodBuster."
+        "Pega o actualiza el valor .WBAuth que usa el worker para autenticarse contra WodBuster. "
+        "Obtenerlo o renovarlo requiere un navegador de escritorio o portátil, no un dispositivo "
+        "móvil."
     ),
     "dashboard.cards.history.title": "📜 Historial",
     "dashboard.cards.history.body": (
@@ -1315,8 +1324,9 @@ ES: dict[str, str] = {
     "landing.cards.cookie.title": "💓 Latido de la cookie",
     "landing.cards.cookie.body": (
         "Sondeo cada hora contra WodBuster. Estima la caducidad y te avisa "
-        "24 horas antes de la próxima ventana de reserva si la cookie está "
-        "a punto de expirar."
+        "72 horas antes de la próxima ventana de reserva si la cookie está "
+        "a punto de expirar. Obtener o renovar el valor de la cookie requiere "
+        "un navegador de escritorio o portátil, no un dispositivo móvil."
     ),
     "landing.cards.notifications.title": "🔔 Notificaciones en dos canales",
     "landing.cards.notifications.body": (
@@ -1344,6 +1354,10 @@ ES: dict[str, str] = {
         "Tu solicitud de acceso está pendiente de aprobación por el administrador."
     ),
     "auth.pending.hint": "Podrás iniciar sesión aquí en cuanto se apruebe.",
+    "auth.pending.desktop_note": (
+        "Una vez aprobada, el siguiente paso (pegar tu cookie de WodBuster) requiere un "
+        "navegador de escritorio o portátil: no funciona desde un navegador o app móvil."
+    ),
     "auth.pending.back": "⬅️ Volver a iniciar sesión",
     "auth.suspended.title": "⛔ Acceso suspendido",
     "auth.suspended.body": "El administrador ha suspendido tu acceso.",
@@ -1390,7 +1404,9 @@ ES: dict[str, str] = {
     ),
     "faq.q.first_booking": "¿Cómo hago mi primera reserva?",
     "faq.a.first_booking": (
-        "Tres pasos: (1) pega una cookie <code>.WBAuth</code> reciente en la página de "
+        "Tres pasos: (1) desde un navegador de escritorio u ordenador portátil (este paso usa "
+        "las herramientas de desarrollador del navegador, que la mayoría de navegadores "
+        "móviles no ofrecen), pega una cookie <code>.WBAuth</code> reciente en la página de "
         "<a href='{cookie_url}'>Cookie</a>, (2) crea una regla en la página de "
         "<a href='{rules_url}'>Reglas</a> indicando a qué clase asistes, a qué hora y cuándo "
         "abre WodBuster la ventana de reserva, (3) espera: el planificador se dispara "
@@ -1441,7 +1457,7 @@ ES: dict[str, str] = {
     "faq.q.cookie_refresh": "¿Cada cuánto tengo que renovar la cookie?",
     "faq.a.cookie_refresh": (
         "La cookie de sesión de WodBuster dura unos 30 días. La aplicación la comprueba cada "
-        "hora y te muestra un aviso + alerta de Telegram 24 h antes de la caducidad prevista "
+        "hora y te muestra un aviso + alerta de Telegram 72 h antes de la caducidad prevista "
         "para que te dé tiempo a pegar una nueva sin perder ninguna ventana de reserva."
     ),
     "faq.q.cookie_rejected": "El panel dice «Cookie rechazada». ¿Y ahora qué?",

@@ -26,7 +26,6 @@ from wodbuster_worker.heartbeat.alerts import (
     apply_alert_action,
     close_open_cookie_expiring,
     evaluate_cookie_expiring,
-    previous_heartbeat_at,
 )
 from wodbuster_worker.heartbeat.probe import HeartbeatProbe
 from wodbuster_worker.persistence.cookie_store import CookieStore
@@ -45,7 +44,7 @@ _CEILING = timedelta(days=30)
 # Rule anchor: Wednesday 21:30 UTC class, 48h before-window offset.
 # Result: window opens on **Monday** 21:30 UTC of the same calendar week.
 # All scenarios below pick ``now = 2026-07-06 (Mon) 09:30 UTC`` so the
-# next window is 12h away — inside the 24h alert band.
+# next window is 12h away — inside the 72h alert band.
 _NOW = datetime(2026, 7, 6, 9, 30, tzinfo=UTC)
 _NEXT_WINDOW = datetime(2026, 7, 6, 21, 30, tzinfo=UTC)
 _INSIDE_BAND_TTL = datetime(2026, 7, 6, 15, 30, tzinfo=UTC)  # 6h from now
@@ -169,13 +168,11 @@ def _run_one_cycle(
     with session_factory() as session:
         gym_account_id = gym_account_id_for(session, operator_id)
         outcome = probe.run(session, gym_account_id, now=now)
-        prev_at = previous_heartbeat_at(session, gym_account_id, outcome.probed_at)
         action = evaluate_cookie_expiring(
             session=session,
             gym_account_id=gym_account_id,
             projected_ttl_at=outcome.projected_ttl_at,
             now=outcome.probed_at,
-            previous_heartbeat_at=prev_at,
         )
         alert_id = apply_alert_action(session, gym_account_id, action, now=outcome.probed_at)
         session.commit()
@@ -254,8 +251,8 @@ def test_re_emission_updates_last_emitted_and_appends_outbox_rows(
 
     # Estimator locked projected_ttl_at at _INSIDE_BAND_TTL on cycle 1
     # (min of previous and now+ceiling), so cycle 2 sees the same value
-    # without re-pinning.
-    now_2 = _NOW + timedelta(hours=1)
+    # without re-pinning. Past the 8h re-fire interval -> re-emits.
+    now_2 = _NOW + timedelta(hours=8, minutes=1)
     alert_id_2 = _run_one_cycle(session_factory, probe, op_id, now_2)
 
     assert alert_id_1 == alert_id_2  # same open row
@@ -269,30 +266,50 @@ def test_re_emission_updates_last_emitted_and_appends_outbox_rows(
         assert outbox_count == 4
 
 
-def test_recent_ack_suppresses_the_next_cycle(
+def test_open_alert_inside_8h_window_suppresses(
     scenario, session_factory: sessionmaker[Session]
 ) -> None:
     op_id, probe = scenario()
     alert_id = _run_one_cycle(session_factory, probe, op_id, _NOW)
-
-    # Operator acknowledges between cycles.
-    with session_factory() as session:
-        alert = session.get(Alert, alert_id)
-        assert alert is not None
-        alert.acknowledged_at = _NOW + timedelta(minutes=10)
-        session.commit()
 
     now_2 = _NOW + timedelta(hours=1)
     _run_one_cycle(session_factory, probe, op_id, now_2)
 
     with session_factory() as session:
         outbox_count = session.query(NotificationOutbox).filter_by(user_id=op_id).count()
-        # Cycle 1 wrote 2 outbox rows; cycle 2 Suppresses.
+        # Cycle 1 wrote 2 outbox rows; cycle 2 (1h later, inside the 8h
+        # re-fire window) Suppresses.
         assert outbox_count == 2
         alert = session.get(Alert, alert_id)
         assert alert is not None
         # last_emitted_at unchanged (Suppress does not touch it).
         assert alert.last_emitted_at == _NOW
+
+
+def test_ack_does_not_push_the_refire_boundary_further_out(
+    scenario, session_factory: sessionmaker[Session]
+) -> None:
+    op_id, probe = scenario()
+    alert_id = _run_one_cycle(session_factory, probe, op_id, _NOW)
+
+    # Operator acknowledges right after the first emission.
+    with session_factory() as session:
+        alert = session.get(Alert, alert_id)
+        assert alert is not None
+        alert.acknowledged_at = _NOW + timedelta(minutes=10)
+        session.commit()
+
+    now_2 = _NOW + timedelta(hours=8, minutes=1)
+    _run_one_cycle(session_factory, probe, op_id, now_2)
+
+    with session_factory() as session:
+        outbox_count = session.query(NotificationOutbox).filter_by(user_id=op_id).count()
+        # The alert still re-emits at 8h+1m regardless of the ack
+        # (CC-004, CC-005, INV-001).
+        assert outbox_count == 4
+        alert = session.get(Alert, alert_id)
+        assert alert is not None
+        assert alert.last_emitted_at == now_2
 
 
 def test_projection_recovers_and_open_alert_is_cleared(

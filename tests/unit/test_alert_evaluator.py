@@ -43,7 +43,12 @@ class _FakeSession:
 class _FakeAlert:
     """Duck-typed ``Alert`` row for the evaluator's suppression check."""
 
-    def __init__(self, acknowledged_at: datetime | None = None) -> None:
+    def __init__(
+        self,
+        last_emitted_at: datetime = _NOW,
+        acknowledged_at: datetime | None = None,
+    ) -> None:
+        self.last_emitted_at = last_emitted_at
         self.acknowledged_at = acknowledged_at
 
 
@@ -109,7 +114,7 @@ def test_no_next_window_clears_stale_open_alert() -> None:
 
 def test_far_window_returns_noop_even_if_cookie_dies_before() -> None:
     # Cookie dies in 1h, but the window is 7d away. Not urgent yet;
-    # the operator has plenty of time to re-paste before the 24h
+    # the operator has plenty of time to re-paste before the 72h
     # lead-time window opens.
     session = _FakeSession(open_alert=None)
     projected = _NOW + timedelta(hours=1)
@@ -155,8 +160,11 @@ def test_threshold_holds_and_no_open_alert_emits() -> None:
     assert result.projected_ttl_at == projected
 
 
-def test_threshold_holds_with_open_alert_and_no_ack_re_emits() -> None:
-    session = _FakeSession(open_alert=_FakeAlert(acknowledged_at=None))
+def test_threshold_holds_with_open_alert_past_refire_interval_re_emits() -> None:
+    # Last emitted 9h ago, past the 8h re-fire interval -> re-emit.
+    session = _FakeSession(
+        open_alert=_FakeAlert(last_emitted_at=_NOW - timedelta(hours=9), acknowledged_at=None)
+    )
 
     with _patch_next_window(_NEXT_WINDOW_SOON):
         result = evaluate_cookie_expiring(
@@ -168,12 +176,9 @@ def test_threshold_holds_with_open_alert_and_no_ack_re_emits() -> None:
     assert isinstance(result, Emit)
 
 
-def test_threshold_holds_with_recent_ack_suppresses_this_cycle() -> None:
-    # Previous heartbeat was 1h ago; acknowledgment 30min ago -> AFTER
-    # the previous heartbeat -> one-cycle grace applies.
-    prev_hb = _NOW - timedelta(hours=1)
-    ack = _NOW - timedelta(minutes=30)
-    session = _FakeSession(open_alert=_FakeAlert(acknowledged_at=ack))
+def test_open_alert_inside_refire_window_suppresses() -> None:
+    # Last emitted 3h ago, condition still holds -> suppress (CC-002).
+    session = _FakeSession(open_alert=_FakeAlert(last_emitted_at=_NOW - timedelta(hours=3)))
 
     with _patch_next_window(_NEXT_WINDOW_SOON):
         result = evaluate_cookie_expiring(
@@ -181,17 +186,15 @@ def test_threshold_holds_with_recent_ack_suppresses_this_cycle() -> None:
             gym_account_id=1,
             projected_ttl_at=_NOW + timedelta(hours=6),
             now=_NOW,
-            previous_heartbeat_at=prev_hb,
         )
     assert isinstance(result, Suppress)
 
 
-def test_threshold_holds_with_stale_ack_re_emits() -> None:
-    # Previous heartbeat 1h ago; acknowledgment 2h ago -> BEFORE the
-    # previous heartbeat -> grace already spent -> re-emit.
-    prev_hb = _NOW - timedelta(hours=1)
-    ack = _NOW - timedelta(hours=2)
-    session = _FakeSession(open_alert=_FakeAlert(acknowledged_at=ack))
+def test_open_alert_past_refire_interval_re_emits() -> None:
+    # Last emitted 8h 1m ago, condition still holds -> re-emit (CC-003).
+    session = _FakeSession(
+        open_alert=_FakeAlert(last_emitted_at=_NOW - timedelta(hours=8, minutes=1))
+    )
 
     with _patch_next_window(_NEXT_WINDOW_SOON):
         result = evaluate_cookie_expiring(
@@ -199,15 +202,13 @@ def test_threshold_holds_with_stale_ack_re_emits() -> None:
             gym_account_id=1,
             projected_ttl_at=_NOW + timedelta(hours=6),
             now=_NOW,
-            previous_heartbeat_at=prev_hb,
         )
     assert isinstance(result, Emit)
 
 
-def test_ack_without_previous_heartbeat_re_emits() -> None:
-    # Edge case: previous_heartbeat_at is None. The suppression rule
-    # cannot fire without a comparison anchor; default to re-emitting.
-    session = _FakeSession(open_alert=_FakeAlert(acknowledged_at=_NOW - timedelta(minutes=1)))
+def test_open_alert_exactly_at_refire_boundary_re_emits() -> None:
+    # Exact 8h boundary re-emits (">=" gate, "never earlier" edge case).
+    session = _FakeSession(open_alert=_FakeAlert(last_emitted_at=_NOW - timedelta(hours=8)))
 
     with _patch_next_window(_NEXT_WINDOW_SOON):
         result = evaluate_cookie_expiring(
@@ -215,7 +216,28 @@ def test_ack_without_previous_heartbeat_re_emits() -> None:
             gym_account_id=1,
             projected_ttl_at=_NOW + timedelta(hours=6),
             now=_NOW,
-            previous_heartbeat_at=None,
+        )
+    assert isinstance(result, Emit)
+
+
+def test_ack_has_no_effect_on_refire_timing() -> None:
+    # Acknowledged right after emission; at 8h + 1m the alert still
+    # re-emits — acknowledgement never extends the re-fire window
+    # (INV-001, FR-007).
+    last_emitted_at = _NOW - timedelta(hours=8, minutes=1)
+    session = _FakeSession(
+        open_alert=_FakeAlert(
+            last_emitted_at=last_emitted_at,
+            acknowledged_at=last_emitted_at + timedelta(minutes=1),
+        )
+    )
+
+    with _patch_next_window(_NEXT_WINDOW_SOON):
+        result = evaluate_cookie_expiring(
+            session=session,  # type: ignore[arg-type]
+            gym_account_id=1,
+            projected_ttl_at=_NOW + timedelta(hours=6),
+            now=_NOW,
         )
     assert isinstance(result, Emit)
 
@@ -224,10 +246,10 @@ def test_ack_without_previous_heartbeat_re_emits() -> None:
     "lead_hours,should_alert",
     [
         (1, True),  # window very soon
-        (23, True),  # inside the 24h band
-        (24, True),  # exactly at the boundary (<=)
-        (25, False),  # just outside
-        (48, False),  # far
+        (71, True),  # inside the 72h band
+        (72, True),  # exactly at the boundary (<=)
+        (73, False),  # just outside
+        (96, False),  # far
     ],
 )
 def test_lead_time_boundary(lead_hours: int, should_alert: bool) -> None:
