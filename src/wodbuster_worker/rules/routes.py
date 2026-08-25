@@ -215,7 +215,7 @@ def rules_new(request: Request, operator_id: int = Depends(require_session)) -> 
     return _render_form(
         request,
         template="rules/create.html",
-        heading="New rule",
+        heading=t("rules.heading.new"),
         action_url=lang_url("/rules"),
         form_values={"booking_opens_days_before": "3", "booking_opens_at": "22:40"},
         errors={},
@@ -241,7 +241,7 @@ async def rules_create(request: Request, operator_id: int = Depends(require_sess
         return _render_form(
             request,
             template="rules/create.html",
-            heading="New rule",
+            heading=t("rules.heading.new"),
             action_url=lang_url("/rules"),
             form_values=form_data,
             errors=parsed.errors,
@@ -437,7 +437,7 @@ def rules_edit(
     return _render_form(
         request,
         template="rules/edit.html",
-        heading="Edit rule",
+        heading=t("rules.heading.edit"),
         action_url=lang_url(f"/rules/{rule_id}"),
         form_values=form_values,
         errors={},
@@ -467,7 +467,7 @@ async def rules_update(
             return _render_form(
                 request,
                 template="rules/edit.html",
-                heading="Edit rule",
+                heading=t("rules.heading.edit"),
                 action_url=lang_url(f"/rules/{rule_id}"),
                 form_values=form_data,
                 errors=parsed.errors,

@@ -154,6 +154,11 @@ EN: dict[str, str] = {
     ),
     "dashboard.countdown.empty.label": "No upcoming booking",
     "dashboard.countdown.empty.hint": "Add a rule to schedule your first automatic booking.",
+    "dashboard.cards.profile.title": "🙋 Profile",
+    "dashboard.cards.profile.body": (
+        "Review your account details and choose the language and email "
+        "preferences for your notifications."
+    ),
     "dashboard.cards.rules.title": "📅 Rules",
     "dashboard.cards.rules.body": "Manage your recurring weekly bookings and preference chains.",
     "dashboard.cards.cookie.title": "🍪 Cookie",
@@ -182,6 +187,8 @@ EN: dict[str, str] = {
         "tell the worker when the reservation window opens."
     ),
     "rules.new_button": "➕ New rule",
+    "rules.heading.new": "New rule",
+    "rules.heading.edit": "Edit rule",
     "rules.empty.title": "✨ No rules yet",
     "rules.empty.body": "Create one to start automating bookings.",
     "rules.table.term": "Term",
@@ -244,6 +251,7 @@ EN: dict[str, str] = {
         "No granted or scheduled bookings on the horizon. Create a rule "
         "to start automating attendance."
     ),
+    "history.upcoming.edit_day_aria": "Edit the booking day of {date}",
     "history.attempts.title": "📜 This week's attempts",
     "history.table.day": "Day",
     "history.table.date": "Date",
@@ -1038,6 +1046,11 @@ ES: dict[str, str] = {
     "dashboard.countdown.empty.hint": (
         "Añade una regla para programar tu primera reserva automática."
     ),
+    "dashboard.cards.profile.title": "🙋 Perfil",
+    "dashboard.cards.profile.body": (
+        "Consulta los datos de tu cuenta y elige el idioma y las "
+        "preferencias de correo de tus notificaciones."
+    ),
     "dashboard.cards.rules.title": "📅 Reglas",
     "dashboard.cards.rules.body": (
         "Gestiona tus reservas semanales recurrentes y las cadenas de preferencia."
@@ -1069,6 +1082,8 @@ ES: dict[str, str] = {
         "y cuándo se abre la ventana de reserva."
     ),
     "rules.new_button": "➕ Nueva regla",
+    "rules.heading.new": "Nueva regla",
+    "rules.heading.edit": "Editar regla",
     "rules.empty.title": "✨ Aún no hay reglas",
     "rules.empty.body": "Crea una para empezar a automatizar reservas.",
     "rules.table.term": "Término",
@@ -1132,6 +1147,7 @@ ES: dict[str, str] = {
         "No hay reservas concedidas ni programadas en el horizonte. Crea "
         "una regla para empezar a automatizar."
     ),
+    "history.upcoming.edit_day_aria": "Editar el día de reserva del {date}",
     "history.attempts.title": "📜 Intentos de esta semana",
     "history.table.day": "Día",
     "history.table.date": "Fecha",

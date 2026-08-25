@@ -15,7 +15,9 @@
 
 {% block title %}{{ t("nav.vacation") }} — WodBuster Booking Scheduler{% endblock %}
 
-{% block head %}
+{% block body_class %}wb-body--wide{% endblock %}
+
+{% block head_extra %}
 <style>
   .wb-flash {
     padding: 0.75rem 1rem;
@@ -35,9 +37,9 @@
   }
   .wb-vacation-form {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: minmax(0, 18rem);
+    justify-content: start;
     gap: 1rem;
-    align-items: end;
     margin-bottom: 2rem;
     padding: 1.15rem 1.35rem;
     background: var(--wb-bg-card);
