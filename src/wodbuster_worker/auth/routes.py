@@ -338,12 +338,19 @@ def _operator_is_admin(operator_id: int) -> bool:
 
 
 def _store_login_email(operator_id: int, email: str | None) -> None:
-    """Persist the OAuth email on the profile when present and changed."""
+    """Seed the profile email from OAuth, but never overwrite an edited one.
+
+    The provider address is only a starting value. Writing it on every
+    login used to undo the address the operator set on their profile, so
+    the next notification went to the login mailbox and they stopped
+    receiving mail where they expected it. Only an empty profile email is
+    filled, which also backfills rows created before capture existed.
+    """
     if not email:
         return
     with db_session() as session:
         profile = session.get(OperatorProfile, operator_id)
-        if profile is not None and profile.email != email:
+        if profile is not None and not profile.email:
             profile.email = email
             session.commit()
 

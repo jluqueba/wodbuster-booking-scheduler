@@ -242,3 +242,80 @@ def test_nav_renders_account_menu_with_profile_and_logout(
     assert "/auth/logout" in body
     # The signed-in name appears in the trigger/header.
     assert "Alice" in body
+
+
+def _sign_in_with_email(
+    app: FastAPI,
+    subject_id: str,
+    display_name: str,
+    email: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> TestClient:
+    """Sign in with a provider payload that carries an email address."""
+    client = app.state.oauth.create_client("microsoft")
+
+    async def fake_authorize_access_token(_request: Any) -> dict[str, Any]:
+        return {
+            "userinfo": {"sub": subject_id, "name": display_name, "email": email},
+            "access_token": "t",
+        }
+
+    monkeypatch.setattr(client, "authorize_access_token", fake_authorize_access_token)
+    tc = TestClient(app, follow_redirects=False)
+    resp = tc.get("/auth/microsoft/callback?code=fake&state=fake")
+    assert resp.status_code == 302, resp.text
+    return tc
+
+
+def _email(engine: Engine, operator_id: int) -> str | None:
+    with engine.connect() as conn:
+        return conn.execute(
+            text("SELECT email FROM operator_profile WHERE id = :id"),
+            {"id": operator_id},
+        ).scalar_one()
+
+
+def _set_email(engine: Engine, operator_id: int, email: str | None) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE operator_profile SET email = :email WHERE id = :id"),
+            {"id": operator_id, "email": email},
+        )
+
+
+def test_login_does_not_overwrite_an_edited_email(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The provider address is a seed, not the source of truth.
+
+    Writing it on every login silently reverted the address the operator
+    chose, so notifications went back to the login mailbox.
+    """
+    operator_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    _set_email(postgres_engine, operator_id, "chosen@example.com")
+    app = app_factory()
+
+    with _sign_in_with_email(app, subject, "Alice", "login@example.com", monkeypatch):
+        pass
+
+    assert _email(postgres_engine, operator_id) == "chosen@example.com"
+
+
+def test_login_fills_an_empty_email(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A profile with no address still gets one, which backfills old rows."""
+    operator_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    _set_email(postgres_engine, operator_id, None)
+    app = app_factory()
+
+    with _sign_in_with_email(app, subject, "Alice", "login@example.com", monkeypatch):
+        pass
+
+    assert _email(postgres_engine, operator_id) == "login@example.com"

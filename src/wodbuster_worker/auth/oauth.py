@@ -35,6 +35,13 @@ from authlib.integrations.starlette_client import OAuth
 from ..config import Settings
 from ..security.keyvault import Secrets
 
+# Provider-supplied strings are untrusted input. These mirror the stored
+# column widths in ``persistence.models`` so an oversized value is dealt
+# with here rather than as an insert failure.
+MAX_DISPLAY_NAME_LENGTH = 200
+MAX_EMAIL_LENGTH = 320
+MAX_SUBJECT_LENGTH = 256
+
 # Provider identifiers accepted throughout the auth surface. Anything
 # outside this set is a 404 at the routing layer; the router imports
 # this constant.
@@ -123,6 +130,7 @@ def extract_identity(
         subject = user_info.get("sub")
         if not isinstance(subject, str) or not subject:
             raise ValueError("microsoft user_info missing 'sub'")
+        _reject_oversized_subject("microsoft", subject)
         name = _first_str(user_info.get("name"), user_info.get("email"), subject)
         return ("microsoft", subject, name)
 
@@ -131,6 +139,7 @@ def extract_identity(
         if raw_id is None:
             raise ValueError("github user_info missing 'id'")
         subject = str(raw_id)
+        _reject_oversized_subject("github", subject)
         name = _first_str(
             user_info.get("login"),
             user_info.get("name"),
@@ -142,10 +151,24 @@ def extract_identity(
         subject = user_info.get("sub")
         if not isinstance(subject, str) or not subject:
             raise ValueError("google user_info missing 'sub'")
+        _reject_oversized_subject("google", subject)
         name = _first_str(user_info.get("name"), user_info.get("email"), subject)
         return ("google", subject, name)
 
     raise ValueError(f"unknown provider: {provider!r}")
+
+
+def _reject_oversized_subject(provider: str, subject: str) -> None:
+    """Refuse a subject that would not fit the column.
+
+    Truncating instead would be a vulnerability, not a convenience: two
+    subjects sharing a prefix would collapse onto one identity row and
+    the second holder would sign in as the first. Every real provider
+    stays far below the limit, so this only fires on a broken or hostile
+    payload, where refusing the login is the safe outcome.
+    """
+    if len(subject) > MAX_SUBJECT_LENGTH:
+        raise ValueError(f"{provider} subject exceeds {MAX_SUBJECT_LENGTH} characters")
 
 
 def extract_email(user_info: dict[str, Any]) -> str | None:
@@ -153,12 +176,17 @@ def extract_email(user_info: dict[str, Any]) -> str | None:
 
     All three providers request the ``email`` scope, but GitHub only
     returns one when the user has a public primary email, so the caller
-    must tolerate ``None``.
+    must tolerate ``None``. An address longer than the column is dropped
+    rather than truncated: half an address is not an address, and a
+    profile with no email degrades to Telegram-only notifications.
     """
     email = user_info.get("email")
-    if isinstance(email, str) and email.strip():
-        return email.strip().lower()
-    return None
+    if not isinstance(email, str):
+        return None
+    trimmed = email.strip()
+    if not trimmed or len(trimmed) > MAX_EMAIL_LENGTH:
+        return None
+    return trimmed.lower()
 
 
 def _first_str(*candidates: object) -> str:
@@ -169,8 +197,13 @@ def _first_str(*candidates: object) -> str:
     per-branch ``if isinstance(...)`` blocks. Falls back to an empty
     string only if every candidate is missing; callers pass the
     ``subject_id`` last so that path is defensive.
+
+    The result is capped to the stored column width. Nothing validates
+    the length of a provider-supplied name, so without this an unusually
+    long one reaches Postgres and fails the insert, turning a sign-up
+    into a 500.
     """
     for candidate in candidates:
         if isinstance(candidate, str) and candidate:
-            return candidate
+            return candidate[:MAX_DISPLAY_NAME_LENGTH]
     return ""
