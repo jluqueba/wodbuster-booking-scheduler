@@ -181,9 +181,12 @@ def extract_email(user_info: dict[str, Any]) -> str | None:
     profile with no email degrades to Telegram-only notifications.
     """
     email = user_info.get("email")
-    if isinstance(email, str) and email.strip() and len(email.strip()) <= MAX_EMAIL_LENGTH:
-        return email.strip().lower()
-    return None
+    if not isinstance(email, str):
+        return None
+    trimmed = email.strip()
+    if not trimmed or len(trimmed) > MAX_EMAIL_LENGTH:
+        return None
+    return trimmed.lower()
 
 
 def _first_str(*candidates: object) -> str:
