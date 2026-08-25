@@ -32,7 +32,6 @@ from sqlalchemy.orm import Session
 from ..heartbeat.alerts import (
     apply_alert_action,
     evaluate_cookie_expiring,
-    previous_heartbeat_at,
 )
 from ..heartbeat.probe import HeartbeatOutcome, HeartbeatProbe, NoCookieOnFile
 from ..persistence.gym_accounts import list_active_gym_account_ids
@@ -79,18 +78,12 @@ def run_heartbeat_tick(
     for gym_account_id in ids:
         try:
             with session_factory() as session:
-                # Compute the previous heartbeat's timestamp BEFORE the
-                # probe writes the new row. The alert evaluator uses it
-                # to decide whether a fresh acknowledgment counts as
-                # "since the last heartbeat" (US4.3 suppression rule).
                 outcome = probe.run(session, gym_account_id)
-                prev_at = previous_heartbeat_at(session, gym_account_id, outcome.probed_at)
                 action = evaluate_cookie_expiring(
                     session=session,
                     gym_account_id=gym_account_id,
                     projected_ttl_at=outcome.projected_ttl_at,
                     now=outcome.probed_at,
-                    previous_heartbeat_at=prev_at,
                 )
                 alert_id = apply_alert_action(
                     session, gym_account_id, action, now=outcome.probed_at
