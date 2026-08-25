@@ -209,8 +209,8 @@ def _discover_gyms_best_effort(
         WodBusterProtocolError,
         WodBusterTransportError,
         ValueError,
-    ):
-        _log.warning("cookie.discover.failed")
+    ) as exc:
+        _log.warning("cookie.discover.failed", error=str(exc))
 
 
 @router.post("/cookie", name="cookie_paste", dependencies=[Depends(verify_csrf)])
