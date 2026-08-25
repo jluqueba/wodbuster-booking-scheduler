@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from wodbuster_worker.gyms import discovery
@@ -46,8 +48,57 @@ def test_discover_gyms_translates_selector_http_failure(
         status_code = 403
         text = "blocked"
         url = "https://wodbuster.com/account/roadtobox.aspx"
+        headers: ClassVar[dict[str, str]] = {}
 
     monkeypatch.setattr(discovery.requests, "get", lambda *args, **kwargs: Response())
 
     with pytest.raises(GymSelectorError, match="HTTP 403"):
+        discovery.discover_gyms(".WBAuth-existing")
+
+
+def test_discover_gyms_follows_single_gym_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A single-gym account gets no selector list, only a redirect (SEC-001)."""
+
+    class Response:
+        status_code = 302
+        text = ""
+        url = "https://wodbuster.com/account/roadtobox.aspx"
+        headers: ClassVar[dict[str, str]] = {"location": "https://antworktrainingcenter.wodbuster.com/user"}
+
+    monkeypatch.setattr(discovery.requests, "get", lambda *args, **kwargs: Response())
+
+    assert discovery.discover_gyms(".WBAuth-existing") == [
+        DiscoveredGym(slug="antworktrainingcenter", display_name="antworktrainingcenter")
+    ]
+
+
+def test_discover_gyms_rejects_untrusted_redirect_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Response:
+        status_code = 302
+        text = ""
+        url = "https://wodbuster.com/account/roadtobox.aspx"
+        headers: ClassVar[dict[str, str]] = {"location": "https://evil.example/user"}
+
+    monkeypatch.setattr(discovery.requests, "get", lambda *args, **kwargs: Response())
+
+    with pytest.raises(GymSelectorError, match="untrusted destination"):
+        discovery.discover_gyms(".WBAuth-existing")
+
+
+def test_discover_gyms_rejects_redirect_without_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Response:
+        status_code = 302
+        text = ""
+        url = "https://wodbuster.com/account/roadtobox.aspx"
+        headers: ClassVar[dict[str, str]] = {}
+
+    monkeypatch.setattr(discovery.requests, "get", lambda *args, **kwargs: Response())
+
+    with pytest.raises(GymSelectorError, match="without a Location header"):
         discovery.discover_gyms(".WBAuth-existing")

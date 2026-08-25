@@ -96,8 +96,18 @@ def is_valid_discovered_slug(slug: str) -> bool:
     return _GYM_SLUG_RE.fullmatch(slug) is not None
 
 
+_REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+
+
 def discover_gyms(cookie_value: str) -> list[DiscoveredGym]:
-    """Load WodBuster's selector with an existing ``.WBAuth`` cookie."""
+    """Load WodBuster's selector with an existing ``.WBAuth`` cookie.
+
+    An account with a single gym is never shown the selector list: WodBuster
+    redirects straight to that gym's ``/user`` page instead of rendering
+    ``roadtobox.aspx``. That redirect target is validated with the same
+    trust filter as a selector-page link (SEC-001) and treated as the sole
+    discovered gym, so single-gym accounts discover correctly too.
+    """
     if not cookie_value.strip():
         raise GymSelectorError("a non-empty .WBAuth cookie is required")
     try:
@@ -110,6 +120,14 @@ def discover_gyms(cookie_value: str) -> list[DiscoveredGym]:
         )
     except requests.RequestsError as exc:
         raise GymSelectorError("could not reach WodBuster's gym selector") from exc
+    if response.status_code in _REDIRECT_STATUS_CODES:
+        location = response.headers.get("location")
+        if not location:
+            raise GymSelectorError("gym selector redirected without a Location header")
+        slug = _trusted_gym_slug(urljoin(_SELECTOR_URL, location))
+        if slug is None:
+            raise GymSelectorError("gym selector redirected to an untrusted destination")
+        return [DiscoveredGym(slug=slug, display_name=slug)]
     if response.status_code != 200:
         raise GymSelectorError(f"gym selector returned HTTP {response.status_code}")
     gyms = parse_gym_selector(response.text, base_url=response.url)
