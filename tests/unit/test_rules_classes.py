@@ -1,9 +1,12 @@
 """Unit tests for the class-list extractor (US-005 form uplift).
 
 The pure :func:`extract_available_classes` takes a full LoadClass
-payload and unions two sources:
+payload and unions three sources:
 
 - ``ClasesFiltradas`` — flat rows, fields ``NombreE`` + ``Hora``.
+- ``ListClases`` — flat rows, same shape as ``ClasesFiltradas``.
+  WodBuster only populates this for a day that has not opened for
+  booking yet (schedule template preview).
 - ``Data`` — time-slot buckets, each carrying its own ``Hora`` plus
   ``Valores[j].Valor`` with the concrete class instance's
   ``Nombre`` + ``HoraComienzo``.
