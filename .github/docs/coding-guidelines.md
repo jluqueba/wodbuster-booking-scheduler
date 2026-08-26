@@ -227,6 +227,9 @@ Additional rules for code:
 Reference: [Anatomy of a perfect pull request](https://opensource.com/article/18/6/anatomy-perfect-pull-request)
 
 - Before merging a PR (even after CI/`ci-gate` is green), read the automated Copilot code-review
-  comments on the PR. For each comment, either apply a fix, or reply with the rationale for not
-  changing anything and resolve the conversation. A green CI status alone is not sufficient
-  grounds to merge.
+  comments on the PR. A green CI status alone is not sufficient grounds to merge. For each open
+  review thread:
+  1. Decide whether the comment is legitimate.
+  2. If it is, apply the change, push it, then reply on the thread referencing the fix and resolve it.
+  3. If it is not, reply on the thread with the rationale for not changing anything, then resolve it.
+  - Do not merge while a Copilot review thread is still unresolved.
