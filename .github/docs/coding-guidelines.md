@@ -225,3 +225,7 @@ Additional rules for code:
   > Rule of thumb: a reviewer should be able to understand and test the PR in **30-60 minutes**. If that is not possible, the PR needs to be split.
 
 Reference: [Anatomy of a perfect pull request](https://opensource.com/article/18/6/anatomy-perfect-pull-request)
+
+- Before merging a PR (even after CI/`ci-gate` is green), read the automated Copilot code-review
+  comments on the PR and act on them: fix what is legitimate, or record why not before proceeding.
+  A green CI status alone is not sufficient grounds to merge.
