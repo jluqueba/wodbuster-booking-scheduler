@@ -110,6 +110,39 @@ def test_extract_ignores_malformed_time_strings() -> None:
 
 
 # ---------------------------------------------------------------------------
+# ListClases source (pre-publication preview)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_from_list_clases_when_day_not_yet_published() -> None:
+    """Regression: a day WodBuster has not opened for booking yet still
+    ships its schedule template under ``ListClases`` while
+    ``ClasesFiltradas``/``Data`` stay empty. The picker must read it so
+    a not-yet-published weekend class still surfaces in the combo."""
+    payload = {
+        "ClasesFiltradas": [],
+        "Data": [],
+        "SegundosHastaPublicacion": 17054.0,
+        "ListClases": [
+            {"Hora": "10:00:00", "NombreE": "Endurance", "IdE": 4, "Id": 46869},
+            {"Hora": "08:00:00", "NombreE": "Open box sábado", "IdE": 8, "Id": 46868},
+        ],
+    }
+    result = extract_available_classes(payload)
+    assert result.class_types == ["Endurance", "Open box sábado"]
+    assert result.time_slots == ["08:00", "10:00"]
+
+
+def test_extract_unions_list_clases_with_clases_filtradas() -> None:
+    payload = {
+        "ClasesFiltradas": [{"NombreE": "WOD", "Hora": "18:30:00"}],
+        "ListClases": [{"NombreE": "Endurance", "Hora": "10:00:00"}],
+    }
+    result = extract_available_classes(payload)
+    assert result.class_types == ["Endurance", "WOD"]
+
+
+# ---------------------------------------------------------------------------
 # Data source
 # ---------------------------------------------------------------------------
 

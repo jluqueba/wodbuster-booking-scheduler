@@ -258,7 +258,7 @@ def fetch_classes_for_date(
 def extract_available_classes(payload: dict[str, Any]) -> AvailableClasses:
     """Extract class types + time slots from a LoadClass payload.
 
-    Unions two sources with slightly different shapes:
+    Unions three sources with slightly different shapes:
 
     - ``ClasesFiltradas[i]`` — flat rows with ``NombreE`` (name) and
       ``Hora`` (``HH:MM:SS``).
@@ -268,6 +268,14 @@ def extract_available_classes(payload: dict[str, Any]) -> AvailableClasses:
       ``Data`` is populated even when ``ClasesFiltradas`` comes back
       empty, so it is the source of truth for the operator's own
       schedule.
+    - ``ListClases[i]`` — flat rows, same shape as ``ClasesFiltradas``
+      (``NombreE`` + ``Hora``). WodBuster only fills this in for a day
+      that has not opened for booking yet (``SegundosHastaPublicacion``
+      positive on that response): it is the schedule TEMPLATE preview,
+      while ``ClasesFiltradas``/``Data`` stay empty until the day
+      actually publishes. Without it, a day probed before its own
+      publication window opens looks like it has no classes at all,
+      even though WodBuster already shows the operator its schedule.
 
     Duplicates are collapsed via set membership; ``HH:MM:SS`` values
     are truncated to ``HH:MM`` because that is the format the rest
@@ -278,6 +286,15 @@ def extract_available_classes(payload: dict[str, Any]) -> AvailableClasses:
     time_slots: set[str] = set()
 
     for item in _iter_dicts(payload.get("ClasesFiltradas")):
+        _accumulate(
+            item,
+            name_key="NombreE",
+            time_key="Hora",
+            class_types=class_types,
+            time_slots=time_slots,
+        )
+
+    for item in _iter_dicts(payload.get("ListClases")):
         _accumulate(
             item,
             name_key="NombreE",
