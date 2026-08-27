@@ -1,11 +1,17 @@
 // Shared client-side date/time formatter.
 //
 // Consolidates every user-facing timestamp on the same locale-aware
-// rendering the dashboard countdown pioneered: the browser's own
-// `toLocaleString` picks month/weekday names, 12h/24h and field order
-// from the device locale, while the instant is pinned to the gym
-// timezone (WORKER_TIMEZONE, surfaced via <meta name="wb-timezone">)
-// so class times never shift when the operator travels.
+// rendering the dashboard countdown pioneered: `toLocaleString` picks
+// month/weekday names, 12h/24h and field order from a locale, while
+// the instant is pinned to the gym timezone (WORKER_TIMEZONE, surfaced
+// via <meta name="wb-timezone">) so class times never shift when the
+// operator travels.
+//
+// The locale itself follows the app's OWN language selection
+// (`<html lang>`, set server-side by the i18n middleware), not the
+// device/browser locale — otherwise switching the app to Spanish
+// left every date in the visitor's device locale, which is the bug
+// this file was rewritten to fix.
 //
 // Server templates emit `<time datetime="{iso}" data-wb-datetime="{mode}">
 // {server fallback}</time>`. This script upgrades the text content in
@@ -15,6 +21,17 @@
 // Modes: stamp (weekday+date+time), date (weekday+date), dateyear
 // (weekday+date+year), time (time only).
 (function () {
+  // Maps the app's two supported language codes to a concrete BCP 47
+  // locale so formatting is deterministic regardless of the device's
+  // own locale/region settings. Keep in sync with
+  // ``i18n.catalog.SUPPORTED_LANGUAGES``.
+  var LOCALE_MAP = { es: 'es-ES', en: 'en-GB' };
+
+  function appLocale() {
+    var lang = (document.documentElement.getAttribute('lang') || '').toLowerCase();
+    return LOCALE_MAP[lang] || LOCALE_MAP.en;
+  }
+
   var OPTS = {
     stamp: {
       weekday: 'short',
@@ -52,7 +69,7 @@
       }
       opts.timeZone = tz;
     }
-    return date.toLocaleString(undefined, opts);
+    return date.toLocaleString(appLocale(), opts);
   }
 
   function upgrade(root) {

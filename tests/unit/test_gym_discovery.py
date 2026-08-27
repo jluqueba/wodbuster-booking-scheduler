@@ -65,7 +65,9 @@ def test_discover_gyms_follows_single_gym_redirect(
         status_code = 302
         text = ""
         url = "https://wodbuster.com/account/roadtobox.aspx"
-        headers: ClassVar[dict[str, str]] = {"location": "https://antworktrainingcenter.wodbuster.com/user"}
+        headers: ClassVar[dict[str, str]] = {
+            "location": "https://antworktrainingcenter.wodbuster.com/user"
+        }
 
     monkeypatch.setattr(discovery.requests, "get", lambda *args, **kwargs: Response())
 

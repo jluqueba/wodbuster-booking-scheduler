@@ -5,6 +5,14 @@
    Version pinned so a Flatpickr breaking change cannot silently
    ship — bump deliberately after regression-testing the picker
    panel + submit round-trip.
+
+   The calendar popover (month/weekday names, first day of week) and
+   the visible display format follow the app's OWN language
+   (``current_language()``), not the device locale — Spanish
+   operators get day/month/year with Spanish names. The wire value
+   posted to the server always stays ``YYYY-MM-DD`` regardless of
+   language (via Flatpickr's ``altInput``), so no server-side parser
+   changes are needed.
 #}
 <link
   rel="stylesheet"
@@ -18,8 +26,17 @@
   src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"
   defer
 ></script>
+{% if current_language() == "es" %}
+  <script
+    src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/es.js"
+    defer
+  ></script>
+{% endif %}
 <script>
   (function () {
+    var WB_LANG = {{ current_language() | tojson }};
+    var WB_DATE_ALT_FORMATS = { es: 'd/m/Y' };
+
     function initAll() {
       if (typeof flatpickr !== 'function') {
         // Flatpickr failed to load — plain text input still accepts
@@ -36,8 +53,10 @@
         disableMobile: false,
       });
 
-      // Calendar date pickers (``.wb-date-flatpickr``). The wire value
-      // stays ``YYYY-MM-DD`` so the server parser is unchanged.
+      // Calendar date pickers (``.wb-date-flatpickr``). The value
+      // POSTED to the server always stays ``YYYY-MM-DD`` (``dateFormat``);
+      // ``altFormat``/``altInput`` only change what the operator SEES,
+      // per their app language (WB_DATE_ALT_FORMATS).
       var dateEls = Array.prototype.slice.call(
         document.querySelectorAll('.wb-date-flatpickr')
       );
@@ -47,10 +66,32 @@
           allowInput: true,
           disableMobile: false,
         };
+        var altFormat = WB_DATE_ALT_FORMATS[WB_LANG];
+        if (altFormat) {
+          // altFormat/altInput only change the DISPLAYED text and work
+          // without the locale bundle; only `locale` (month/weekday
+          // names in the popover) actually needs it loaded.
+          opts.altInput = true;
+          opts.altFormat = altFormat;
+          if (flatpickr.l10ns && flatpickr.l10ns[WB_LANG]) {
+            opts.locale = WB_LANG;
+          }
+        }
         if (el.dataset.fpMinToday) {
           opts.minDate = 'today';
         }
         flatpickr(el, opts);
+        // altInput replaces the visible control with a plain clone that
+        // carries no id/label association (the original input, which the
+        // <label for> still targets, becomes type="hidden"). Re-attach an
+        // accessible name so the visible field is not unlabeled.
+        var fp = el._flatpickr;
+        if (fp && fp.altInput && el.id) {
+          var labelEl = document.querySelector('label[for="' + el.id + '"]');
+          if (labelEl) {
+            fp.altInput.setAttribute('aria-label', labelEl.textContent.trim());
+          }
+        }
       });
       // Second pass: link one picker's minDate to another's chosen value
       // (e.g. the end date cannot precede the start date).

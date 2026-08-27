@@ -36,7 +36,7 @@ from ..booking.cancellation import (
 from ..booking.upcoming import UpcomingSlot, list_upcoming_slots
 from ..gyms.context import active_gym_account_id
 from ..gyms.service import gym_client_factory, resolve_gym_client
-from ..i18n import lang_url, t
+from ..i18n import get_language, lang_url, t
 from ..persistence.engine import get_session
 from ..persistence.models import BookingOutcome, SchedulerRule
 from ..rules.service import list_rules_for_operator
@@ -48,15 +48,42 @@ _log = structlog.get_logger(__name__)
 router = APIRouter(tags=["history"])
 
 
-_DAY_LABELS = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-]
+_DAY_LABEL_KEYS = (
+    "day.monday",
+    "day.tuesday",
+    "day.wednesday",
+    "day.thursday",
+    "day.friday",
+    "day.saturday",
+    "day.sunday",
+)
+
+
+def _day_label(weekday: int) -> str:
+    """Return the current-language name for ``weekday`` (0=Monday)."""
+    return t(_DAY_LABEL_KEYS[weekday])
+
+
+# Locale-neutral month abbreviations for the server-rendered fallback
+# label only (data, not UI copy — same rationale as the Telegram
+# tables in notifications/messages.py). The client-side upgrade
+# (wb-datetime.js) replaces this text once JS runs; this only covers
+# first paint / no-JS.
+_MONTH_ABBR: dict[str, tuple[str, ...]] = {
+    "en": ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
+    "es": ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"),
+}
+
+
+def _short_date_time_label(dt: datetime) -> str:
+    """Fallback label ``"20 Aug 22:40"`` / ``"20 ago 22:40"``.
+
+    No English connector word (dropped "at" rather than translate it)
+    so the shape matches across languages, mirroring the Telegram
+    ``format_slot`` convention.
+    """
+    month = _MONTH_ABBR.get(get_language(), _MONTH_ABBR["en"])[dt.month - 1]
+    return f"{dt.day:02d} {month} {dt.strftime('%H:%M')}"
 
 
 def _utcnow() -> datetime:
@@ -204,8 +231,8 @@ def _outcome_to_row(outcome: BookingOutcome) -> dict[str, Any]:
         "id": int(outcome.id),
         "target_class": outcome.target_class,
         "target_slot": slot,
-        "day_label": _DAY_LABELS[slot.weekday()],
-        "slot_datetime_label": slot.strftime("%d %b at %H:%M"),
+        "day_label": _day_label(slot.weekday()),
+        "slot_datetime_label": _short_date_time_label(slot),
         "terminal_status": outcome.terminal_status,
         # Orthogonal to the status (ADR-0012 Decision 4). It is the only
         # thing on the row that tells a plain granted from one substituted
