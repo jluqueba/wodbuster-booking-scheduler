@@ -334,9 +334,9 @@ def test_history_attempts_table_renders_operator_local_time(
     assert "21:30" in body
     assert "21:35" in body
     # The Day/Date columns show the weekday name and a combined
-    # "date at time" label (15 Jul 2026 is a Wednesday).
+    # "date + time" label (15 Jul 2026 is a Wednesday).
     assert "Wednesday" in body
-    assert "15 Jul at 21:30" in body
+    assert "15 Jul 21:30" in body
     assert "UTC" not in body
 
 

@@ -67,10 +67,15 @@
           disableMobile: false,
         };
         var altFormat = WB_DATE_ALT_FORMATS[WB_LANG];
-        if (altFormat && flatpickr.l10ns && flatpickr.l10ns[WB_LANG]) {
+        if (altFormat) {
+          // altFormat/altInput only change the DISPLAYED text and work
+          // without the locale bundle; only `locale` (month/weekday
+          // names in the popover) actually needs it loaded.
           opts.altInput = true;
           opts.altFormat = altFormat;
-          opts.locale = WB_LANG;
+          if (flatpickr.l10ns && flatpickr.l10ns[WB_LANG]) {
+            opts.locale = WB_LANG;
+          }
         }
         if (el.dataset.fpMinToday) {
           opts.minDate = 'today';
