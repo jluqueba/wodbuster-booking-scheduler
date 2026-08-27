@@ -65,17 +65,22 @@ from .service import (
 
 router = APIRouter(prefix="/rules", tags=["rules"])
 
-_DAY_LABELS = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-]
+_DAY_LABEL_KEYS = (
+    "day.monday",
+    "day.tuesday",
+    "day.wednesday",
+    "day.thursday",
+    "day.friday",
+    "day.saturday",
+    "day.sunday",
+)
 
 _TIME_FALLBACK: list[str] = []
+
+
+def _day_label(weekday: int) -> str:
+    """Return the current-language name for ``weekday`` (0=Monday)."""
+    return t(_DAY_LABEL_KEYS[weekday])
 
 
 def _window_open_dt(rule: SchedulerRule, now: datetime) -> datetime | None:
@@ -160,7 +165,7 @@ def _render_form(
             "form_values": form_values,
             "errors": errors,
             "delete_url": delete_url,
-            "day_labels": _DAY_LABELS,
+            "day_labels": [_day_label(day) for day in range(7)],
             "picker_class_types": picker.class_types if picker else [],
             "picker_time_slots": picker.time_slots if picker else _TIME_FALLBACK,
             "picker_unavailable": picker is None,
@@ -181,7 +186,7 @@ def rules_list(request: Request, operator_id: int = Depends(require_session)) ->
         rows = [
             {
                 "id": rule.id,
-                "day_label": _DAY_LABELS[rule.day_of_week],
+                "day_label": _day_label(rule.day_of_week),
                 "day_of_week": rule.day_of_week,
                 "class_type": rule.class_type,
                 "class_time": rule.class_time,

@@ -48,15 +48,20 @@ _log = structlog.get_logger(__name__)
 router = APIRouter(tags=["history"])
 
 
-_DAY_LABELS = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-]
+_DAY_LABEL_KEYS = (
+    "day.monday",
+    "day.tuesday",
+    "day.wednesday",
+    "day.thursday",
+    "day.friday",
+    "day.saturday",
+    "day.sunday",
+)
+
+
+def _day_label(weekday: int) -> str:
+    """Return the current-language name for ``weekday`` (0=Monday)."""
+    return t(_DAY_LABEL_KEYS[weekday])
 
 
 def _utcnow() -> datetime:
@@ -204,7 +209,7 @@ def _outcome_to_row(outcome: BookingOutcome) -> dict[str, Any]:
         "id": int(outcome.id),
         "target_class": outcome.target_class,
         "target_slot": slot,
-        "day_label": _DAY_LABELS[slot.weekday()],
+        "day_label": _day_label(slot.weekday()),
         "slot_datetime_label": slot.strftime("%d %b at %H:%M"),
         "terminal_status": outcome.terminal_status,
         # Orthogonal to the status (ADR-0012 Decision 4). It is the only

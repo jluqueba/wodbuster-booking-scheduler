@@ -180,6 +180,14 @@ EN: dict[str, str] = {
         "Bind your Telegram chat so booking outcomes, cookie-expiring "
         "warnings, and anomaly alerts land on your phone."
     ),
+    # -- days of week --------------------------------------------------
+    "day.monday": "Monday",
+    "day.tuesday": "Tuesday",
+    "day.wednesday": "Wednesday",
+    "day.thursday": "Thursday",
+    "day.friday": "Friday",
+    "day.saturday": "Saturday",
+    "day.sunday": "Sunday",
     # -- rules -------------------------------------------------------
     "rules.eyebrow": "Automation",
     "rules.title": "📅 Rules",
@@ -1083,6 +1091,14 @@ ES: dict[str, str] = {
         "Vincula tu chat de Telegram para recibir en el móvil los "
         "resultados de reservas, avisos de cookie caducada y anomalías."
     ),
+    # -- days of week --------------------------------------------------
+    "day.monday": "Lunes",
+    "day.tuesday": "Martes",
+    "day.wednesday": "Miércoles",
+    "day.thursday": "Jueves",
+    "day.friday": "Viernes",
+    "day.saturday": "Sábado",
+    "day.sunday": "Domingo",
     # -- rules -------------------------------------------------------
     "rules.eyebrow": "Automatización",
     "rules.title": "📅 Reglas",
