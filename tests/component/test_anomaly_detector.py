@@ -275,6 +275,112 @@ def test_outcome_on_another_day_does_not_count(
     assert missed[0].target_slot == datetime(2026, 7, 8, 21, 30, tzinfo=UTC)
 
 
+def test_dst_spring_forward_day_is_23_hours_wide(
+    postgres_engine: Engine,
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 23-hour local day bounds the evidence window to 23 hours.
+
+    2026-03-29 is the spring-forward Sunday in Europe/Madrid: local
+    midnight is 23:00 UTC the previous day and the day ends at 22:00
+    UTC, not 23:00. Both edges are asserted, so a range computed as a
+    flat 24 hours from local midnight fails this test by accepting an
+    outcome that belongs to the following day.
+    """
+    monkeypatch.setenv("WORKER_TIMEZONE", "Europe/Madrid")
+    op_id = _make_operator(postgres_engine)
+    # Window opens Sunday 09:00 local, class the same day at 21:00 local.
+    rule_id = _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=6,
+        booking_opens_days_before=0,
+        booking_opens_at="09:00",
+        class_time="21:00",
+        created_at=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+    )
+    now = datetime(2026, 3, 29, 7, 30, tzinfo=UTC)  # 30 min past the window
+
+    # 22:30 UTC is 00:30 local on the 30th: the next day, past the end
+    # edge. Not evidence.
+    _make_outcome(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=rule_id,
+        target_class="WOD",
+        target_slot=datetime(2026, 3, 29, 22, 30, tzinfo=UTC),
+        attempted_at=now,
+    )
+    with session_factory() as session:
+        assert len(detect_missed_windows(session, now=now)) == 1
+
+    # 23:15 UTC on the 28th is 00:15 local on the 29th: the start edge
+    # of the short day. Evidence.
+    _make_outcome(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=rule_id,
+        target_class="WOD",
+        target_slot=datetime(2026, 3, 28, 23, 15, tzinfo=UTC),
+        attempted_at=now,
+    )
+    with session_factory() as session:
+        assert detect_missed_windows(session, now=now) == []
+
+
+def test_dst_autumn_back_day_is_25_hours_wide(
+    postgres_engine: Engine,
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 25-hour local day bounds the evidence window to 25 hours.
+
+    2026-10-25 is the autumn-back Sunday in Europe/Madrid: local
+    midnight is 22:00 UTC the previous day and the day runs until 23:00
+    UTC. A range computed as a flat 24 hours fails this test by
+    rejecting an outcome recorded in the day's final hour.
+    """
+    monkeypatch.setenv("WORKER_TIMEZONE", "Europe/Madrid")
+    op_id = _make_operator(postgres_engine)
+    # Window opens Sunday 09:00 local, class the same day at 23:30 local.
+    rule_id = _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=6,
+        booking_opens_days_before=0,
+        booking_opens_at="09:00",
+        class_time="23:30",
+        created_at=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+    )
+    now = datetime(2026, 10, 25, 8, 30, tzinfo=UTC)  # 30 min past the window
+
+    # 23:15 UTC is 00:15 local on the 26th: past the end edge.
+    _make_outcome(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=rule_id,
+        target_class="WOD",
+        target_slot=datetime(2026, 10, 25, 23, 15, tzinfo=UTC),
+        attempted_at=now,
+    )
+    with session_factory() as session:
+        assert len(detect_missed_windows(session, now=now)) == 1
+
+    # 22:45 UTC is 23:45 local on the 25th: inside the long day, and an
+    # hour past where a flat 24-hour range would have cut it off.
+    _make_outcome(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=rule_id,
+        target_class="WOD",
+        target_slot=datetime(2026, 10, 25, 22, 45, tzinfo=UTC),
+        attempted_at=now,
+    )
+    with session_factory() as session:
+        assert detect_missed_windows(session, now=now) == []
+
+
 def test_window_inside_grace_period_is_not_missed(
     postgres_engine: Engine, session_factory: sessionmaker[Session]
 ) -> None:
