@@ -246,6 +246,8 @@ make check
 
 `check` runs `ruff check`, `mypy src`, `djlint` over the Jinja templates, and `pytest` (excluding the `live_contract` marker). It is the same gate the CI workflow enforces.
 
+The dev extras in `pyproject.toml` are pinned to exact versions so that gate is reproducible: CI and a developer's machine run the same linter, the same type checker and the same template linter. A range would let a new release add a rule mid-branch and turn an unrelated pull request red, which is how djlint 1.46 (rule H044) broke a change that touched no templates. Bump a pin in its own commit, run the full suite, and resolve the new findings there.
+
 The template step can be run on its own, which is useful before committing a markup change:
 
 ```powershell

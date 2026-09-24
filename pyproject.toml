@@ -34,16 +34,30 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Exact pins, not ranges. Every entry here gates CI, and a linter or type
+# checker that adds a rule in a minor release turns an unrelated pull
+# request red: djlint 1.46 shipped H044 and broke a change that touched no
+# templates. Ranges also let CI and a developer's machine resolve different
+# versions, so a green local run stopped predicting a green CI run.
+# Runtime dependencies above stay on ranges deliberately: they are resolved
+# once per image build and their compatibility is covered by the suite.
+#
+# Bumping: raise the pin in its own commit, run the full suite, and fix the
+# new findings there. Never as a side effect of a feature branch.
 dev = [
-    "pytest>=8.3,<9.0",
-    "pytest-asyncio>=0.24,<1.0",
-    "ruff>=0.7,<1.0",
-    "mypy>=1.11,<2.0",
-    "djlint>=1.36,<2.0",
+    "pytest==8.4.2",
+    "pytest-asyncio==0.26.0",
+    "ruff==0.16.8",
+    "mypy==1.20.2",
+    # 1.46.1 rather than the newest patch: 1.46.2 ships no wheel for the
+    # Python 3.14 some contributors run locally, and a pin that only
+    # installs on the CI interpreter defeats the purpose.
+    "djlint==1.46.1",
     # Accessibility audits parse the rendered response with the WHATWG
     # algorithm, so the tree under test is the one a browser builds.
-    "html5lib>=1.1,<2.0",
-    "types-requests",
+    "html5lib==1.1",
+    # Stub packages move independently of mypy and break it the same way.
+    "types-requests==2.33.0.20260906",
 ]
 
 [build-system]
