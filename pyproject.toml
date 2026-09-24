@@ -77,4 +77,9 @@ extension = "html"
 # H030/H031 ask for meta description and keywords: SEO hints for indexed
 #      public pages, while every page here sits behind a login (and the
 #      keywords tag has been ignored by search engines for years).
-ignore = "J004,H030,H031"
+# H044 rejects a <td> inside <thead>, which is exactly how the action
+#      columns are marked up: those columns carry no header text, and an
+#      empty <th> is announced as a header with no name. The repo's own
+#      accessibility suite fails that markup (tests/component/a11y.py),
+#      so the two checks cannot both be satisfied and the tested one wins.
+ignore = "J004,H030,H031,H044"
