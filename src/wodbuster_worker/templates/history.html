@@ -256,8 +256,12 @@
           <th>{{ t("history.table.result") }}</th>
           <th>{{ t("history.table.attempted") }}</th>
           {# Action column carries no header, so the cell is a td: an empty th
-             is announced as a header with no name. #}
+             is announced as a header with no name, which the accessibility
+             suite rejects. djlint H044 wants the opposite, so it is switched
+             off for this cell only and stays on everywhere else. #}
+          {# djlint:off H044 #}
           <td></td>
+          {# djlint:on #}
         </tr>
       </thead>
       <tbody>
