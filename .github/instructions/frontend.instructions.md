@@ -50,6 +50,10 @@ switches).
   it lints only and never reformats.
 - An empty `<th></th>` is reported as a header with no name. A column with no
   header (an actions column) uses `<td></td>` in the header row instead.
+- djlint's H044 rejects that mix, so those header rows wrap the cell in
+  `{# djlint:off H044 #}` / `{# djlint:on #}`. Scope the exception to the cell,
+  never to the whole template tree: a `<thead>` that mixes cells by accident
+  anywhere else must still fail the gate.
 
 ## Verify layout with evidence, not by eye
 

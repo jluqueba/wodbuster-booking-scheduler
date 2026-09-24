@@ -8,6 +8,10 @@ Contract:
 - Opens one session, detects missed windows across all active rules,
   and emits the alerts + outbox rows in the same transaction so the
   plan's "durable before dispatch" rule holds.
+- Re-notification is rate-limited by the detector's re-fire interval,
+  so a missed window that stays detectable for the whole lookback
+  produces one round of notifications, not one per tick.
+- Closes open anomaly alerts that resolved or aged out, on every tick.
 - Exceptions bubble up to the scheduler wrapper below, which
   swallows them after logging so a bad tick cannot take the process
   down. Callers (tests, REPL) get the exception raw.
@@ -22,6 +26,9 @@ import structlog
 from ..heartbeat.anomaly import (
     DEFAULT_GRACE_PERIOD,
     DEFAULT_LOOKBACK,
+    DEFAULT_REFIRE_INTERVAL,
+    DEFAULT_RETENTION,
+    close_resolved_anomalies,
     detect_missed_windows,
     emit_anomaly_alerts,
 )
@@ -36,11 +43,19 @@ def run_anomaly_tick(
     now: datetime | None = None,
     grace_period: timedelta = DEFAULT_GRACE_PERIOD,
     lookback: timedelta = DEFAULT_LOOKBACK,
+    refire_interval: timedelta = DEFAULT_REFIRE_INTERVAL,
+    retention: timedelta = DEFAULT_RETENTION,
 ) -> list[int]:
     """Detect missed booking windows and emit anomaly alerts.
 
-    Returns the alert ids touched during the tick — the empty list
-    means "everything on schedule".
+    Returns the alert ids notified during the tick — the empty list
+    means "nothing new to tell the operator", which covers both
+    "everything on schedule" and "the open alert is still the same
+    one we already reported".
+
+    Closing runs on every tick, including the ones with nothing to
+    detect: an alert that stopped being true has to clear the
+    dashboard banner on its own.
     """
     _now = now or datetime.now(tz=UTC)
     with session_factory() as session:
@@ -50,16 +65,28 @@ def run_anomaly_tick(
             grace_period=grace_period,
             lookback=lookback,
         )
-        if not missed:
-            return []
-        touched = emit_anomaly_alerts(session, missed, now=_now)
+        touched = (
+            emit_anomaly_alerts(session, missed, now=_now, refire_interval=refire_interval)
+            if missed
+            else []
+        )
+        # After emission, so a window that is still missing cannot be
+        # closed and re-opened inside the same tick.
+        closed = close_resolved_anomalies(session, now=_now, retention=retention)
+        # Committed unconditionally. The pass above also prunes resolved
+        # windows off alerts it leaves open, which is a write that no
+        # return value reports, and an "only commit when something
+        # happened" guard silently discarded it.
         session.commit()
 
-    _log.warning(
-        "anomaly.tick.missed_windows",
-        missed_count=len(missed),
-        alerts_touched=len(touched),
-    )
+    if missed:
+        _log.warning(
+            "anomaly.tick.missed_windows",
+            missed_count=len(missed),
+            alerts_notified=len(touched),
+        )
+    if closed:
+        _log.info("anomaly.tick.alerts_closed", closed_count=len(closed))
     return touched
 
 

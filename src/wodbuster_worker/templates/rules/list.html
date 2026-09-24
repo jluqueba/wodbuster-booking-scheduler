@@ -49,9 +49,13 @@
           <th>{{ t("rules.table.window") }}</th>
           <th>{{ t("rules.table.status") }}</th>
           {# Action columns carry no header, so the cell is a td: an empty th
-             is announced as a header with no name. #}
+             is announced as a header with no name, which the accessibility
+             suite rejects. djlint H044 wants the opposite, so it is switched
+             off for these two cells only and stays on everywhere else. #}
+          {# djlint:off H044 #}
           <td></td>
           <td></td>
+          {# djlint:on #}
         </tr>
       </thead>
       <tbody>

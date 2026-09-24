@@ -217,6 +217,170 @@ def test_rule_without_outcome_is_missed(
     assert missed[0].target_slot == datetime(2026, 7, 8, 21, 30, tzinfo=UTC)
 
 
+def test_override_moving_the_class_time_is_not_missed(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """ADR-0012: a single-day override books, and records, another slot.
+
+    The executor resolves ``target_slot`` from the override's
+    ``class_time``, so the outcome row lands on the same day but at a
+    different instant than the rule's own. Matching on the instant
+    reported those successful runs as silent.
+    """
+    op_id = _make_operator(postgres_engine)
+    rule_id = _make_rule(
+        postgres_engine,
+        op_id,
+        created_at=datetime(2026, 6, 1, 0, 0, tzinfo=UTC),
+    )
+    # Rule targets Wed 21:30 UTC; the override moved the class to 19:00.
+    _make_outcome(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=rule_id,
+        target_class="WOD",
+        target_slot=datetime(2026, 7, 8, 19, 0, tzinfo=UTC),
+        attempted_at=datetime(2026, 7, 6, 21, 30, tzinfo=UTC),
+    )
+    now = datetime(2026, 7, 6, 22, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        assert detect_missed_windows(session, now=now) == []
+
+
+def test_outcome_on_another_day_does_not_count(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """Day-scoped evidence stays scoped: the previous week is not proof."""
+    op_id = _make_operator(postgres_engine)
+    rule_id = _make_rule(
+        postgres_engine,
+        op_id,
+        created_at=datetime(2026, 6, 1, 0, 0, tzinfo=UTC),
+    )
+    _make_outcome(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=rule_id,
+        target_class="WOD",
+        target_slot=datetime(2026, 7, 1, 21, 30, tzinfo=UTC),
+        attempted_at=datetime(2026, 6, 29, 21, 30, tzinfo=UTC),
+    )
+    now = datetime(2026, 7, 6, 22, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        missed = detect_missed_windows(session, now=now)
+
+    assert len(missed) == 1
+    assert missed[0].target_slot == datetime(2026, 7, 8, 21, 30, tzinfo=UTC)
+
+
+def test_dst_spring_forward_day_is_23_hours_wide(
+    postgres_engine: Engine,
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 23-hour local day bounds the evidence window to 23 hours.
+
+    2026-03-29 is the spring-forward Sunday in Europe/Madrid: local
+    midnight is 23:00 UTC the previous day and the day ends at 22:00
+    UTC, not 23:00. Both edges are asserted, so a range computed as a
+    flat 24 hours from local midnight fails this test by accepting an
+    outcome that belongs to the following day.
+    """
+    monkeypatch.setenv("WORKER_TIMEZONE", "Europe/Madrid")
+    op_id = _make_operator(postgres_engine)
+    # Window opens Sunday 09:00 local, class the same day at 21:00 local.
+    rule_id = _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=6,
+        booking_opens_days_before=0,
+        booking_opens_at="09:00",
+        class_time="21:00",
+        created_at=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+    )
+    now = datetime(2026, 3, 29, 7, 30, tzinfo=UTC)  # 30 min past the window
+
+    # 22:30 UTC is 00:30 local on the 30th: the next day, past the end
+    # edge. Not evidence.
+    _make_outcome(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=rule_id,
+        target_class="WOD",
+        target_slot=datetime(2026, 3, 29, 22, 30, tzinfo=UTC),
+        attempted_at=now,
+    )
+    with session_factory() as session:
+        assert len(detect_missed_windows(session, now=now)) == 1
+
+    # 23:15 UTC on the 28th is 00:15 local on the 29th: the start edge
+    # of the short day. Evidence.
+    _make_outcome(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=rule_id,
+        target_class="WOD",
+        target_slot=datetime(2026, 3, 28, 23, 15, tzinfo=UTC),
+        attempted_at=now,
+    )
+    with session_factory() as session:
+        assert detect_missed_windows(session, now=now) == []
+
+
+def test_dst_autumn_back_day_is_25_hours_wide(
+    postgres_engine: Engine,
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 25-hour local day bounds the evidence window to 25 hours.
+
+    2026-10-25 is the autumn-back Sunday in Europe/Madrid: local
+    midnight is 22:00 UTC the previous day and the day runs until 23:00
+    UTC. A range computed as a flat 24 hours fails this test by
+    rejecting an outcome recorded in the day's final hour.
+    """
+    monkeypatch.setenv("WORKER_TIMEZONE", "Europe/Madrid")
+    op_id = _make_operator(postgres_engine)
+    # Window opens Sunday 09:00 local, class the same day at 23:30 local.
+    rule_id = _make_rule(
+        postgres_engine,
+        op_id,
+        day_of_week=6,
+        booking_opens_days_before=0,
+        booking_opens_at="09:00",
+        class_time="23:30",
+        created_at=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+    )
+    now = datetime(2026, 10, 25, 8, 30, tzinfo=UTC)  # 30 min past the window
+
+    # 23:15 UTC is 00:15 local on the 26th: past the end edge.
+    _make_outcome(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=rule_id,
+        target_class="WOD",
+        target_slot=datetime(2026, 10, 25, 23, 15, tzinfo=UTC),
+        attempted_at=now,
+    )
+    with session_factory() as session:
+        assert len(detect_missed_windows(session, now=now)) == 1
+
+    # 22:45 UTC is 23:45 local on the 25th: inside the long day, and an
+    # hour past where a flat 24-hour range would have cut it off.
+    _make_outcome(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=rule_id,
+        target_class="WOD",
+        target_slot=datetime(2026, 10, 25, 22, 45, tzinfo=UTC),
+        attempted_at=now,
+    )
+    with session_factory() as session:
+        assert detect_missed_windows(session, now=now) == []
+
+
 def test_window_inside_grace_period_is_not_missed(
     postgres_engine: Engine, session_factory: sessionmaker[Session]
 ) -> None:
@@ -319,11 +483,17 @@ def test_emit_creates_open_alert_and_banner_row(
     assert outbox[0].kind == "banner"
 
 
-def test_repeat_tick_refreshes_alert_without_duplicating(
+def test_repeat_tick_suppresses_duplicate_notifications(
     postgres_engine: Engine, session_factory: sessionmaker[Session]
 ) -> None:
     """US2.T2: two consecutive detector ticks with the same missed
-    window produce exactly one alert row (partial unique index)."""
+    window produce exactly one alert row (partial unique index) and
+    exactly one round of notifications.
+
+    The tick runs every 60 seconds and a missed window stays
+    detectable for the whole lookback, so re-emitting per tick meant
+    an hour of one notification per minute for a single silent run.
+    """
     op_id = _make_operator(postgres_engine)
     _make_rule(
         postgres_engine,
@@ -340,15 +510,216 @@ def test_repeat_tick_refreshes_alert_without_duplicating(
 
     with session_factory() as session:
         missed_again = detect_missed_windows(session, now=second)
-        emit_anomaly_alerts(session, missed_again, now=second)
+        touched = emit_anomaly_alerts(session, missed_again, now=second)
         session.commit()
+
+    # Still detected, deliberately not re-notified.
+    assert len(missed_again) == 1
+    assert touched == []
+
+    with session_factory() as session:
+        alerts = session.execute(select(Alert)).scalars().all()
+        outbox = session.execute(select(NotificationOutbox)).scalars().all()
+    assert len(alerts) == 1
+    assert alerts[0].first_emitted_at == first
+    # ``last_emitted_at`` tracks the last notification, not the last
+    # detection, because it is what gates the next one.
+    assert alerts[0].last_emitted_at == first
+    assert len(outbox) == 1
+
+
+def test_refire_interval_elapsed_renotifies(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """A still-missing window notifies again once the interval passes."""
+    op_id = _make_operator(postgres_engine)
+    _make_rule(
+        postgres_engine,
+        op_id,
+        created_at=datetime(2026, 6, 1, 0, 0, tzinfo=UTC),
+    )
+    first = datetime(2026, 7, 6, 22, 0, tzinfo=UTC)
+    second = datetime(2026, 7, 6, 22, 20, tzinfo=UTC)
+    interval = timedelta(minutes=10)
+
+    run_anomaly_tick(session_factory, now=first, refire_interval=interval)
+    touched = run_anomaly_tick(session_factory, now=second, refire_interval=interval)
+
+    assert len(touched) == 1
+    with session_factory() as session:
+        alerts = session.execute(select(Alert)).scalars().all()
+        outbox = session.execute(select(NotificationOutbox)).scalars().all()
+    assert len(alerts) == 1
+    assert alerts[0].last_emitted_at == second
+    assert len(outbox) == 2
+
+
+def test_unreported_window_notifies_inside_refire_interval(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """A second silent run is never swallowed by the re-fire gate."""
+    op_id = _make_operator(postgres_engine)
+    _make_rule(
+        postgres_engine,
+        op_id,
+        booking_opens_at="21:30",
+        created_at=datetime(2026, 6, 1, 0, 0, tzinfo=UTC),
+    )
+    # Second rule on the same day whose window opens 22 minutes later,
+    # so the first tick still has it inside the grace period.
+    _make_rule(
+        postgres_engine,
+        op_id,
+        booking_opens_at="21:52",
+        class_type="OPEN BOX",
+        created_at=datetime(2026, 6, 1, 0, 0, tzinfo=UTC),
+    )
+    first = datetime(2026, 7, 6, 21, 56, tzinfo=UTC)
+    second = datetime(2026, 7, 6, 21, 58, tzinfo=UTC)
+
+    run_anomaly_tick(session_factory, now=first)
+    touched = run_anomaly_tick(session_factory, now=second)
+
+    assert len(touched) == 1
+    with session_factory() as session:
+        alerts = session.execute(select(Alert)).scalars().all()
+        outbox = session.execute(select(NotificationOutbox)).scalars().all()
+    assert len(alerts) == 1
+    assert len(alerts[0].payload["missed"]) == 2
+    assert len(outbox) == 2
+
+
+# ---------------------------------------------------------------------------
+# close_resolved_anomalies
+# ---------------------------------------------------------------------------
+
+
+def test_tracked_window_survives_a_later_detection(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """A silent run stays tracked until it resolves or expires.
+
+    The detector only looks back an hour, so a later tick reports a
+    different window without meaning the earlier one recovered. Payload
+    entries accumulate; resolving one must not clear the banner for the
+    other.
+    """
+    op_id = _make_operator(postgres_engine)
+    first_rule = _make_rule(
+        postgres_engine,
+        op_id,
+        booking_opens_at="21:30",
+        created_at=datetime(2026, 6, 1, 0, 0, tzinfo=UTC),
+    )
+    second_rule = _make_rule(
+        postgres_engine,
+        op_id,
+        booking_opens_at="22:40",
+        class_type="OPEN BOX",
+        class_time="22:40",
+        created_at=datetime(2026, 6, 1, 0, 0, tzinfo=UTC),
+    )
+
+    run_anomaly_tick(session_factory, now=datetime(2026, 7, 6, 22, 0, tzinfo=UTC))
+    # 23:00: the first window fell out of the lookback (90 minutes old)
+    # and only the second one is detected.
+    run_anomaly_tick(session_factory, now=datetime(2026, 7, 6, 23, 0, tzinfo=UTC))
+
+    with session_factory() as session:
+        alert = session.execute(select(Alert)).scalars().one()
+        tracked = {entry["rule_id"] for entry in alert.payload["missed"]}
+    assert tracked == {first_rule, second_rule}
+
+    # The second rule's booking lands late; the first is still silent.
+    _make_outcome(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=second_rule,
+        target_class="OPEN BOX",
+        target_slot=datetime(2026, 7, 8, 22, 40, tzinfo=UTC),
+        attempted_at=datetime(2026, 7, 6, 23, 2, tzinfo=UTC),
+    )
+    run_anomaly_tick(session_factory, now=datetime(2026, 7, 6, 23, 5, tzinfo=UTC))
+
+    with session_factory() as session:
+        alert = session.execute(select(Alert)).scalars().one()
+    assert alert.closed_at is None
+    assert [entry["rule_id"] for entry in alert.payload["missed"]] == [first_rule]
+
+
+def test_alert_closes_when_the_outcome_lands(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """A late outcome clears the banner without operator action."""
+    op_id = _make_operator(postgres_engine)
+    rule_id = _make_rule(
+        postgres_engine,
+        op_id,
+        created_at=datetime(2026, 6, 1, 0, 0, tzinfo=UTC),
+    )
+    first = datetime(2026, 7, 6, 22, 0, tzinfo=UTC)
+    run_anomaly_tick(session_factory, now=first)
+
+    _make_outcome(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=rule_id,
+        target_class="WOD",
+        target_slot=datetime(2026, 7, 8, 21, 30, tzinfo=UTC),
+        attempted_at=datetime(2026, 7, 6, 22, 1, tzinfo=UTC),
+    )
+    second = first + timedelta(minutes=2)
+    run_anomaly_tick(session_factory, now=second)
 
     with session_factory() as session:
         alerts = session.execute(select(Alert)).scalars().all()
     assert len(alerts) == 1
-    # last_emitted_at was refreshed on the second tick.
-    assert alerts[0].last_emitted_at == second
-    assert alerts[0].first_emitted_at == first
+    assert alerts[0].closed_at == second
+
+
+def test_alert_closes_once_the_window_ages_out(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """Nothing can be done about a booking window that closed a day ago."""
+    op_id = _make_operator(postgres_engine)
+    _make_rule(
+        postgres_engine,
+        op_id,
+        created_at=datetime(2026, 6, 1, 0, 0, tzinfo=UTC),
+    )
+    first = datetime(2026, 7, 6, 22, 0, tzinfo=UTC)
+    run_anomaly_tick(session_factory, now=first)
+
+    later = datetime(2026, 7, 7, 23, 0, tzinfo=UTC)  # window opened 25.5h ago
+    run_anomaly_tick(session_factory, now=later)
+
+    with session_factory() as session:
+        alerts = session.execute(select(Alert)).scalars().all()
+        outbox = session.execute(select(NotificationOutbox)).scalars().all()
+    assert len(alerts) == 1
+    assert alerts[0].closed_at == later
+    # Closing is not an event the operator is notified about.
+    assert len(outbox) == 1
+
+
+def test_still_missing_window_stays_open(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """The close pass never clears an alert the detector still raises."""
+    op_id = _make_operator(postgres_engine)
+    _make_rule(
+        postgres_engine,
+        op_id,
+        created_at=datetime(2026, 6, 1, 0, 0, tzinfo=UTC),
+    )
+    first = datetime(2026, 7, 6, 22, 0, tzinfo=UTC)
+    run_anomaly_tick(session_factory, now=first)
+    run_anomaly_tick(session_factory, now=first + timedelta(minutes=1))
+
+    with session_factory() as session:
+        alerts = session.execute(select(Alert)).scalars().all()
+    assert len(alerts) == 1
+    assert alerts[0].closed_at is None
 
 
 # ---------------------------------------------------------------------------

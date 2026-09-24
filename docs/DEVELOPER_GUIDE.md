@@ -46,7 +46,7 @@ The scheduler registers five job families at startup (`src/wodbuster_worker/app.
 
 - Heartbeat probe (cookie validity, hourly cadence).
 - Notification dispatcher (drains independent Telegram and email outbox rows; dashboard banners are read from their durable rows).
-- Per-run anomaly detector (opens a `heartbeat_anomaly` alert when a booking window passed with no recorded outcome).
+- Per-run anomaly detector (opens a `heartbeat_anomaly` alert when a booking window passed with no recorded outcome anywhere on that day, re-notifies at most once per re-fire interval, and closes the alert once the outcome lands or the window ages out).
 - External dead-man ping to Healthchecks.io (every 10 minutes) so a crashed or partitioned worker trips an out-of-band alarm.
 - Per-rule booking jobs (bootstrapped from the active scheduler rules).
 
@@ -245,6 +245,8 @@ make check
 `docker compose up -d postgres` starts the Postgres 16 container declared in `docker-compose.yml`, listening on `localhost:5432` and matching the `POSTGRES_*` block in `.env.example`. Wipe it with `docker compose down -v` for a clean slate.
 
 `check` runs `ruff check`, `mypy src`, `djlint` over the Jinja templates, and `pytest` (excluding the `live_contract` marker). It is the same gate the CI workflow enforces.
+
+The dev extras in `pyproject.toml` are pinned to exact versions so that gate is reproducible: CI and a developer's machine run the same linter, the same type checker and the same template linter. A range would let a new release add a rule mid-branch and turn an unrelated pull request red, which is how djlint 1.46 (rule H044) broke a change that touched no templates. Bump a pin in its own commit, run the full suite, and resolve the new findings there.
 
 The template step can be run on its own, which is useful before committing a markup change:
 
