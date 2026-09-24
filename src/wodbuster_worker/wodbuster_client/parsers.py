@@ -41,6 +41,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal
 
 # Enumerated string values observed in Phase 0. Kept as a Literal so
@@ -51,6 +52,12 @@ ClassStatus = Literal[
     "Avisable",  # full — "notify me" available
     "Unknown",  # any other / missing status value
 ]
+
+# What a past class says about the operator (ADR-0013). One value per
+# upstream athlete list. The "removed after the class began" category of
+# ADR-0015 is derived from 'cancelled' plus a state instant, not stored
+# here, so this vocabulary keeps saying only what WodBuster said.
+AttendanceState = Literal["attended", "cancelled", "no_show"]
 
 
 @dataclass(frozen=True)
@@ -308,6 +315,151 @@ def _athlete_is_operator(athlete: Any, guid: str, raw: str) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Attendance history (ADR-0013)
+# ---------------------------------------------------------------------------
+#
+# The same ``Data[].Valores[].Valor`` walk, read for a different purpose:
+# not "can I book this" but "what did I end up doing". A past class
+# carries three athlete lists, and which one the operator sits in is the
+# whole signal:
+#
+# - ``AtletasEntrenando`` — trained.
+# - ``AtletasBorradosVisibles`` — removed. The client bundle renders it
+#   with the CSS class ``noentrenandoBorrados``.
+# - ``AtletasNoEntrenandoVisibles`` — marked absent by a coach through
+#   ``calendario_noentreno.ashx``. Rendered as ``noentrenando``. The
+#   control is gated on ``MostrarAsistencia``, so at a gym with it
+#   disabled this list stays empty and an absence arrives as a removal
+#   instead (ADR-0015, Decision 5 handles that at read time).
+#
+# Each athlete entry also carries ``FechaEstado``, the instant the state
+# was set: when the booking was made for a trained class, when the
+# removal happened for a removed one.
+
+_ATTENDANCE_LIST_STATES: tuple[tuple[str, AttendanceState], ...] = (
+    # Order is precedence, not preference. An operator who booked,
+    # removed themselves and booked again can appear in two lists; the
+    # attending list is the one that describes how the class ended.
+    ("AtletasEntrenando", "attended"),
+    ("AtletasNoEntrenandoVisibles", "no_show"),
+    ("AtletasBorradosVisibles", "cancelled"),
+)
+
+_FECHA_ESTADO_FORMAT = "%d/%m/%Y %H:%M:%S"
+
+
+@dataclass(frozen=True)
+class OperatorClassState:
+    """What one past class says about the signed-in operator.
+
+    Deliberately has no field able to hold another athlete's identity.
+    The upstream entries carry ``DisplayName``, ``Url`` and ``UrlFoto``
+    for every athlete in the class; none of them reaches this object,
+    which is the storage-boundary expression of the data minimisation
+    decision in ADR-0013.
+
+    ``state_changed_at`` is naive: ``FechaEstado`` carries no timezone,
+    and attaching one is the caller's job, where the operator timezone
+    is already resolved.
+    """
+
+    class_id: int
+    class_name: str
+    class_type_id: int | None
+    hora_comienzo: str  # HH:MM
+    state: AttendanceState
+    state_changed_at: datetime | None
+    reservation_type: str | None
+    capacity: int | None
+    occupancy: int
+    ever_full: bool
+
+
+def parse_fecha_estado(value: Any) -> datetime | None:
+    """Parse an upstream ``FechaEstado`` into a naive datetime.
+
+    Returns ``None`` for a missing, non-string or unparseable value. A
+    record without it still counts in the abandonment rate; it is only
+    excluded from the cancellation lead-time bands, so failing softly
+    here loses less than raising would.
+    """
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.strptime(value.strip(), _FECHA_ESTADO_FORMAT)
+    except ValueError:
+        return None
+
+
+def read_operator_states(payload: dict[str, Any], *, operator_idu: str) -> list[OperatorClassState]:
+    """Return one entry per class of this day where the operator appears.
+
+    Walks every class instance once. A class where the operator is in
+    none of the three lists yields nothing, which is a legitimate
+    outcome and not an error: it is how a day the gym was open and the
+    operator did not train is recorded.
+
+    Malformed instances are skipped rather than raising, matching
+    :func:`parse_class_instance`.
+    """
+    guid = operator_idu_to_guid(operator_idu)
+    raw = operator_idu.strip().lower()
+    states: list[OperatorClassState] = []
+
+    for valor in _iter_raw_valores(payload):
+        class_id = valor.get("Id")
+        if not isinstance(class_id, int) or isinstance(class_id, bool) or class_id <= 0:
+            continue
+        nombre = valor.get("Nombre")
+        if not isinstance(nombre, str) or not nombre.strip():
+            continue
+        hora = valor.get("HoraComienzo")
+        if not isinstance(hora, str) or len(hora) < 5 or hora[2] != ":":
+            continue
+
+        entry, state = _find_operator_entry(valor, guid, raw)
+        if entry is None or state is None:
+            continue
+
+        attending = valor.get("AtletasEntrenando")
+        states.append(
+            OperatorClassState(
+                class_id=class_id,
+                class_name=nombre.strip(),
+                class_type_id=_optional_int(valor.get("IdTipoEntrenamiento")),
+                hora_comienzo=hora[:5],
+                state=state,
+                state_changed_at=parse_fecha_estado(entry.get("FechaEstado")),
+                reservation_type=_optional_str(entry.get("TipoReserva")),
+                capacity=_optional_int(valor.get("Plazas")),
+                occupancy=len(attending) if isinstance(attending, list) else 0,
+                ever_full=valor.get("AlgunMomentoLlena") is True,
+            )
+        )
+    return states
+
+
+def _find_operator_entry(
+    valor: dict[str, Any], guid: str, raw: str
+) -> tuple[dict[str, Any] | None, AttendanceState | None]:
+    """Return the operator's own athlete entry and the state it implies."""
+    for field, state in _ATTENDANCE_LIST_STATES:
+        candidates = valor.get(field)
+        if not isinstance(candidates, list):
+            continue
+        for athlete in candidates:
+            if isinstance(athlete, dict) and _athlete_is_operator(athlete, guid, raw):
+                return athlete, state
+    return None, None
+
+
+def _optional_str(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
 def _iter_raw_valores(payload: dict[str, Any]) -> Iterator[dict[str, Any]]:
     """Yield each raw ``Valor`` object under ``Data[].Valores[]``."""
     data = payload.get("Data")
@@ -325,15 +477,19 @@ def _iter_raw_valores(payload: dict[str, Any]) -> Iterator[dict[str, Any]]:
 
 
 __all__ = [
+    "AttendanceState",
     "ClassSlot",
     "ClassStatus",
+    "OperatorClassState",
     "SlotEnrollment",
     "extract_class_slots",
     "extract_seconds_until_publication",
     "find_matching_slot",
     "operator_idu_to_guid",
     "parse_class_instance",
+    "parse_fecha_estado",
     "parse_self_idu",
+    "read_operator_states",
     "read_target_enrollment",
     "wodbuster_avatar_url",
 ]
