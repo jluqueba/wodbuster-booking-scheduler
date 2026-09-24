@@ -13,11 +13,20 @@
    without colour perception.
 #}
 <section class="wb-stats">
+  {% if capture_notice %}
+    <p class="wb-stats__alert">
+      {{ capture_notice }}
+      <a href="{{ cookie_url }}">{{ t("statistics.capture.cookie_link") }}</a>
+    </p>
+  {% endif %}
   {% if not has_gym %}
     <p class="wb-stats__empty">{{ t("statistics.no_gym") }}</p>
   {% elif never_captured %}
     <p class="wb-stats__empty">{{ t("statistics.empty.never_captured") }}</p>
   {% else %}
+    {% if no_activity_ever %}
+      <p class="wb-stats__empty">{{ t("statistics.empty.no_activity_ever") }}</p>
+    {% endif %}
     <div class="wb-stats__tiles">
       <div class="wb-stat-tile">
         <span class="wb-stat-tile__value">{{ calendar.attended }}</span>
@@ -100,7 +109,11 @@
                 {% else %}
                   <td class="wb-calendar__day wb-calendar__day--{{ cell.status }}">
                     <time datetime="{{ cell.day.isoformat() }}">{{ cell.day.day }}</time>
-                    <span class="wb-calendar__state">{{ cell_labels[cell.day.isoformat()] }}</span>
+                    {% for line in cell_lines[cell.day.isoformat()] %}
+                      <span class="wb-calendar__line wb-calendar__line--{{ line.kind }}">
+                        {{- line.text -}}
+                      </span>
+                    {% endfor %}
                   </td>
                 {% endif %}
               {% endfor %}

@@ -21,7 +21,11 @@ from sqlalchemy.orm import sessionmaker
 
 from wodbuster_worker.persistence.cookie_store import CookieStore
 from wodbuster_worker.security.cipher import Cipher
-from wodbuster_worker.wodbuster_client.client import LoadClassResponse
+from wodbuster_worker.wodbuster_client.client import (
+    LoadClassResponse,
+    WodBusterAuthError,
+    WodBusterTransportError,
+)
 from wodbuster_worker.wodbuster_client.parsers import operator_idu_to_guid
 
 from .conftest import gym_account_id_for
@@ -89,10 +93,13 @@ class RecordingClient:
         self.include_operator = include_operator
         self.calls = 0
         self.ticks: list[int] = []
+        self.error: Exception | None = None
 
     def load_class(self, cookie_value: str, ticks: int) -> LoadClassResponse:
         self.calls += 1
         self.ticks.append(ticks)
+        if self.error is not None:
+            raise self.error
         return LoadClassResponse(
             status_code=200,
             latency_ms=100.0,
@@ -253,7 +260,10 @@ def test_a_dropped_day_is_visible_on_the_page(
 
     body = tc.get("/statistics").text
 
-    assert "wb-calendar__day--cancelled" in body
+    # The full class attribute, not the bare modifier: the page carries
+    # its own stylesheet inline, so a bare name matches the CSS rule and
+    # the assertion passes whether or not the cell was ever rendered.
+    assert 'class="wb-calendar__day wb-calendar__day--cancelled"' in body
 
 
 def test_no_charting_library_is_loaded_yet(
@@ -269,6 +279,46 @@ def test_no_charting_library_is_loaded_yet(
 
     assert "chart.js" not in body
     assert "chartjs-plugin-zoom" not in body
+
+
+def test_a_day_holding_a_training_and_a_drop_shows_both_lines(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """The grid must add up to the tiles.
+
+    A day with a training and a removal is a class change, and the cell
+    lists both the class trained and the change, so the reader can
+    reconcile every tile with what they can see.
+    """
+    tc, _, gym_account_id, _ = signed_in
+    day = datetime.now(tz=UTC).date() - timedelta(days=1)
+    _seed_attendance(
+        postgres_engine,
+        gym_account_id=gym_account_id,
+        local_date=day,
+        state="cancelled",
+        class_id=90201,
+        hour=16,
+        changed_at=datetime(day.year, day.month, day.day, 8, 0, tzinfo=UTC),
+    )
+    _seed_attendance(
+        postgres_engine,
+        gym_account_id=gym_account_id,
+        local_date=day,
+        state="attended",
+        class_id=90202,
+        hour=10,
+        changed_at=datetime(day.year, day.month, day.day, 9, 0, tzinfo=UTC),
+    )
+
+    body = tc.get("/statistics").text
+
+    assert 'class="wb-calendar__day wb-calendar__day--swapped"' in body
+    assert 'class="wb-calendar__line wb-calendar__line--attended"' in body
+    assert 'class="wb-calendar__line wb-calendar__line--swapped"' in body
+    # No drop is claimed, so no red cell is promised and none is missing.
+    assert 'class="wb-calendar__line wb-calendar__line--cancelled"' not in body
 
 
 def test_the_month_can_be_walked_backwards(
@@ -328,9 +378,9 @@ def test_a_class_change_is_painted_on_its_own_day(
 
     body = tc.get("/statistics").text
 
-    assert "wb-calendar__day--swapped" in body
-    # The state text is gone: the colour carries it, and the cell keeps
-    # the class name instead.
+    assert 'class="wb-calendar__day wb-calendar__day--swapped"' in body
+    # The old marker element is gone: the colour carries the change and
+    # the cell lists the class trained.
     assert "wb-calendar__swap" not in body
 
 
@@ -456,3 +506,121 @@ def test_page_renders_without_a_client_stack(
     response = tc.get("/statistics")
 
     assert response.status_code == 200
+
+
+def test_a_rejected_cookie_says_so_and_points_at_the_fix(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """CC-012: "stale" is not useful; "renew your session" is."""
+    tc, _, gym_account_id, client = signed_in
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    _seed_attendance(postgres_engine, gym_account_id=gym_account_id, local_date=yesterday)
+    client.error = WodBusterAuthError("rejected")
+
+    body = tc.get("/statistics").text
+
+    assert "session is no longer valid" in body
+    assert 'href="/cookie"' in body
+    # The history already read is still on the page.
+    assert 'class="wb-stat-tile__value">1<' in body
+
+
+def test_an_unreachable_gym_does_not_blame_the_session(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """Telling a user to renew a working session wastes their time."""
+    tc, _, _, client = signed_in
+    client.error = WodBusterTransportError("timeout")
+
+    body = tc.get("/statistics").text
+
+    assert "could not be reached" in body
+    assert "session is no longer valid" not in body
+
+
+def test_a_failed_capture_creates_no_alert(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """INV-008: cookie validity already has its own alerting, and a
+    second signal for the same fact is noise."""
+    tc, _, _, client = signed_in
+    client.error = WodBusterAuthError("rejected")
+
+    tc.get("/statistics")
+
+    with postgres_engine.connect() as conn:
+        alerts = conn.execute(text("SELECT COUNT(*) FROM alert")).scalar_one()
+    assert alerts == 0
+
+
+def test_the_three_empty_states_are_different_messages(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CC-020 and INV-005.
+
+    Nothing read and read-with-no-activity are different facts.
+    Rendering them the same way is what turns a gap in coverage into a
+    claim about the user.
+
+    A third case, a gym that hides its athlete lists, looks identical
+    to a user who has not booked anything. Nothing stored can tell them
+    apart, so the page states the fact and diagnoses nothing.
+    """
+    operator_id, subject = seed_operator(display_name="Empty")
+    with postgres_engine.begin() as conn:
+        gym_account_id = gym_account_id_for(conn, operator_id)
+    app = app_factory()
+    app.state.wodbuster_client = None
+    app.state.booking_client_factory = None
+    tc = _sign_in(app, subject, "Empty", monkeypatch)
+
+    nothing_read = tc.get("/statistics").text
+    assert "Nothing has been read" in nothing_read
+    assert "shows any activity of yours" not in nothing_read
+
+    # Read, and no activity of the operator anywhere in it.
+    day = datetime.now(tz=UTC).date() - timedelta(days=1)
+    with postgres_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO attendance_day (gym_account_id, local_date, class_count, is_final) "
+                "VALUES (:ga, :d, 20, TRUE)"
+            ),
+            {"ga": gym_account_id, "d": day},
+        )
+    no_activity = tc.get("/statistics").text
+    assert "shows any activity of yours" in no_activity
+    assert "Nothing has been read" not in no_activity
+    # The calendar still renders: the days read are information.
+    assert "wb-calendar" in no_activity
+
+    # Read, and the operator did train.
+    _seed_attendance(postgres_engine, gym_account_id=gym_account_id, local_date=day)
+    trained = tc.get("/statistics").text
+    assert "shows any activity of yours" not in trained
+    assert 'class="wb-stat-tile__value">1<' in trained
+
+
+def test_deleting_the_gym_account_removes_its_history(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """CC-023 at the route level, not only in the migration test."""
+    tc, _, gym_account_id, _ = signed_in
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    _seed_attendance(postgres_engine, gym_account_id=gym_account_id, local_date=yesterday)
+    tc.get("/statistics")
+
+    with postgres_engine.begin() as conn:
+        conn.execute(text("DELETE FROM gym_account WHERE id = :ga"), {"ga": gym_account_id})
+        days = conn.execute(text("SELECT COUNT(*) FROM attendance_day")).scalar_one()
+        records = conn.execute(text("SELECT COUNT(*) FROM attendance_record")).scalar_one()
+
+    assert (days, records) == (0, 0)
+    # The page survives its gym account disappearing mid-session.
+    assert tc.get("/statistics").status_code == 200

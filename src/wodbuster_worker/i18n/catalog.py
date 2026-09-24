@@ -927,7 +927,7 @@ EN: dict[str, str] = {
     "statistics.attended.tile": "Classes attended",
     "statistics.attended.window": "Last {days} days",
     "statistics.cancelled.tile": "Dropped",
-    "statistics.cancelled.hint": "Booked and then removed yourself",
+    "statistics.cancelled.hint": "Classes you booked and then left. A day can hold more than one",
     "statistics.swapped.tile": "Class changes",
     "statistics.swapped.hint": "Moved to another time the same day, not counted as dropped",
     "statistics.calendar.caption": "Every day between {start} and {end}.",
@@ -955,6 +955,18 @@ EN: dict[str, str] = {
     "statistics.empty.never_captured": (
         "Nothing has been read from your gym calendar yet. Reload in a moment."
     ),
+    "statistics.empty.no_activity_ever": (
+        "None of the days read so far shows any activity of yours."
+    ),
+    "statistics.capture.cookie_rejected": (
+        "Your WodBuster session is no longer valid, so nothing new could be read. "
+        "The days below are what was read before that."
+    ),
+    "statistics.capture.gym_unreachable": (
+        "The gym could not be reached, so nothing new could be read. "
+        "The days below are what was read before that."
+    ),
+    "statistics.capture.cookie_link": "Renew your session",
     "statistics.no_gym": "Choose a gym from the selector above to see its statistics.",
     "statistics.still_reading": (
         "{days} days of this month have not been read yet. Reload in a few seconds."
@@ -1934,7 +1946,7 @@ ES: dict[str, str] = {
     "statistics.attended.tile": "Clases asistidas",
     "statistics.attended.window": "Últimos {days} días",
     "statistics.cancelled.tile": "Te borraste",
-    "statistics.cancelled.hint": "Reservaste y luego te diste de baja",
+    "statistics.cancelled.hint": "Clases que reservaste y dejaste. Un día puede tener más de una",
     "statistics.swapped.tile": "Cambios de clase",
     "statistics.swapped.hint": "Te moviste a otra hora el mismo día, no cuenta como baja",
     "statistics.calendar.caption": "Todos los días entre el {start} y el {end}.",
@@ -1962,6 +1974,18 @@ ES: dict[str, str] = {
     "statistics.empty.never_captured": (
         "Todavía no se ha leído nada del calendario de tu gimnasio. Recarga en un momento."
     ),
+    "statistics.empty.no_activity_ever": (
+        "Ninguno de los días leídos hasta ahora muestra actividad tuya."
+    ),
+    "statistics.capture.cookie_rejected": (
+        "Tu sesión de WodBuster ya no es válida, así que no se ha podido leer nada nuevo. "
+        "Los días de abajo son lo que se leyó antes."
+    ),
+    "statistics.capture.gym_unreachable": (
+        "No se ha podido contactar con el gimnasio, así que no se ha leído nada nuevo. "
+        "Los días de abajo son lo que se leyó antes."
+    ),
+    "statistics.capture.cookie_link": "Renovar la sesión",
     "statistics.no_gym": "Elige un gimnasio en el selector de arriba para ver sus estadísticas.",
     "statistics.still_reading": (
         "Quedan {days} días de este mes por leer. Recarga en unos segundos."
