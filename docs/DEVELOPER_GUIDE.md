@@ -46,7 +46,7 @@ The scheduler registers five job families at startup (`src/wodbuster_worker/app.
 
 - Heartbeat probe (cookie validity, hourly cadence).
 - Notification dispatcher (drains independent Telegram and email outbox rows; dashboard banners are read from their durable rows).
-- Per-run anomaly detector (opens a `heartbeat_anomaly` alert when a booking window passed with no recorded outcome).
+- Per-run anomaly detector (opens a `heartbeat_anomaly` alert when a booking window passed with no recorded outcome anywhere on that day, re-notifies at most once per re-fire interval, and closes the alert once the outcome lands or the window ages out).
 - External dead-man ping to Healthchecks.io (every 10 minutes) so a crashed or partitioned worker trips an out-of-band alarm.
 - Per-rule booking jobs (bootstrapped from the active scheduler rules).
 
