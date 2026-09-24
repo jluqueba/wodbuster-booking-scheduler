@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from time import monotonic
-from typing import Protocol
+from typing import Literal, Protocol
 
 import structlog
 from sqlalchemy import select
@@ -56,6 +56,16 @@ _log = structlog.get_logger(__name__)
 # from both midnights, so no daylight-saving transition can push the
 # derived UTC date onto a neighbouring day.
 _TICKS_ANCHOR = "12:00"
+
+# Why a catch-up pass stopped. Only ``cookie_rejected`` is something
+# the reader can act on, which is why the vocabulary distinguishes it
+# from a gym that is merely unreachable.
+CaptureStatus = Literal[
+    "complete",
+    "budget_exhausted",
+    "cookie_rejected",
+    "gym_unreachable",
+]
 
 
 class CaptureClientProtocol(Protocol):
@@ -288,11 +298,17 @@ def _to_utc(naive: datetime | None) -> datetime | None:
 
 @dataclass(frozen=True)
 class CatchUpResult:
-    """What one catch-up pass managed to do."""
+    """What one catch-up pass managed to do, and why it stopped.
+
+    ``status`` exists so the page can tell the reader something true
+    and actionable. "Stale" is not a useful thing to say; "your session
+    with the gym expired, here is where to renew it" is.
+    """
 
     captured: tuple[date, ...]
     remaining: int
     stopped_early: bool
+    status: CaptureStatus
 
 
 def pending_dates(
@@ -383,6 +399,7 @@ def catch_up(
 
     captured: list[date] = []
     stopped_early = False
+    status: CaptureStatus = "complete"
     for local_date in candidates[:cap]:
         if budget_seconds is not None and monotonic() - started >= budget_seconds:
             _log.info(
@@ -391,6 +408,7 @@ def catch_up(
                 captured=len(captured),
             )
             stopped_early = True
+            status = "budget_exhausted"
             break
         try:
             with get_session() as session:
@@ -403,7 +421,17 @@ def catch_up(
                     operator_idu=operator_idu,
                     now=moment,
                 )
-        except (WodBusterAuthError, WodBusterProtocolError, WodBusterTransportError) as exc:
+        except WodBusterAuthError:
+            # The one failure the reader can do something about.
+            _log.warning(
+                "statistics.capture.cookie_rejected",
+                gym_account_id=gym_account_id,
+                local_date=local_date.isoformat(),
+            )
+            stopped_early = True
+            status = "cookie_rejected"
+            break
+        except (WodBusterProtocolError, WodBusterTransportError) as exc:
             _log.warning(
                 "statistics.capture.upstream_error",
                 gym_account_id=gym_account_id,
@@ -411,19 +439,26 @@ def catch_up(
                 error_type=type(exc).__name__,
             )
             stopped_early = True
+            status = "gym_unreachable"
             break
         captured.append(local_date)
 
     remaining = max(len(candidates) - len(captured), 0)
+    if status == "complete" and remaining:
+        # The cap, not a failure: more days are pending than one request
+        # is allowed to read.
+        status = "budget_exhausted"
     return CatchUpResult(
         captured=tuple(captured),
         remaining=remaining,
         stopped_early=stopped_early or remaining > 0,
+        status=status,
     )
 
 
 __all__ = [
     "CaptureClientProtocol",
+    "CaptureStatus",
     "CatchUpResult",
     "DayCapture",
     "DayCaptureResult",

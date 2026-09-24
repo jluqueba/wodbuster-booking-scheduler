@@ -23,7 +23,11 @@ from wodbuster_worker.statistics.capture import (
     fetch_day,
     ticks_for_local_date,
 )
-from wodbuster_worker.wodbuster_client.client import LoadClassResponse
+from wodbuster_worker.wodbuster_client.client import (
+    LoadClassResponse,
+    WodBusterAuthError,
+    WodBusterTransportError,
+)
 from wodbuster_worker.wodbuster_client.parsers import operator_idu_to_guid
 
 OPERATOR_IDU = "aae9b1c2d3e4f5061728394a5b6c7605"
@@ -48,17 +52,19 @@ class StubClient:
         payload: dict[str, Any] | None = None,
         *,
         fail: bool = False,
+        error: Exception | None = None,
         delay_seconds: float = 0.0,
     ) -> None:
         self.payload = payload if payload is not None else _payload()
         self.fail = fail
+        self.error = error
         self.delay_seconds = delay_seconds
         self.calls: list[int] = []
 
     def load_class(self, cookie_value: str, ticks: int) -> LoadClassResponse:
         self.calls.append(ticks)
         if self.fail:
-            raise _UpstreamDown("upstream refused")
+            raise self.error or _UpstreamDown("upstream refused")
         if self.delay_seconds:
             sleep(self.delay_seconds)
         return LoadClassResponse(status_code=200, latency_ms=120.0, payload=self.payload)
@@ -345,6 +351,52 @@ def test_an_upstream_failure_records_nothing(
 
     assert _rows(postgres_engine, "SELECT id FROM attendance_day") == []
     assert _rows(postgres_engine, "SELECT id FROM attendance_record") == []
+
+
+def test_a_write_failure_leaves_no_half_captured_day(
+    postgres_engine: Engine,
+    session_factory: sessionmaker[Session],
+    gym_account_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """INV-009 against the other half: the records are written before
+    the ledger row, so a failure between them would leave a day that
+    looks captured and is not, or records nobody knows the origin of."""
+
+    def explode(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("database went away")
+
+    monkeypatch.setattr("wodbuster_worker.statistics.capture._upsert_day", explode)
+
+    with pytest.raises(RuntimeError), session_factory() as session, session.begin():
+        capture_day(
+            session,
+            gym_account_id=gym_account_id,
+            local_date=LOCAL_DATE,
+            client=StubClient(),
+            cookie_value="cookie",
+            operator_idu=OPERATOR_IDU,
+        )
+
+    assert _rows(postgres_engine, "SELECT id FROM attendance_day") == []
+    assert _rows(postgres_engine, "SELECT id FROM attendance_record") == []
+
+
+def test_catch_up_reports_a_rejected_cookie_apart_from_a_dead_gym(
+    gym_account_id: int,
+) -> None:
+    """Only one of these is something the reader can act on."""
+    rejected = StubClient(fail=True, error=WodBusterAuthError("nope"))
+    unreachable = StubClient(fail=True, error=WodBusterTransportError("timeout"))
+
+    assert _catch_up(gym_account_id, rejected).status == "cookie_rejected"
+    assert _catch_up(gym_account_id, unreachable).status == "gym_unreachable"
+
+
+def test_catch_up_reports_the_cap_as_a_budget_not_a_failure(
+    gym_account_id: int,
+) -> None:
+    assert _catch_up(gym_account_id, StubClient(), cap=2).status == "budget_exhausted"
 
 
 def test_capture_logs_nothing_taken_from_an_athlete_entry(

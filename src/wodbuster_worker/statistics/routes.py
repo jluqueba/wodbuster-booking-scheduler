@@ -32,12 +32,12 @@ from ..auth.deps import require_session
 from ..config import Settings
 from ..gyms.context import active_gym_account_id
 from ..gyms.service import gym_client_factory, resolve_gym_client
-from ..i18n import t
+from ..i18n import lang_url, t
 from ..persistence.cookie_store import CookieStore
 from ..persistence.engine import get_session
 from ..persistence.models import AttendanceDay, AttendanceRecord, GymAccount
 from ..scheduler.clock import local_date_for_slot
-from .capture import catch_up
+from .capture import CaptureStatus, catch_up
 from .metrics import Calendar, counted_records, day_calendar
 
 _log = structlog.get_logger(__name__)
@@ -127,22 +127,6 @@ def resolve_month(requested: str | None, *, today: date, horizon_days: int) -> M
     )
 
 
-DEFAULT_RANGE_DAYS = 30
-
-
-@dataclass(frozen=True)
-class _PanelData:
-    """Everything the panel template needs, resolved once."""
-
-    has_gym: bool
-    gym_name: str | None
-    never_captured: bool
-    data_through: date | None
-    range_days: int
-    start: date
-    end: date
-
-
 def _templates(request: Request) -> Jinja2Templates:
     templates = request.app.state.templates
     if not isinstance(templates, Jinja2Templates):  # pragma: no cover - wiring guard
@@ -162,7 +146,7 @@ def _run_catch_up(
     gym_account_id: int,
     now: datetime,
     priority: tuple[date, date] | None,
-) -> None:
+) -> CaptureStatus:
     """Capture the days worth reading, within the request budget.
 
     ``priority`` is the month on screen. Without it a visit to an
@@ -171,23 +155,24 @@ def _run_catch_up(
     times they opened it.
 
     Every failure mode ends the same way: fewer captured days and a page
-    rendered from what is already stored. Nothing raised here should
-    reach the user, because the data the page needs may already be in
-    the database.
+    rendered from what is already stored. Nothing raised here reaches
+    the user, because the data the page needs may already be in the
+    database. What is returned is why it stopped, so the page can say
+    something true instead of silently showing old numbers.
     """
     settings = _settings(request)
     store = getattr(request.app.state, "cookie_store", None)
     factory = gym_client_factory(request.app.state)
     if not isinstance(store, CookieStore) or factory is None:
         _log.info("statistics.capture.no_client_stack", gym_account_id=gym_account_id)
-        return
+        return "gym_unreachable"
 
     with get_session() as session:
         resolved = resolve_gym_client(factory, session, gym_account_id)
         cookie_value = store.load(session, gym_account_id)
     if resolved is None or cookie_value is None:
         _log.info("statistics.capture.no_cookie", gym_account_id=gym_account_id)
-        return
+        return "cookie_rejected"
 
     client, idu = resolved
     result = catch_up(
@@ -206,8 +191,9 @@ def _run_catch_up(
         gym_account_id=gym_account_id,
         captured=len(result.captured),
         remaining=result.remaining,
-        stopped_early=result.stopped_early,
+        status=result.status,
     )
+    return result.status
 
 
 def _build_context(request: Request, operator_id: int, month: str | None) -> dict[str, object]:
@@ -228,7 +214,7 @@ def _build_context(request: Request, operator_id: int, month: str | None) -> dic
     # The month is resolved first so capture can prioritise it. Opening
     # January must read January, not the fortnight the reader already
     # has on the current month's page.
-    _run_catch_up(request, gym_account_id, now, (start, min(end, today)))
+    capture_status = _run_catch_up(request, gym_account_id, now, (start, min(end, today)))
 
     with get_session() as session:
         gym = session.get(GymAccount, gym_account_id)
@@ -243,6 +229,20 @@ def _build_context(request: Request, operator_id: int, month: str | None) -> dic
             select(func.max(AttendanceDay.local_date)).where(
                 AttendanceDay.gym_account_id == gym_account_id
             )
+        )
+        # Whether any activity has ever been read for this account.
+        # Deliberately not used to diagnose why. A gym that hides its
+        # athlete lists and a user who has not booked anything yet
+        # produce the identical signal, and the data minimisation
+        # decision means we store nothing that would tell them apart.
+        # The page therefore states the fact and stops there.
+        any_record_ever = (
+            session.scalar(
+                select(func.count())
+                .select_from(AttendanceRecord)
+                .where(AttendanceRecord.gym_account_id == gym_account_id)
+            )
+            or 0
         )
         captured: dict[date, int] = {
             row.local_date: row.class_count
@@ -288,11 +288,14 @@ def _build_context(request: Request, operator_id: int, month: str | None) -> dic
         "gym_name": gym_name,
         "never_captured": data_through is None,
         "unread_days": unread,
+        "capture_notice": _capture_notice(capture_status),
+        "cookie_url": lang_url("/cookie"),
+        "no_activity_ever": data_through is not None and any_record_ever == 0,
         "month": window,
         "month_label": _month_label(window),
         "calendar": calendar,
         "weekday_labels": _weekday_labels(),
-        "cell_labels": _cell_labels(calendar),
+        "cell_lines": _cell_lines(calendar),
         "legend": _legend(),
     }
 
@@ -351,23 +354,58 @@ def _legend() -> list[tuple[str, str]]:
     return [(key, t(f"statistics.legend.{key}")) for key in _LEGEND_KEYS]
 
 
-def _cell_labels(calendar: Calendar) -> dict[str, str]:
-    """Resolve each cell's state text once, keyed by ISO date.
+def _capture_notice(status: CaptureStatus) -> str | None:
+    """Return what to tell the reader about the last capture attempt.
 
-    Done here rather than in the template so the catalog lookup is not
-    spread across a nested loop, and so a missing key surfaces as a
-    plain string rather than as a template error.
+    A completed pass says nothing: a page that announces its own
+    success on every visit trains the reader to ignore the line where
+    the failure will eventually appear. A budget that ran out is
+    covered by the per-day unread count, which is more precise than a
+    sentence.
     """
-    labels: dict[str, str] = {}
+    if status == "cookie_rejected":
+        return t("statistics.capture.cookie_rejected")
+    if status == "gym_unreachable":
+        return t("statistics.capture.gym_unreachable")
+    return None
+
+
+def _cell_lines(calendar: Calendar) -> dict[str, list[dict[str, str]]]:
+    """Resolve what each cell says, one line per thing that happened.
+
+    A day holds classes; a cell holds one colour. Listing every outcome
+    is what lets a reader add up the grid and reach the same figures as
+    the tiles, which is the difference between a number they check and
+    a number they distrust.
+
+    Resolved here rather than in the template so the catalog lookups
+    are not spread across a nested loop, and so a missing key surfaces
+    as a plain string rather than as a template error.
+    """
+    lines: dict[str, list[dict[str, str]]] = {}
     for week in calendar.weeks:
         for cell in week:
             if cell is None:
                 continue
-            text = t(f"statistics.calendar.{cell.status}")
-            if cell.status == "attended" and cell.class_names:
-                text = ", ".join(cell.class_names)
-            labels[cell.day.isoformat()] = text
-    return labels
+            entries: list[dict[str, str]] = [
+                {"kind": "attended", "text": name} for name in cell.attended_names
+            ]
+            for kind, count in (
+                ("swapped", cell.swapped),
+                ("cancelled", cell.cancelled),
+                ("removed_after_start", cell.removed_after_start),
+                ("no_show", cell.no_show),
+            ):
+                if not count:
+                    continue
+                label = t(f"statistics.calendar.{kind}")
+                entries.append({"kind": kind, "text": f"{label} x{count}" if count > 1 else label})
+            if not entries:
+                text = t(f"statistics.calendar.{cell.status}")
+                if text:
+                    entries.append({"kind": cell.status, "text": text})
+            lines[cell.day.isoformat()] = entries
+    return lines
 
 
 def _empty_context(request: Request, *, has_gym: bool) -> dict[str, object]:
@@ -377,6 +415,9 @@ def _empty_context(request: Request, *, has_gym: bool) -> dict[str, object]:
         "gym_name": None,
         "never_captured": False,
         "unread_days": 0,
+        "capture_notice": None,
+        "cookie_url": lang_url("/cookie"),
+        "no_activity_ever": False,
         "month": None,
         "month_label": None,
     }
