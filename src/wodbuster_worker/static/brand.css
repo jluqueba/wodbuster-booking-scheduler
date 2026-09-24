@@ -45,6 +45,22 @@
      vacation in the upcoming grid. */
   --wb-modified:      #c084fc;
 
+  /* Statistics chart palette (ADR-0014).
+
+     The single source of truth for chart colours. static/wb-charts.js
+     reads these with getComputedStyle at chart creation, so Chart.js
+     never carries a colour of its own. A future theme, or the mobile
+     contrast block at the end of this file, recolours every chart by
+     redeclaring these variables and nothing else. */
+  --wb-chart-1:       #f8ff40;
+  --wb-chart-2:       #60a5fa;
+  --wb-chart-3:       #4ade80;
+  --wb-chart-4:       #c084fc;
+  --wb-chart-5:       #fbbf24;
+  --wb-chart-6:       #f87171;
+  --wb-chart-grid:    rgba(148, 163, 184, 0.18);
+  --wb-chart-axis:    #94a3b8;
+
   /* Type + geometry.
 
      Font stack mimics the condensed athletic feel of wodbuster.com

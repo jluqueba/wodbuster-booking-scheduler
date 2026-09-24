@@ -68,6 +68,7 @@ from .scheduler.scheduler import (
 from .security.cipher import Cipher
 from .security.cookie import CookieValidator
 from .security.keyvault import Secrets, load_secrets
+from .statistics.routes import router as statistics_router
 from .wodbuster_client.client import WodBusterClient, WodBusterClientFactory
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -437,6 +438,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(cookie_router)
     app.include_router(rules_router)
     app.include_router(history_router)
+    app.include_router(statistics_router)
     app.include_router(override_router)
     app.include_router(vacation_router)
     app.include_router(telegram_router)

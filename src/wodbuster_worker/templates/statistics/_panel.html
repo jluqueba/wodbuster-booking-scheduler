@@ -1,0 +1,126 @@
+{# Statistics panel: one calendar month.
+
+   A calendar rather than a bar chart because the question is "what did
+   I do that day", which has one answer per day. A bar chart of ones and
+   zeros answers only "did I train", so a day the user booked and then
+   dropped renders identically to a day they did nothing, which is the
+   opposite of what this feature exists to show.
+
+   It is a real table, so it is also the accessible representation of
+   its own numbers (FR-034): no canvas, no parallel text version, and
+   nothing that disappears if a script fails to load. Every cell states
+   its outcome in words as well as in colour, so the grid is readable
+   without colour perception.
+#}
+<section class="wb-stats">
+  {% if not has_gym %}
+    <p class="wb-stats__empty">{{ t("statistics.no_gym") }}</p>
+  {% elif never_captured %}
+    <p class="wb-stats__empty">{{ t("statistics.empty.never_captured") }}</p>
+  {% else %}
+    <div class="wb-stats__tiles">
+      <div class="wb-stat-tile">
+        <span class="wb-stat-tile__value">{{ calendar.attended }}</span>
+        <span class="wb-stat-tile__label">{{ t("statistics.attended.tile") }}</span>
+        <span class="wb-stat-tile__hint">{{ month_label }}</span>
+      </div>
+      <div class="wb-stat-tile">
+        <span class="wb-stat-tile__value">{{ calendar.cancelled }}</span>
+        <span class="wb-stat-tile__label">{{ t("statistics.cancelled.tile") }}</span>
+        <span class="wb-stat-tile__hint">{{ t("statistics.cancelled.hint") }}</span>
+      </div>
+      {% if calendar.swapped %}
+        <div class="wb-stat-tile">
+          <span class="wb-stat-tile__value">{{ calendar.swapped }}</span>
+          <span class="wb-stat-tile__label">{{ t("statistics.swapped.tile") }}</span>
+          <span class="wb-stat-tile__hint">{{ t("statistics.swapped.hint") }}</span>
+        </div>
+      {% endif %}
+    </div>
+
+    <nav class="wb-monthnav" aria-label="{{ t('statistics.month.nav') }}">
+      {% if month.previous %}
+        <a class="wb-btn wb-monthnav__step"
+           href="{{ lang_url('/statistics') }}?month={{ month.previous }}"
+           rel="prev"
+        >{{- t("statistics.month.previous") -}}</a>
+      {% else %}
+        <span class="wb-monthnav__step wb-monthnav__step--off"></span>
+      {% endif %}
+      <span class="wb-monthnav__label">{{ month_label }}</span>
+      {% if month.next %}
+        <a class="wb-btn wb-monthnav__step"
+           href="{{ lang_url('/statistics') }}?month={{ month.next }}"
+           rel="next"
+        >{{- t("statistics.month.next") -}}</a>
+      {% else %}
+        <span class="wb-monthnav__step wb-monthnav__step--off"></span>
+      {% endif %}
+    </nav>
+
+    {# A plain GET form: picking a date and submitting works with the
+       date picker, with a typed value, and with no JavaScript at all.
+       The day is discarded server side; only the month matters. #}
+    <form class="wb-monthjump" method="get" action="{{ lang_url('/statistics') }}">
+      <label class="wb-monthjump__label" for="statistics-month">
+        {{ t("statistics.month.jump_label") }}
+      </label>
+      <input
+        type="text"
+        id="statistics-month"
+        name="month"
+        class="wb-date-flatpickr wb-monthjump__input"
+        value="{{ month.start.isoformat() }}"
+        data-fp-min="{{ month.oldest.isoformat() }}"
+        data-fp-max="{{ month.newest.isoformat() }}"
+        inputmode="numeric"
+        autocomplete="off"
+      >
+      <button type="submit" class="wb-btn wb-btn--primary">
+        {{- t("statistics.month.jump") -}}
+      </button>
+    </form>
+
+    <div class="wb-table-wrap">
+      <table class="wb-calendar">
+        <caption class="wb-calendar__caption">{{ month_label }}</caption>
+        <thead>
+          <tr>
+            {% for label in weekday_labels %}
+              <th scope="col"><abbr title="{{ label.long }}">{{ label.short }}</abbr></th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for week in calendar.weeks %}
+            <tr>
+              {% for cell in week %}
+                {% if cell is none %}
+                  <td class="wb-calendar__pad"></td>
+                {% else %}
+                  <td class="wb-calendar__day wb-calendar__day--{{ cell.status }}">
+                    <time datetime="{{ cell.day.isoformat() }}">{{ cell.day.day }}</time>
+                    <span class="wb-calendar__state">{{ cell_labels[cell.day.isoformat()] }}</span>
+                  </td>
+                {% endif %}
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <ul class="wb-legend">
+      {% for key, label in legend %}
+        <li class="wb-legend__item">
+          <span class="wb-legend__swatch wb-legend__swatch--{{ key }}" aria-hidden="true"></span>
+          {{ label }}
+        </li>
+      {% endfor %}
+    </ul>
+
+    {% if unread_days %}
+      <p class="wb-stats__recency">{{ t("statistics.still_reading", days=unread_days) }}</p>
+    {% endif %}
+  {% endif %}
+</section>

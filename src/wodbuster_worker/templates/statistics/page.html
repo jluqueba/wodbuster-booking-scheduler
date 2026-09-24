@@ -1,0 +1,281 @@
+{# Statistics page (Attendance Statistics, slice 1).
+
+   No charting library is loaded here. The one visual this page shows is
+   a calendar, which is a table and not a chart: it needs no canvas, no
+   zoom and no 219 KB of JavaScript. ADR-0014 still stands and its pins
+   are recorded there; Chart.js arrives with the first metric that
+   genuinely needs it, the weekday by hour grid in a later slice.
+#}
+{% extends "base.html" %}
+
+{% block title %}{{ t("statistics.title") }} — WodBuster Booking Scheduler{% endblock %}
+
+{% block body_class %}wb-body--wide{% endblock %}
+
+{% block nav %}
+  {% set active_nav = "statistics" %}
+  {% include "_nav.html" %}
+{% endblock %}
+
+{% block head_extra %}
+{% include "_time_picker_script.html" %}
+<style>
+  .wb-stats__tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.75rem;
+  }
+  .wb-stat-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 1.1rem 1.35rem;
+    background: var(--wb-bg-card);
+    border: 1px solid var(--wb-border);
+    border-radius: var(--wb-radius);
+  }
+  .wb-stat-tile__value {
+    font-size: 2.4rem;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--wb-accent);
+  }
+  .wb-stat-tile__label {
+    font-size: 1rem;
+    color: var(--wb-text);
+  }
+  .wb-stat-tile__hint {
+    font-size: 0.85rem;
+    color: var(--wb-text-muted);
+  }
+
+  .wb-monthnav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  .wb-monthnav__label {
+    font-size: 1.1rem;
+    color: var(--wb-text);
+    text-transform: capitalize;
+  }
+  /* Keeps the month label centred when one arrow is unavailable, so
+     the title does not jump as the reader walks backwards. */
+  .wb-monthnav__step--off {
+    display: inline-block;
+    width: 2.5rem;
+  }
+
+  .wb-monthjump {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  .wb-monthjump__input.wb-monthjump__input {
+    width: auto;
+    min-width: 8.5rem;
+    max-width: 11rem;
+    height: 2.4rem;
+    margin: 0;
+  }
+  /* Flatpickr swaps the real input for a visible clone when altInput is
+     on, so the width rule has to reach the clone too. */
+  .wb-monthjump .form-control.input {
+    width: auto;
+    min-width: 8.5rem;
+    max-width: 11rem;
+  }
+  .wb-monthjump__label {
+    font-size: 0.85rem;
+    color: var(--wb-text-muted);
+    margin: 0;
+  }
+
+  .wb-calendar {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 4px;
+    table-layout: fixed;
+  }
+  .wb-calendar__caption {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .wb-calendar th {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--wb-text-subtle);
+    text-align: center;
+    padding-bottom: 0.2rem;
+  }
+  .wb-calendar th abbr {
+    text-decoration: none;
+    border: 0;
+  }
+  /* The default cell is "the gym was open and nothing was booked": a
+     plain card, clearly a day that counted. Closed and unread days are
+     deliberately drawn as absences rather than as empty opportunities. */
+  .wb-calendar__day {
+    position: relative;
+    height: 3.6rem;
+    vertical-align: top;
+    padding: 0.35rem 0.4rem;
+    border-radius: var(--wb-radius-sm);
+    border: 1px solid var(--wb-border-strong);
+    background: var(--wb-bg-card);
+    color: var(--wb-text);
+    font-size: 0.85rem;
+  }
+  .wb-calendar__pad {
+    height: 3.6rem;
+  }
+  /* The state text is what a screen reader announces and what a
+     pointer reveals; the colour is a second channel, never the only
+     one, so the grid stays readable without colour perception. */
+  .wb-calendar__state {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.72rem;
+    line-height: 1.15;
+    color: var(--wb-text-muted);
+    overflow: hidden;
+  }
+  .wb-calendar__day--attended {
+    background: rgba(74, 222, 128, 0.16);
+    border-color: var(--wb-success);
+  }
+  .wb-calendar__day--cancelled {
+    background: rgba(248, 113, 113, 0.16);
+    border-color: var(--wb-danger);
+  }
+  .wb-calendar__day--swapped {
+    background: rgba(192, 132, 252, 0.16);
+    border-color: var(--wb-modified);
+  }
+  .wb-calendar__day--removed_after_start,
+  .wb-calendar__day--no_show {
+    background: rgba(251, 191, 36, 0.16);
+    border-color: var(--wb-warning);
+  }
+  /* Closed: flat grey, no border emphasis. Nothing was possible. */
+  .wb-calendar__day--closed {
+    background: var(--wb-bg-inset);
+    border-color: var(--wb-border);
+    color: var(--wb-text-subtle);
+  }
+  /* Unread: hatched, so a gap in coverage never passes for a decision
+     the user made (INV-005). */
+  .wb-calendar__day--uncaptured {
+    background: repeating-linear-gradient(
+      45deg,
+      var(--wb-bg-inset),
+      var(--wb-bg-inset) 4px,
+      var(--wb-border) 4px,
+      var(--wb-border) 5px
+    );
+    border-color: var(--wb-border);
+    color: var(--wb-text-subtle);
+  }
+  /* Future: present for the shape of the month, empty of meaning. */
+  .wb-calendar__day--future {
+    background: transparent;
+    border-color: var(--wb-border);
+    color: var(--wb-text-subtle);
+  }
+
+  .wb-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.1rem;
+    list-style: none;
+    padding: 0;
+    margin: 1rem 0 0;
+    font-size: 0.85rem;
+    color: var(--wb-text-muted);
+  }
+  .wb-legend__item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .wb-legend__swatch {
+    width: 0.85rem;
+    height: 0.85rem;
+    border-radius: 3px;
+    border: 1px solid var(--wb-border-strong);
+    background: var(--wb-bg-card);
+  }
+  .wb-legend__swatch--attended {
+    background: rgba(74, 222, 128, 0.35);
+    border-color: var(--wb-success);
+  }
+  .wb-legend__swatch--cancelled {
+    background: rgba(248, 113, 113, 0.35);
+    border-color: var(--wb-danger);
+  }
+  .wb-legend__swatch--swapped {
+    background: rgba(192, 132, 252, 0.35);
+    border-color: var(--wb-modified);
+  }
+  .wb-legend__swatch--closed {
+    background: var(--wb-bg-inset);
+    border-color: var(--wb-border);
+  }
+  .wb-legend__swatch--uncaptured {
+    background: repeating-linear-gradient(
+      45deg,
+      var(--wb-bg-inset),
+      var(--wb-bg-inset) 3px,
+      var(--wb-border) 3px,
+      var(--wb-border) 4px
+    );
+    border-color: var(--wb-border);
+  }
+
+  .wb-stats__empty,
+  .wb-stats__recency {
+    color: var(--wb-text-muted);
+    font-size: 0.95rem;
+  }
+  .wb-stats__recency {
+    margin-top: 1rem;
+  }
+
+  @media (max-width: 720px) {
+    .wb-calendar {
+      border-spacing: 2px;
+    }
+    .wb-calendar__day,
+    .wb-calendar__pad {
+      height: 3.1rem;
+      padding: 0.25rem;
+      font-size: 0.78rem;
+    }
+    .wb-calendar__state {
+      font-size: 0.58rem;
+    }
+    .wb-stat-tile__value {
+      font-size: 2rem;
+    }
+    .wb-monthnav__label {
+      font-size: 1rem;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+  <h1 class="wb-page-title">{{ t("statistics.title") }}</h1>
+  {% if gym_name %}
+    <p class="wb-page-subtitle">{{ t("statistics.subtitle", gym=gym_name) }}</p>
+  {% endif %}
+  {% include "statistics/_panel.html" %}
+{% endblock %}
