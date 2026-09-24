@@ -129,6 +129,27 @@ class Settings(BaseSettings):
     # env var when the app is used from another zone.
     worker_timezone: str = "Europe/Madrid"
 
+    # Attendance statistics (ADR-0013, ADR-0015).
+    #
+    # The settle window is how long after a class starts its upstream
+    # state is still considered changeable. A coach at a gym without the
+    # attendance controls removes a no-show through the ordinary removal
+    # handler, so counting a class at its start instant would record an
+    # absence as an attendance. Three hours covers a class plus the time
+    # a coach takes to act.
+    statistics_settle_window_hours: float = 3.0
+    # How far back the one-off backfill reaches, how many days a single
+    # page request is allowed to capture, and how long it may spend
+    # doing it. A day is one upstream call.
+    #
+    # The count alone is not a bound: it assumes every call is fast, and
+    # the request that matters is the one where the gym is slow. The cap
+    # covers a whole calendar month so that opening an unread month
+    # fills it in one visit rather than in three.
+    statistics_backfill_days: int = 365
+    statistics_capture_cap_per_request: int = 35
+    statistics_capture_budget_seconds: float = 6.0
+
     @model_validator(mode="after")
     def _apply_env_defaults(self) -> Settings:
         """Fill mode-dependent Postgres defaults.
