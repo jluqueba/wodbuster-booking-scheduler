@@ -17,8 +17,9 @@ every function:
   attendance controls disabled that is what a coach marking an absence
   looks like;
 - a removal that is really a class change is reclassified too, because
-  moving from one hour to another is one upstream operation and
-  counting it as an abandonment roughly doubles the rate.
+  on a day that holds a training a removal is a move from one hour to
+  another, and the abandonment rate is meant to answer "I booked and
+  ended up not training".
 """
 
 from __future__ import annotations
@@ -97,7 +98,7 @@ def counted_records(
     """
     cutoff = settle_cutoff(now, settle_window_hours=settle_window_hours)
     settled = [record for record in records if record.start_at <= cutoff]
-    swapped = _swapped_keys(settled)
+    swapped_days = _swapped_days(settled)
 
     counted: list[CountedRecord] = []
     for record in settled:
@@ -105,7 +106,7 @@ def counted_records(
             CountedRecord(
                 local_date=record.local_date,
                 start_at=record.start_at,
-                state=_classify(record, swapped=swapped),
+                state=_classify(record, swapped_days=swapped_days),
                 class_name=record.class_name,
                 class_type_id=record.class_type_id,
                 capacity=record.capacity,
@@ -117,43 +118,37 @@ def counted_records(
     return counted
 
 
-def _swapped_keys(records: Sequence[AttendanceRecord]) -> set[tuple[date, datetime]]:
-    """Return ``(day, start)`` for cancellations that were class changes.
+def _swapped_days(records: Sequence[AttendanceRecord]) -> set[date]:
+    """Return the days on which a removal was really a class change.
 
-    WodBuster exposes a ``Calendario_Mover`` handler, so moving a
-    booking to another time is one upstream operation, not two. It
-    leaves a removal and an attendance on the same day carrying the
-    identical state instant, which is the signature matched here.
+    The rule is the owner's definition of what the abandonment rate
+    measures: "I booked and ended up not training". On a day that holds
+    a training, a removal is a move from one hour to another, not a
+    drop-out.
 
-    Counting a move as an abandonment roughly doubles the rate for a
-    user who changes time often, and the abandonment rate is the figure
-    the whole feature exists to report.
+    An earlier version matched the identical upstream state instant,
+    which is the signature WodBuster's own ``Calendario_Mover`` handler
+    leaves. It was strictly more precise and answered the wrong
+    question: it counted a class released two days in advance as an
+    abandonment on a day the user trained.
 
-    Keyed on the day and the class start rather than on the row id, so
-    the rule works on rows that have not been persisted yet and reads
-    as the sentence it implements.
+    Counting either kind as an abandonment roughly doubled the rate on
+    the first month of real data, in the single figure the feature
+    exists to report.
     """
-    attended_moments: dict[date, set[datetime]] = {}
-    for record in records:
-        if record.state == "attended" and record.state_changed_at is not None:
-            attended_moments.setdefault(record.local_date, set()).add(record.state_changed_at)
-
-    return {
-        (record.local_date, record.start_at)
-        for record in records
-        if record.state == "cancelled"
-        and record.state_changed_at is not None
-        and record.state_changed_at in attended_moments.get(record.local_date, set())
-    }
+    return {record.local_date for record in records if record.state == "attended"}
 
 
 @dataclass(frozen=True)
 class DayCell:
     """One day of the calendar, with everything a cell needs to render.
 
-    ``status`` is the single label the cell is painted with. The counts
-    beside it are what the cell's description says out loud, so a day
-    with a training and a class change is not flattened to one of them.
+    ``status`` is the colour the cell is painted with, but it is not
+    the whole truth about the day: a day can hold a training and a
+    removal at once, and a cell has one background. The counts and
+    ``attended_names`` are what lets the template list every outcome as
+    its own line, which is what makes the headline figures reconcilable
+    with the grid. They count classes; the colour describes a day.
     """
 
     day: date
@@ -163,7 +158,7 @@ class DayCell:
     swapped: int
     removed_after_start: int
     no_show: int
-    class_names: tuple[str, ...]
+    attended_names: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -274,21 +269,24 @@ def _cell_for(
         swapped=counts["swapped"],
         removed_after_start=counts["removed_after_start"],
         no_show=counts["no_show"],
-        class_names=tuple(dict.fromkeys(r.class_name for r in records)),
+        attended_names=tuple(dict.fromkeys(r.class_name for r in records if r.state == "attended")),
     )
 
 
-def _classify(record: AttendanceRecord, *, swapped: set[tuple[date, datetime]]) -> CountedState:
+def _classify(record: AttendanceRecord, *, swapped_days: set[date]) -> CountedState:
     """Apply the reclassification rules to one stored row."""
     if record.state != "cancelled":
         # ``state`` is constrained by the database enum, so the three
         # stored values are the only ones that reach here.
         return "attended" if record.state == "attended" else "no_show"
-    if (record.local_date, record.start_at) in swapped:
-        return "swapped"
     changed = record.state_changed_at
     if changed is not None and changed >= record.start_at:
+        # Checked before the class-change rule on purpose: being removed
+        # once the class had started is an absence, and training
+        # something else later the same day does not turn it into a move.
         return "removed_after_start"
+    if record.local_date in swapped_days:
+        return "swapped"
     return "cancelled"
 
 

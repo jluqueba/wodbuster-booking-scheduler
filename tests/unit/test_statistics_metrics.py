@@ -148,12 +148,12 @@ def test_a_no_show_is_carried_through_unchanged() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_a_removal_paired_with_an_attendance_the_same_instant_is_a_class_change() -> None:
-    """The real 11/09 case: moved from 16:30 to 17:30 in one action.
+def test_a_removal_on_a_day_you_trained_is_a_class_change() -> None:
+    """The real 11/09 case: moved from 16:30 to 17:30.
 
-    WodBuster moves a booking through a single handler, so both rows
-    carry the identical state instant. Counting it as an abandonment
-    roughly doubles the rate.
+    The rule is the owner's definition of the metric: "I booked and
+    ended up not training". On a day holding a training, a removal is a
+    move.
     """
     day = date(2026, 9, 11)
     moment = datetime(2026, 9, 11, 14, 21, 40, tzinfo=UTC)
@@ -179,11 +179,13 @@ def test_a_removal_paired_with_an_attendance_the_same_instant_is_a_class_change(
     assert sorted(r.state for r in records) == ["attended", "swapped"]
 
 
-def test_a_removal_on_a_day_with_a_separate_booking_stays_a_cancellation() -> None:
+def test_a_removal_is_a_class_change_even_when_the_acts_are_days_apart() -> None:
     """The real 18/09 case: cancelled two days early, booked later.
 
-    Two deliberate acts rather than one move. The seat was released with
-    notice, so it counts.
+    An earlier rule matched the identical upstream state instant, which
+    is more precise about the mechanics and answers the wrong question.
+    The user trained that day, so the seat they released is not an
+    abandonment by the definition this metric carries.
     """
     day = date(2026, 9, 18)
     records = counted_records(
@@ -205,10 +207,28 @@ def test_a_removal_on_a_day_with_a_separate_booking_stays_a_cancellation() -> No
         settle_window_hours=SETTLE,
     )
 
-    assert sorted(r.state for r in records) == ["attended", "cancelled"]
+    assert sorted(r.state for r in records) == ["attended", "swapped"]
 
 
-def test_a_matching_instant_on_a_different_day_is_not_a_class_change() -> None:
+def test_a_removal_on_a_day_you_did_not_train_is_a_drop() -> None:
+    day = date(2026, 9, 21)
+    records = counted_records(
+        [
+            _record(
+                start_at=datetime(2026, 9, 21, 18, 30, tzinfo=UTC),
+                local_date=day,
+                state="cancelled",
+                state_changed_at=datetime(2026, 9, 21, 16, 29, tzinfo=UTC),
+            )
+        ],
+        now=NOW,
+        settle_window_hours=SETTLE,
+    )
+
+    assert [r.state for r in records] == ["cancelled"]
+
+
+def test_training_on_a_different_day_does_not_excuse_a_drop() -> None:
     records = counted_records(
         [
             _record(
@@ -229,6 +249,35 @@ def test_a_matching_instant_on_a_different_day_is_not_a_class_change() -> None:
     )
 
     assert sorted(r.state for r in records) == ["attended", "cancelled"]
+
+
+def test_an_absence_is_not_excused_by_training_later_that_day() -> None:
+    """Removed once the class had started, then trained something else.
+
+    That is still an absence from the first class. The order of the
+    rules is what keeps it one.
+    """
+    day = date(2026, 9, 11)
+    records = counted_records(
+        [
+            _record(
+                start_at=datetime(2026, 9, 11, 9, 0, tzinfo=UTC),
+                local_date=day,
+                state="cancelled",
+                state_changed_at=datetime(2026, 9, 11, 9, 10, tzinfo=UTC),
+            ),
+            _record(
+                start_at=datetime(2026, 9, 11, 17, 30, tzinfo=UTC),
+                local_date=day,
+                state="attended",
+                state_changed_at=datetime(2026, 9, 11, 14, 0, tzinfo=UTC),
+            ),
+        ],
+        now=NOW,
+        settle_window_hours=SETTLE,
+    )
+
+    assert sorted(r.state for r in records) == ["attended", "removed_after_start"]
 
 
 # ---------------------------------------------------------------------------
@@ -346,6 +395,46 @@ def test_a_day_with_a_class_change_is_painted_as_a_change() -> None:
     assert cell.status == "swapped"
     assert cell.attended == 1
     assert cell.swapped == 1
+    assert calendar.attended == 1
+    assert calendar.cancelled == 0
+    assert calendar.swapped == 1
+
+
+def test_a_day_holding_a_training_and_a_drop_reports_both() -> None:
+    """A drop the user did not make on a day they trained is a change.
+
+    The real 18/09: dropped the 16:30 two days earlier, trained at
+    12:30. The day is a class change, so the drop tile must not claim
+    a red cell the reader cannot find.
+    """
+    day = date(2026, 9, 18)
+    calendar = _calendar_for(
+        [
+            _record(
+                start_at=datetime(2026, 9, 18, 14, 30, tzinfo=UTC),
+                local_date=day,
+                state="cancelled",
+                state_changed_at=datetime(2026, 9, 16, 14, 1, tzinfo=UTC),
+            ),
+            _record(
+                start_at=datetime(2026, 9, 18, 10, 30, tzinfo=UTC),
+                local_date=day,
+                state="attended",
+                state_changed_at=datetime(2026, 9, 18, 10, 8, tzinfo=UTC),
+            ),
+        ],
+        {day: 20},
+        day,
+        day,
+    )
+    cell = calendar.weeks[0][day.weekday()]
+
+    assert cell is not None
+    assert cell.status == "swapped"
+    assert cell.attended == 1
+    assert cell.swapped == 1
+    assert cell.cancelled == 0
+    assert cell.attended_names == ("Cross Training",)
     assert calendar.attended == 1
     assert calendar.cancelled == 0
     assert calendar.swapped == 1
