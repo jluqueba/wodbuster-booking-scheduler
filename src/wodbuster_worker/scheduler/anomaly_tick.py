@@ -73,8 +73,10 @@ def run_anomaly_tick(
         # After emission, so a window that is still missing cannot be
         # closed and re-opened inside the same tick.
         closed = close_resolved_anomalies(session, now=_now, retention=retention)
-        if not missed and not closed:
-            return []
+        # Committed unconditionally. The pass above also prunes resolved
+        # windows off alerts it leaves open, which is a write that no
+        # return value reports, and an "only commit when something
+        # happened" guard silently discarded it.
         session.commit()
 
     if missed:

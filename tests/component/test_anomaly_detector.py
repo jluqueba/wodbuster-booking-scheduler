@@ -594,6 +594,59 @@ def test_unreported_window_notifies_inside_refire_interval(
 # ---------------------------------------------------------------------------
 
 
+def test_tracked_window_survives_a_later_detection(
+    postgres_engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    """A silent run stays tracked until it resolves or expires.
+
+    The detector only looks back an hour, so a later tick reports a
+    different window without meaning the earlier one recovered. Payload
+    entries accumulate; resolving one must not clear the banner for the
+    other.
+    """
+    op_id = _make_operator(postgres_engine)
+    first_rule = _make_rule(
+        postgres_engine,
+        op_id,
+        booking_opens_at="21:30",
+        created_at=datetime(2026, 6, 1, 0, 0, tzinfo=UTC),
+    )
+    second_rule = _make_rule(
+        postgres_engine,
+        op_id,
+        booking_opens_at="22:40",
+        class_type="OPEN BOX",
+        class_time="22:40",
+        created_at=datetime(2026, 6, 1, 0, 0, tzinfo=UTC),
+    )
+
+    run_anomaly_tick(session_factory, now=datetime(2026, 7, 6, 22, 0, tzinfo=UTC))
+    # 23:00: the first window fell out of the lookback (90 minutes old)
+    # and only the second one is detected.
+    run_anomaly_tick(session_factory, now=datetime(2026, 7, 6, 23, 0, tzinfo=UTC))
+
+    with session_factory() as session:
+        alert = session.execute(select(Alert)).scalars().one()
+        tracked = {entry["rule_id"] for entry in alert.payload["missed"]}
+    assert tracked == {first_rule, second_rule}
+
+    # The second rule's booking lands late; the first is still silent.
+    _make_outcome(
+        postgres_engine,
+        operator_id=op_id,
+        rule_id=second_rule,
+        target_class="OPEN BOX",
+        target_slot=datetime(2026, 7, 8, 22, 40, tzinfo=UTC),
+        attempted_at=datetime(2026, 7, 6, 23, 2, tzinfo=UTC),
+    )
+    run_anomaly_tick(session_factory, now=datetime(2026, 7, 6, 23, 5, tzinfo=UTC))
+
+    with session_factory() as session:
+        alert = session.execute(select(Alert)).scalars().one()
+    assert alert.closed_at is None
+    assert [entry["rule_id"] for entry in alert.payload["missed"]] == [first_rule]
+
+
 def test_alert_closes_when_the_outcome_lands(
     postgres_engine: Engine, session_factory: sessionmaker[Session]
 ) -> None:

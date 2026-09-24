@@ -41,12 +41,12 @@ Same suppression contract as :mod:`heartbeat.alerts`:
 detection, and a window the alert has not reported yet always
 notifies regardless of the interval.
 
-Closing is automatic (:func:`close_resolved_anomalies`). An open
-alert is closed when every window it recorded has since produced
-an outcome (a late commit, a re-run), or when every recorded window
-is older than the retention horizon: at that point there is no
-action left to take on those runs, and a scheduler that is still
-stalled re-opens the alert on the next window it misses.
+Closing is automatic (:func:`close_resolved_anomalies`). Each window an
+alert tracks leaves the payload once it produces an outcome (a late
+commit, a re-run) or once it is older than the retention horizon: at
+that point there is no action left to take on that run. The alert
+closes when nothing is left to track, and a scheduler that is still
+stalled re-opens it on the next window it misses.
 """
 
 from __future__ import annotations
@@ -209,6 +209,10 @@ def emit_anomaly_alerts(
     Without that gate the 60-second tick mailed one row per minute for
     as long as the missed window stayed inside the lookback.
 
+    A notified payload is the union of what the alert already tracked
+    and what this tick detected (:func:`_merge_windows`), never a
+    replacement: windows leave only once resolved or expired.
+
     Returns the alert ids that were created or re-notified; a suppressed
     refresh is not included, so the empty list means "nothing new was
     pushed to the operator".
@@ -219,9 +223,9 @@ def emit_anomaly_alerts(
 
     touched: list[int] = []
     for gym_account_id, windows in grouped.items():
-        payload = _build_payload(windows)
         alert = _open_alert(session, gym_account_id)
         if alert is None:
+            payload = _build_payload(_merge_windows([], windows))
             alert = Alert(
                 gym_account_id=gym_account_id,
                 kind=_ALERT_KIND,
@@ -232,14 +236,17 @@ def emit_anomaly_alerts(
             session.add(alert)
             session.flush()
         else:
-            unreported = _window_keys(payload) - _window_keys(alert.payload)
-            if not unreported and now - alert.last_emitted_at < refire_interval:
+            recorded = _recorded_missed(alert.payload, gym_account_id=gym_account_id)
+            merged = _merge_windows(recorded, windows)
+            has_unreported = len(merged) > len(recorded)
+            if not has_unreported and now - alert.last_emitted_at < refire_interval:
                 _log.debug(
                     "anomaly.emit.suppressed",
                     gym_account_id=gym_account_id,
                     alert_id=int(alert.id),
                 )
                 continue
+            payload = _build_payload(merged)
             alert.payload = payload
             alert.last_emitted_at = now
 
@@ -261,23 +268,28 @@ def close_resolved_anomalies(
     now: datetime,
     retention: timedelta = DEFAULT_RETENTION,
 ) -> list[int]:
-    """Close open ``heartbeat_anomaly`` alerts that no longer mean anything.
+    """Close or prune open ``heartbeat_anomaly`` alerts window by window.
 
-    An alert is closed when either condition holds:
+    Each window an alert tracks leaves its payload when either condition
+    holds:
 
-    - every window recorded in its payload has since produced an
-      outcome (a late commit, a manual re-run, or a false positive
-      the detector no longer raises), or
-    - every recorded window is older than ``retention``. Nothing can
-      be done about a booking window that closed a day ago, and a
-      scheduler that is still stalled re-opens the alert on the next
-      window it misses. Retention is well past the detector's
-      lookback, so a window still being detected as missed can never
-      trip this branch and the alert cannot flap.
+    - it has since produced an outcome (a late commit, a manual re-run,
+      or a false positive the detector no longer raises), or
+    - it is older than ``retention``. Nothing can be done about a
+      booking window that closed a day ago, and a scheduler that is
+      still stalled re-opens the alert on the next window it misses.
+      Retention is well past the detector's lookback, so a window still
+      being detected as missed can never trip this branch and the alert
+      cannot flap.
 
-    An alert whose payload carries no usable window (an older schema,
-    a truncated write) is treated as stale and closed on the retention
-    branch once it is older than ``retention`` itself.
+    The alert closes when nothing is left to track. Windows that are
+    neither resolved nor expired keep it open, which is why the payload
+    is pruned rather than emptied: one silent run resolving must not
+    clear the banner for another that did not.
+
+    An alert whose payload carries no usable window (an older schema, a
+    truncated write) is closed once the alert itself is older than
+    ``retention``.
 
     Returns the closed alert ids.
     """
@@ -294,28 +306,50 @@ def close_resolved_anomalies(
 
     closed: list[int] = []
     for alert in open_alerts:
-        windows = _recorded_windows(alert.payload)
-        if windows:
-            resolved = all(
-                _outcome_exists(session, rule_id=rule_id, target_slot=target_slot)
-                for rule_id, _window_open, target_slot in windows
-            )
-            expired = all(window_open < now - retention for _rid, window_open, _slot in windows)
-        else:
-            resolved = False
-            expired = alert.first_emitted_at < now - retention
-
-        if not (resolved or expired):
+        recorded = _recorded_missed(alert.payload, gym_account_id=int(alert.gym_account_id))
+        if not recorded:
+            if alert.first_emitted_at < now - retention:
+                alert.closed_at = now
+                closed.append(int(alert.id))
+                _log.info(
+                    "anomaly.alert.closed",
+                    alert_id=int(alert.id),
+                    gym_account_id=int(alert.gym_account_id),
+                    reason="unreadable_payload",
+                )
             continue
 
-        alert.closed_at = now
-        closed.append(int(alert.id))
-        _log.info(
-            "anomaly.alert.closed",
-            alert_id=int(alert.id),
-            gym_account_id=int(alert.gym_account_id),
-            reason="resolved" if resolved else "expired",
-        )
+        remaining: list[MissedWindow] = []
+        resolved = 0
+        expired = 0
+        for window in recorded:
+            if _outcome_exists(session, rule_id=window.rule_id, target_slot=window.target_slot):
+                resolved += 1
+            elif window.window_open < now - retention:
+                expired += 1
+            else:
+                remaining.append(window)
+
+        if not remaining:
+            alert.closed_at = now
+            closed.append(int(alert.id))
+            _log.info(
+                "anomaly.alert.closed",
+                alert_id=int(alert.id),
+                gym_account_id=int(alert.gym_account_id),
+                resolved=resolved,
+                expired=expired,
+            )
+        elif len(remaining) != len(recorded):
+            alert.payload = _build_payload(remaining)
+            _log.info(
+                "anomaly.alert.pruned",
+                alert_id=int(alert.id),
+                gym_account_id=int(alert.gym_account_id),
+                resolved=resolved,
+                expired=expired,
+                remaining=len(remaining),
+            )
 
     return closed
 
@@ -386,51 +420,64 @@ def _build_payload(windows: list[MissedWindow]) -> dict[str, object]:
     }
 
 
-def _window_keys(payload: object) -> set[tuple[int, str]]:
-    """Return the ``(rule_id, window_open)`` pairs a payload records.
+def _recorded_missed(payload: object, *, gym_account_id: int) -> list[MissedWindow]:
+    """Return the missed windows a payload records.
 
-    Used to tell "the same silent run we already reported" from "a new
-    one", which is what lets the re-fire gate stay quiet without ever
-    swallowing a window the operator has not heard about.
-    """
-    if not isinstance(payload, dict):
-        return set()
-    entries = payload.get("missed")
-    if not isinstance(entries, list):
-        return set()
-    keys: set[tuple[int, str]] = set()
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        rule_id = entry.get("rule_id")
-        window_open = entry.get("window_open")
-        if isinstance(rule_id, int) and isinstance(window_open, str):
-            keys.add((rule_id, window_open))
-    return keys
-
-
-def _recorded_windows(payload: object) -> list[tuple[int, datetime, datetime]]:
-    """Return ``(rule_id, window_open, target_slot)`` triples from a payload.
-
-    Entries that cannot be parsed back into the triple are dropped;
-    :func:`close_resolved_anomalies` then treats an alert with no
-    usable entry as stale rather than permanently unresolvable.
+    ``gym_account_id`` comes from the alert row; the payload never
+    carried it. Entries that cannot be parsed back are dropped, and
+    :func:`close_resolved_anomalies` treats an alert left with no usable
+    entry as stale rather than permanently unresolvable.
     """
     if not isinstance(payload, dict):
         return []
     entries = payload.get("missed")
     if not isinstance(entries, list):
         return []
-    parsed: list[tuple[int, datetime, datetime]] = []
+    parsed: list[MissedWindow] = []
     for entry in entries:
         if not isinstance(entry, dict):
             continue
         rule_id = entry.get("rule_id")
         window_open = _parse_instant(entry.get("window_open"))
         target_slot = _parse_instant(entry.get("target_slot"))
-        if isinstance(rule_id, int) and window_open is not None and target_slot is not None:
-            parsed.append((rule_id, window_open, target_slot))
+        if not (isinstance(rule_id, int) and window_open is not None and target_slot is not None):
+            continue
+        parsed.append(
+            MissedWindow(
+                rule_id=rule_id,
+                gym_account_id=gym_account_id,
+                target_class=str(entry.get("target_class") or "?"),
+                window_open=window_open,
+                target_slot=target_slot,
+            )
+        )
     return parsed
+
+
+def _merge_windows(
+    recorded: list[MissedWindow], detected: list[MissedWindow]
+) -> list[MissedWindow]:
+    """Union ``recorded`` and ``detected`` by ``(rule_id, window_open)``.
+
+    A notification round reports everything the alert is still tracking,
+    not only what this tick detected. The detector's lookback is an hour,
+    so a window it stops returning has not necessarily been resolved;
+    replacing the payload with the current detection would drop it, and a
+    later resolution of some *other* window would then close the alert on
+    a silent run the operator never heard about.
+
+    Entries leave the payload in exactly two places: resolved and expired
+    ones, both pruned by :func:`close_resolved_anomalies`.
+    """
+    merged = list(recorded)
+    seen = {(w.rule_id, w.window_open) for w in recorded}
+    for window in detected:
+        key = (window.rule_id, window.window_open)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(window)
+    return sorted(merged, key=lambda w: (w.window_open, w.rule_id))
 
 
 def _parse_instant(value: object) -> datetime | None:
