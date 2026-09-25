@@ -14,6 +14,7 @@ time, and reading the ``SegundosHastaPublicacion`` countdown.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 import pytest
@@ -26,6 +27,7 @@ from wodbuster_worker.wodbuster_client.parsers import (
     operator_idu_to_guid,
     parse_class_instance,
     parse_self_idu,
+    read_points_summary,
     read_target_enrollment,
     wodbuster_avatar_url,
 )
@@ -422,3 +424,89 @@ def test_parse_self_idu_returns_none_without_menu_avatar() -> None:
         )
         is None
     )
+
+
+# ---------------------------------------------------------------------------
+# Points page (slice 7)
+# ---------------------------------------------------------------------------
+
+# Trimmed from the real page served on 2026-09-25. Only the three fields
+# the parser reads are kept; nothing identifying the athlete is here.
+_POINTS_PAGE = """
+<div id="body_ctl00panelTarifa" class="content">
+  <dl>
+    <dd>Pagado hasta:</dd>
+    <dt><span id="body_ctl00_CtlPagadoHasta">06/10/2026</span></dt>
+    <dd>Periodo actual:</dd>
+    <dt><span id="body_ctl00_CtlPeriodo">del 07 septiembre al 06 octubre</span></dt>
+  </dl>
+</div>
+<div id="body_ctl00_CtlPuntosContainer">
+  <a href="/athlete/puntos.aspx">Puntos: <span data-id="puntosReserva">
+    12</span></a>
+</div>
+"""
+
+
+def test_the_points_page_yields_the_balance_and_the_period() -> None:
+    summary = read_points_summary(_POINTS_PAGE)
+
+    assert summary.balance == 12
+    assert summary.period == (date(2026, 9, 7), date(2026, 10, 6))
+
+
+def test_the_period_end_comes_from_the_numeric_date_not_the_sentence() -> None:
+    """A month name is a localized string. The range is derived from the
+    "paid until" date, which is digits in every language."""
+    page = _POINTS_PAGE.replace(
+        "del 07 septiembre al 06 octubre", "from 07 September to 06 October"
+    )
+
+    assert read_points_summary(page).period == (date(2026, 9, 7), date(2026, 10, 6))
+
+
+def test_a_tariff_that_is_not_monthly_yields_no_period() -> None:
+    """Offering a wrong billing period is worse than offering none
+    (FR-031). A quarterly period's day numbers line up with a monthly
+    one, so the month names are what catches it."""
+    page = _POINTS_PAGE.replace("del 07 septiembre al 06 octubre", "del 07 julio al 06 octubre")
+
+    assert read_points_summary(page).period is None
+
+
+def test_a_period_ending_on_the_thirty_first_does_not_ask_for_a_missing_day() -> None:
+    """31 March back one month is 31 February, which does not exist."""
+    page = (
+        '<span id="body_ctl00_CtlPagadoHasta">31/03/2026</span>'
+        '<span id="body_ctl00_CtlPeriodo">del 01 marzo al 31 marzo</span>'
+    )
+
+    assert read_points_summary(page).period == (date(2026, 3, 1), date(2026, 3, 31))
+
+
+def test_a_balance_without_a_period_still_reports_the_balance() -> None:
+    page = '<span data-id="puntosReserva">7</span>'
+    summary = read_points_summary(page)
+
+    assert summary.balance == 7
+    assert summary.period is None
+
+
+def test_a_page_the_parser_does_not_recognise_yields_nothing() -> None:
+    """Degrades to absence rather than to an error, so a markup change
+    upstream costs the points block and not the page."""
+    summary = read_points_summary("<html><body>anything at all</body></html>")
+
+    assert summary.balance is None
+    assert summary.period is None
+
+
+def test_an_unparseable_paid_until_does_not_raise() -> None:
+    page = (
+        '<span data-id="puntosReserva">3</span>'
+        '<span id="body_ctl00_CtlPagadoHasta">31/31/2026</span>'
+    )
+    summary = read_points_summary(page)
+
+    assert summary.balance == 3
+    assert summary.period is None

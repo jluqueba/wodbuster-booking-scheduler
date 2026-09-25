@@ -271,7 +271,34 @@ class WodBusterClient:
         :class:`WodBusterProtocolError` when the page is served but no
         idu can be extracted (a markup/API change).
         """
-        url = f"{self._base_url}/athlete/reservas.aspx"
+        html = self._authenticated_page("/athlete/reservas.aspx", cookie_value)
+        idu = parse_self_idu(html)
+        if idu is None:
+            raise WodBusterProtocolError("authenticated page did not expose the operator's idu")
+        return idu
+
+    def load_points_page(self, cookie_value: str) -> str:
+        """Fetch the gym's points page for the signed-in athlete.
+
+        The page carries the athlete's real points balance and the
+        current billing period, both published by the gym. Reading them
+        is cheaper and more truthful than deriving either one, which is
+        why the statistics page prefers it over reconstruction.
+
+        Read-only. Same auth, transport and protocol error contract as
+        :meth:`discover_idu`.
+        """
+        return self._authenticated_page("/athlete/puntos.aspx", cookie_value)
+
+    def _authenticated_page(self, path: str, cookie_value: str) -> str:
+        """GET an authenticated HTML page and return its body.
+
+        A rejected cookie is a redirect to the login page rather than a
+        401, so the redirect has to be inspected instead of followed:
+        following it would return a 200 carrying a login form, which
+        every caller would then try to parse as its own page.
+        """
+        url = f"{self._base_url}{path}"
         headers = {"Cookie": f".WBAuth={cookie_value}"}
         try:
             response = self._client.get(url, headers=headers)
@@ -289,11 +316,7 @@ class WodBusterClient:
             raise WodBusterAuthError(f"server returned {response.status_code}")
         if response.status_code != 200:
             raise WodBusterProtocolError(f"unexpected status {response.status_code}")
-
-        idu = parse_self_idu(response.text)
-        if idu is None:
-            raise WodBusterProtocolError("authenticated page did not expose the operator's idu")
-        return idu
+        return response.text
 
     def inscribir(
         self,
