@@ -1011,6 +1011,10 @@ EN: dict[str, str] = {
         "Your classes ran at {pct}% of capacity on average, and {full} of {sessions} "
         "filled up completely."
     ),
+    "statistics.occupancy.no_capacity": (
+        "{sessions} classes attended. The gym did not publish how many places they held, "
+        "so there is no occupancy figure for them."
+    ),
     "statistics.chart.grid.title": "When you train",
     "statistics.chart.grid.hint": "Sessions attended per weekday and class time,",
     "statistics.chart.grid.cell": "{count} sessions, {weekday} at {hour}",
@@ -2137,6 +2141,10 @@ ES: dict[str, str] = {
     "statistics.occupancy.summary": (
         "Tus clases estuvieron al {pct}% de aforo de media, y {full} de {sessions} "
         "llegaron a llenarse."
+    ),
+    "statistics.occupancy.no_capacity": (
+        "{sessions} clases asistidas. El gimnasio no publicó cuántas plazas tenían, "
+        "así que no hay cifra de aforo para ellas."
     ),
     "statistics.chart.grid.title": "Cuándo entrenas",
     "statistics.chart.grid.hint": "Sesiones asistidas por día de la semana y hora de clase,",

@@ -292,3 +292,54 @@ def test_an_override_reaches_the_estimate() -> None:
     model = PointsModel.resolve(**DEFAULTS, override={"late_penalty": 7})
 
     assert points_estimate(counted, model=model).penalties == 7
+
+
+def test_an_override_that_is_not_an_object_is_treated_as_absent() -> None:
+    """``points_model`` is JSONB and holds any JSON value, so a list, a
+    string or a number arrives here as readily as an object. Calling
+    ``.get`` on one raised and took the whole page down."""
+    for junk in ([1, 2, 3], "late_penalty=9", 42, True, ()):
+        model = PointsModel.resolve(**DEFAULTS, override=junk)
+        assert model == MODEL, junk
+
+
+def test_an_empty_override_is_the_default() -> None:
+    assert PointsModel.resolve(**DEFAULTS, override={}) == MODEL
+
+
+def test_an_override_can_move_the_tier_boundaries() -> None:
+    """The boundaries decide both what is charged and what the page
+    calls it, so they have to be overridable like the prices."""
+    model = PointsModel.resolve(**DEFAULTS, override={"late_hours": 12, "very_late_hours": 3})
+
+    assert (model.late_hours, model.very_late_hours) == (12.0, 3.0)
+
+
+def test_an_inverted_tier_pair_falls_back_to_both_defaults() -> None:
+    """A very late tier above the late one describes no gym: it empties
+    the middle band and labels it with an impossible range. Keeping
+    either half of the pair is what produces the incoherence, so both
+    go back."""
+    model = PointsModel.resolve(**DEFAULTS, override={"late_hours": 1, "very_late_hours": 4})
+
+    assert (model.late_hours, model.very_late_hours) == (4.0, 1.0)
+
+
+def test_an_inverted_pair_does_not_discard_the_prices_alongside_it() -> None:
+    """The boundaries and the prices are independent; one bad pair
+    should not cost a valid penalty override."""
+    model = PointsModel.resolve(
+        **DEFAULTS,
+        override={"late_hours": 1, "very_late_hours": 4, "absence_penalty": 9},
+    )
+
+    assert model.absence_penalty == 9
+    assert (model.late_hours, model.very_late_hours) == (4.0, 1.0)
+
+
+def test_equal_boundaries_are_accepted() -> None:
+    """A gym with a single tier is coherent, if unusual: everything
+    under the boundary is the same penalty."""
+    model = PointsModel.resolve(**DEFAULTS, override={"late_hours": 2, "very_late_hours": 2})
+
+    assert (model.late_hours, model.very_late_hours) == (2.0, 2.0)

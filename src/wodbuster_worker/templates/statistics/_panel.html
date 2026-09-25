@@ -221,12 +221,20 @@
         </section>
       {% endif %}
 
-      {% if occupancy.sessions %}
+      {# A session count without a usable capacity gives no percentage.
+         Guarding on the average rather than on the count keeps the
+         sentence out instead of multiplying None by 100, which would
+         take the whole render down for one missing upstream field. #}
+      {% if occupancy.sessions and occupancy.average_fill is not none %}
         <p class="wb-charts__headline">
           {{ t("statistics.occupancy.summary",
                 pct=(occupancy.average_fill * 100) | round | int,
                 full=occupancy.ever_full,
                 sessions=occupancy.sessions) }}
+        </p>
+      {% elif occupancy.sessions %}
+        <p class="wb-charts__headline">
+          {{ t("statistics.occupancy.no_capacity", sessions=occupancy.sessions) }}
         </p>
       {% endif %}
 

@@ -1065,3 +1065,118 @@ def test_the_points_page_is_never_used_to_book(
     tc.get("/statistics")
 
     assert client.points_calls >= 1
+
+
+def _set_points_model(engine: Engine, gym_account_id: int, value: str) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE gym_account SET points_model = CAST(:v AS jsonb) WHERE id = :id"),
+            {"id": gym_account_id, "v": value},
+        )
+
+
+def test_a_points_model_that_is_not_an_object_does_not_take_the_page_down(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """The column is JSONB, so it accepts any JSON value. A list used to
+    reach ``.get`` and raise, losing the whole screen rather than the
+    customisation."""
+    tc, _, gym_account_id, client = signed_in
+    client.points_page = _this_month_page()
+    _set_points_model(postgres_engine, gym_account_id, "[1, 2, 3]")
+
+    response = tc.get("/statistics")
+
+    assert response.status_code == 200
+    assert "Statistics" in response.text
+
+
+def test_a_points_model_override_moves_the_tiers_everywhere_at_once(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """A gym charged under one boundary and labelled under another is a
+    disagreement the reader cannot diagnose, so one model drives the
+    estimate, the bands and the chart alike.
+
+    Asserted on all three surfaces rather than on the bands alone: a
+    test that checks one of them passes while the other two still read
+    the defaults, which is the exact bug it is meant to catch.
+    """
+    tc, _, gym_account_id, client = signed_in
+    client.points_page = _this_month_page()
+    _set_points_model(postgres_engine, gym_account_id, '{"late_hours": 12}')
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    _seed_attendance(
+        postgres_engine,
+        gym_account_id=gym_account_id,
+        local_date=yesterday,
+        state="cancelled",
+        class_id=95000,
+        changed_at=datetime(yesterday.year, yesterday.month, yesterday.day, 14, 0, tzinfo=UTC),
+        ever_full=True,
+    )
+
+    response = tc.get("/statistics")
+    body = response.text
+
+    # The cancellation gave four and a half hours' notice: early under
+    # the default four-hour tier and free, late under this gym's twelve
+    # and worth one penalty point.
+    assert response.status_code == 200
+
+    # The notice band names the gym's boundary.
+    assert "more than 12 h ahead" in body
+    assert "more than 4 h ahead" not in body
+
+    # The estimate charged that same boundary: one penalty plus a base
+    # cost that may or may not have been spent.
+    assert "1 to 2 points" in body
+    assert "0 to 1 points" not in body
+
+    # And the booking-lead chart drew it.
+    assert "under 12 h ahead" in body
+    assert "under 4 h ahead" not in body
+
+    # The assumption text names the gym's boundary, not ours.
+    assert "more than 12 h ahead, and the gym overwrites" in body
+
+
+def test_attendance_without_a_published_capacity_still_renders(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """``occupancy()`` reports sessions with no average when the gym
+    published no places. Multiplying that None by 100 took the render
+    down for one missing upstream field."""
+    tc, _, gym_account_id, _ = signed_in
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    with postgres_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO attendance_day (gym_account_id, local_date, class_count, is_final) "
+                "VALUES (:ga, :d, 20, TRUE) ON CONFLICT DO NOTHING"
+            ),
+            {"ga": gym_account_id, "d": yesterday},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO attendance_record "
+                "(gym_account_id, local_date, wodbuster_class_id, class_name, "
+                "start_at, state, occupancy, capacity) "
+                "VALUES (:ga, :d, 96000, 'Cross Training', :start, 'attended', 9, NULL)"
+            ),
+            {
+                "ga": gym_account_id,
+                "d": yesterday,
+                "start": datetime(
+                    yesterday.year, yesterday.month, yesterday.day, 18, 30, tzinfo=UTC
+                ),
+            },
+        )
+
+    response = tc.get("/statistics")
+
+    assert response.status_code == 200
+    assert "did not publish how many places" in response.text
