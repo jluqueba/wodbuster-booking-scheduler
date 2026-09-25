@@ -1113,12 +1113,18 @@ def test_a_points_model_override_moves_the_tiers_everywhere_at_once(
         ever_full=True,
     )
 
-    body = tc.get("/statistics").text
+    response = tc.get("/statistics")
+    body = response.text
 
     # The cancellation gave four and a half hours' notice: early under
     # the default four-hour tier, late under this gym's twelve.
+    assert response.status_code == 200
+    assert "1 to 2 points" in body
+    assert "0 to 1 points" not in body
     assert "more than 12 h ahead" in body
     assert "more than 4 h ahead" not in body
+    assert "under 12 h ahead" in body
+    assert "under 4 h ahead" not in body
 
 
 def test_attendance_without_a_published_capacity_still_renders(
