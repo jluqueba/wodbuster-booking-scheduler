@@ -292,3 +292,24 @@ def test_an_override_reaches_the_estimate() -> None:
     model = PointsModel.resolve(**DEFAULTS, override={"late_penalty": 7})
 
     assert points_estimate(counted, model=model).penalties == 7
+
+
+def test_an_override_that_is_not_an_object_is_treated_as_absent() -> None:
+    """``points_model`` is JSONB and holds any JSON value, so a list, a
+    string or a number arrives here as readily as an object. Calling
+    ``.get`` on one raised and took the whole page down."""
+    for junk in ([1, 2, 3], "late_penalty=9", 42, True, ()):
+        model = PointsModel.resolve(**DEFAULTS, override=junk)
+        assert model == MODEL, junk
+
+
+def test_an_empty_override_is_the_default() -> None:
+    assert PointsModel.resolve(**DEFAULTS, override={}) == MODEL
+
+
+def test_an_override_can_move_the_tier_boundaries() -> None:
+    """The boundaries decide both what is charged and what the page
+    calls it, so they have to be overridable like the prices."""
+    model = PointsModel.resolve(**DEFAULTS, override={"late_hours": 12, "very_late_hours": 3})
+
+    assert (model.late_hours, model.very_late_hours) == (12.0, 3.0)

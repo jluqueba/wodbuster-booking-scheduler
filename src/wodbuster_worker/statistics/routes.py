@@ -393,10 +393,23 @@ def _build_context(
     )
     calendar = day_calendar(counted, captured=captured, start=start, end=end, today=today)
     dropouts = abandonment(counted)
-    bands = cancellation_bands(
-        counted,
+    # One model governs every figure that depends on the gym's tiers.
+    # Resolved once, before anything reads a threshold: charging a
+    # cancellation under one boundary while labelling it under another
+    # is the kind of disagreement a reader cannot diagnose.
+    model = PointsModel.resolve(
+        base_cost=settings.statistics_base_point_cost,
+        late_penalty=settings.statistics_late_cancel_penalty,
+        very_late_penalty=settings.statistics_very_late_cancel_penalty,
+        absence_penalty=settings.statistics_absence_penalty,
         late_hours=settings.statistics_late_cancel_hours,
         very_late_hours=settings.statistics_very_late_cancel_hours,
+        override=points_override,
+    )
+    bands = cancellation_bands(
+        counted,
+        late_hours=model.late_hours,
+        very_late_hours=model.very_late_hours,
     )
     # Streaks read the whole captured history, not the month or the
     # chart period: a run that started before the window on screen is
@@ -420,18 +433,7 @@ def _build_context(
     # Points and the weekly comparison describe the selected period, not
     # the month: they answer "how am I doing lately", and the month on
     # screen is chosen for a different reason.
-    estimate = points_estimate(
-        over_period,
-        model=PointsModel.resolve(
-            base_cost=settings.statistics_base_point_cost,
-            late_penalty=settings.statistics_late_cancel_penalty,
-            very_late_penalty=settings.statistics_very_late_cancel_penalty,
-            absence_penalty=settings.statistics_absence_penalty,
-            late_hours=settings.statistics_late_cancel_hours,
-            very_late_hours=settings.statistics_very_late_cancel_hours,
-            override=points_override,
-        ),
-    )
+    estimate = points_estimate(over_period, model=model)
     pace = weekly_average(
         all_counted,
         captured=all_captured.keys(),
@@ -467,13 +469,13 @@ def _build_context(
         "points_assumptions": [
             t(
                 f"statistics.points.assumption.{key}",
-                hours=_hours_label(settings.statistics_late_cancel_hours),
+                hours=_hours_label(model.late_hours),
             )
             for key in estimate.assumptions
         ],
         "billing_period": points.period,
         "pace": pace,
-        **_chart_context(over_period, period, settings, billing=points.period),
+        **_chart_context(over_period, period, model, billing=points.period),
     }
 
 
@@ -486,17 +488,21 @@ _MIN_BOOKINGS_PER_HOUR = 5
 def _chart_context(
     records: list[CountedRecord],
     period: Period,
-    settings: Settings,
+    model: PointsModel,
     *,
     billing: tuple[date, date] | None = None,
 ) -> dict[str, object]:
-    """Everything the chart block needs, for the selected period."""
+    """Everything the chart block needs, for the selected period.
+
+    Takes the resolved :class:`PointsModel` rather than the settings,
+    so the boundary a chart draws is the same one the estimate charged.
+    """
     short_days = [t(f"day.short.{key}") for key in _WEEKDAY_KEYS]
     grid = weekday_hour_grid(records)
     hours = drop_rate_by_slot(records, min_bookings=_MIN_BOOKINGS_PER_HOUR)
     trend = monthly_trend(records)
-    lead = booking_lead_bands(records, free_hours=settings.statistics_late_cancel_hours)
-    free = _hours_label(settings.statistics_late_cancel_hours)
+    lead = booking_lead_bands(records, free_hours=model.late_hours)
+    free = _hours_label(model.late_hours)
     # The gym's own period is offered only when the gym stated it.
     # Listing it greyed out would advertise a capability the deployment
     # cannot deliver for this account.

@@ -71,15 +71,18 @@ class PointsModel:
         absence_penalty: int,
         late_hours: float,
         very_late_hours: float,
-        override: Mapping[str, object] | None = None,
+        override: Mapping[str, object] | object | None = None,
     ) -> PointsModel:
         """Build the model from defaults, with a per-gym override on top.
 
         The override is whatever the gym account carries in
         ``points_model``, which is operator-supplied and therefore not
-        trusted. A field that is missing, non-numeric or negative falls
-        back to the default rather than raising: a malformed override
-        should cost the customisation, never the page.
+        trusted. The column is JSONB, so it can hold any JSON value at
+        all: a list, a string or a number reaches here as readily as an
+        object. Anything that is not a mapping is treated as absent,
+        and within a mapping a field that is missing, non-numeric or
+        negative falls back to the default. A malformed override should
+        cost the customisation, never the page.
         """
         defaults: dict[str, float] = {
             "base_cost": base_cost,
@@ -89,9 +92,10 @@ class PointsModel:
             "late_hours": late_hours,
             "very_late_hours": very_late_hours,
         }
+        supplied: Mapping[str, object] = override if isinstance(override, Mapping) else {}
         values = dict(defaults)
         for key in defaults:
-            candidate = (override or {}).get(key)
+            candidate = supplied.get(key)
             if isinstance(candidate, bool) or not isinstance(candidate, int | float):
                 continue
             if candidate < 0:
