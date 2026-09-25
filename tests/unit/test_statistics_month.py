@@ -26,41 +26,24 @@ def test_no_parameter_selects_the_current_month() -> None:
     assert window.end == date(2026, 9, 30)
 
 
-def test_the_current_month_cannot_step_forward() -> None:
-    """The next arrow never offers a month that can hold nothing."""
-    assert _resolve(None).next is None
-    assert _resolve(None).previous == "2026-08"
+def test_the_picker_cannot_reach_beyond_today() -> None:
+    """A month that has not happened can hold nothing."""
+    assert _resolve(None).newest == TODAY
+    assert _resolve("2027-06").key == "2026-09"
 
 
-def test_a_past_month_can_step_both_ways() -> None:
+def test_the_picker_cannot_reach_past_the_backfill_horizon() -> None:
+    # 365 days before 2026-09-24 is 2025-09-24, so September 2025 is
+    # the oldest month the backfill can ever populate.
+    assert _resolve(None).oldest == date(2025, 9, 1)
+    assert _resolve("2020-01").key == "2025-09"
+
+
+def test_a_past_month_spans_its_own_calendar_length() -> None:
     window = _resolve("2026-05")
 
     assert window.start == date(2026, 5, 1)
     assert window.end == date(2026, 5, 31)
-    assert window.previous == "2026-04"
-    assert window.next == "2026-06"
-
-
-def test_stepping_back_crosses_a_year_boundary() -> None:
-    window = _resolve("2026-01")
-
-    assert window.previous == "2025-12"
-
-
-def test_the_oldest_month_cannot_step_back_past_the_horizon() -> None:
-    # 365 days before 2026-09-24 is 2025-09-24, so September 2025 is
-    # the oldest month the backfill can ever populate.
-    window = _resolve("2025-09")
-
-    assert window.previous is None
-
-
-def test_a_month_beyond_the_horizon_is_clamped_rather_than_rejected() -> None:
-    assert _resolve("2020-01").key == "2025-09"
-
-
-def test_a_future_month_is_clamped_to_the_current_one() -> None:
-    assert _resolve("2027-06").key == "2026-09"
 
 
 def test_a_malformed_parameter_falls_back_to_the_current_month() -> None:
@@ -75,13 +58,17 @@ def test_a_whole_day_from_the_date_picker_selects_its_month() -> None:
     assert _resolve("2026-07-01").key == _resolve("2026-07-31").key
 
 
+def test_a_bare_month_still_resolves() -> None:
+    """Bookmarks and hand-typed links predate the picker."""
+    assert _resolve("2026-07").key == "2026-07"
+
+
 def test_february_length_follows_the_calendar() -> None:
     assert _resolve("2026-02", today=date(2026, 9, 24)).end == date(2026, 2, 28)
     assert _resolve("2024-02", today=date(2024, 9, 24)).end == date(2024, 2, 29)
 
 
-def test_december_steps_into_the_next_year() -> None:
+def test_december_ends_on_the_last_day_of_the_year() -> None:
     window = resolve_month("2025-12", today=date(2026, 1, 15), horizon_days=HORIZON)
 
     assert window.end == date(2025, 12, 31)
-    assert window.next == "2026-01"

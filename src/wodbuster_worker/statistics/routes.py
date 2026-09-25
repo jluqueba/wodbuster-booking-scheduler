@@ -38,7 +38,14 @@ from ..persistence.engine import get_session
 from ..persistence.models import AttendanceDay, AttendanceRecord, GymAccount
 from ..scheduler.clock import local_date_for_slot
 from .capture import CaptureStatus, catch_up
-from .metrics import Calendar, counted_records, day_calendar
+from .metrics import (
+    Calendar,
+    CancellationBands,
+    abandonment,
+    cancellation_bands,
+    counted_records,
+    day_calendar,
+)
 
 _log = structlog.get_logger(__name__)
 
@@ -47,19 +54,21 @@ router = APIRouter(tags=["statistics"])
 
 @dataclass(frozen=True)
 class MonthWindow:
-    """The calendar month on screen, and where it can move to.
+    """The calendar month on screen, and how far it may travel.
 
     A month rather than a rolling window of days: a calendar whose first
     row starts mid-month is hard to read, and "the 3rd" means something
     to a reader only inside a month.
+
+    There are no step-by-step targets. The date picker carries its own
+    month and year navigation, so a pair of arrows beside it was two
+    mechanisms for one job.
     """
 
     year: int
     month: int
     start: date
     end: date
-    previous: str | None
-    next: str | None
     # Bounds for the date picker, so it cannot offer a month the
     # backfill will never populate or one that has not happened.
     oldest: date
@@ -68,10 +77,6 @@ class MonthWindow:
     @property
     def key(self) -> str:
         return f"{self.year:04d}-{self.month:02d}"
-
-
-def _month_key(day: date) -> str:
-    return f"{day.year:04d}-{day.month:02d}"
 
 
 def _first_of_month(day: date) -> date:
@@ -84,20 +89,19 @@ def _shift_month(first: date, delta: int) -> date:
 
 
 def resolve_month(requested: str | None, *, today: date, horizon_days: int) -> MonthWindow:
-    """Return the month to render and its navigation targets.
+    """Return the month to render, clamped to what can hold data.
 
-    Accepts ``YYYY-MM`` from the arrows and ``YYYY-MM-DD`` from the date
-    picker, which posts a whole day. The day is discarded: the calendar
-    is a month, so two values that name the same month must land on the
-    same page.
+    Accepts ``YYYY-MM-DD`` from the date picker, which posts a whole
+    day, and bare ``YYYY-MM``. The day is discarded: the calendar is a
+    month, so two values naming the same month land on the same page,
+    and a bookmarked link keeps working.
 
     An unparseable or out-of-range value falls back to the current
     month rather than raising: a crafted query string is not worth a
     500, and there is nothing here to protect beyond rendering.
 
-    Navigation is bounded by the backfill horizon on one side and by
-    today on the other, so the arrows never offer a month that can
-    hold nothing.
+    Clamped by the backfill horizon on one side and today on the other,
+    so no request can render a month that will never hold anything.
     """
     current_first = _first_of_month(today)
     oldest_first = _first_of_month(today - timedelta(days=horizon_days))
@@ -112,16 +116,12 @@ def resolve_month(requested: str | None, *, today: date, horizon_days: int) -> M
         first = min(max(candidate, oldest_first), current_first)
 
     last = _shift_month(first, 1) - timedelta(days=1)
-    previous_first = _shift_month(first, -1)
-    next_first = _shift_month(first, 1)
 
     return MonthWindow(
         year=first.year,
         month=first.month,
         start=first,
         end=last,
-        previous=_month_key(previous_first) if previous_first >= oldest_first else None,
-        next=_month_key(next_first) if next_first <= current_first else None,
         oldest=oldest_first,
         newest=today,
     )
@@ -272,6 +272,12 @@ def _build_context(request: Request, operator_id: int, month: str | None) -> dic
         settle_window_hours=settings.statistics_settle_window_hours,
     )
     calendar = day_calendar(counted, captured=captured, start=start, end=end, today=today)
+    dropouts = abandonment(counted)
+    bands = cancellation_bands(
+        counted,
+        late_hours=settings.statistics_late_cancel_hours,
+        very_late_hours=settings.statistics_very_late_cancel_hours,
+    )
 
     # Days of this month that are over and still unread. The cells say
     # so one by one; this tells the reader it is worth coming back
@@ -294,6 +300,9 @@ def _build_context(request: Request, operator_id: int, month: str | None) -> dic
         "month": window,
         "month_label": _month_label(window),
         "calendar": calendar,
+        "abandonment": dropouts,
+        "bands": bands,
+        "band_labels": _band_labels(bands),
         "weekday_labels": _weekday_labels(),
         "cell_lines": _cell_lines(calendar),
         "legend": _legend(),
@@ -352,6 +361,39 @@ def _month_label(window: MonthWindow) -> str:
 
 def _legend() -> list[tuple[str, str]]:
     return [(key, t(f"statistics.legend.{key}")) for key in _LEGEND_KEYS]
+
+
+def _band_labels(bands: CancellationBands) -> list[dict[str, object]]:
+    """Describe each notice band in the gym's own terms.
+
+    The thresholds are interpolated rather than written into the
+    catalog, so a gym with different penalty tiers gets sentences that
+    match its own rules instead of Antwork's.
+    """
+    late = _hours_label(bands.late_hours)
+    very_late = _hours_label(bands.very_late_hours)
+    return [
+        {
+            "kind": "early",
+            "label": t("statistics.bands.early", hours=late),
+            "count": bands.early,
+        },
+        {
+            "kind": "late",
+            "label": t("statistics.bands.late", upper=late, lower=very_late),
+            "count": bands.late,
+        },
+        {
+            "kind": "very_late",
+            "label": t("statistics.bands.very_late", hours=very_late),
+            "count": bands.very_late,
+        },
+    ]
+
+
+def _hours_label(hours: float) -> str:
+    """Render a threshold without a trailing zero on whole hours."""
+    return str(int(hours)) if hours == int(hours) else str(hours)
 
 
 def _capture_notice(status: CaptureStatus) -> str | None:
@@ -418,6 +460,9 @@ def _empty_context(request: Request, *, has_gym: bool) -> dict[str, object]:
         "capture_notice": None,
         "cookie_url": lang_url("/cookie"),
         "no_activity_ever": False,
+        "abandonment": None,
+        "bands": None,
+        "band_labels": [],
         "month": None,
         "month_label": None,
     }

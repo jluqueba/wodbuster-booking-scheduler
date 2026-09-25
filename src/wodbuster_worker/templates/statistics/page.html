@@ -50,30 +50,19 @@
     color: var(--wb-text-muted);
   }
 
-  .wb-monthnav {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
-  }
-  .wb-monthnav__label {
-    font-size: 1.1rem;
-    color: var(--wb-text);
-    text-transform: capitalize;
-  }
-  /* Keeps the month label centred when one arrow is unavailable, so
-     the title does not jump as the reader walks backwards. */
-  .wb-monthnav__step--off {
-    display: inline-block;
-    width: 2.5rem;
-  }
-
   .wb-monthjump {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.5rem;
     margin-bottom: 1rem;
+  }
+  .wb-monthjump__heading {
+    flex: 1 1 auto;
+    margin: 0;
+    font-size: 1.25rem;
+    color: var(--wb-text);
+    text-transform: capitalize;
   }
   .wb-monthjump__input.wb-monthjump__input {
     width: auto;
@@ -93,6 +82,60 @@
     font-size: 0.85rem;
     color: var(--wb-text-muted);
     margin: 0;
+  }
+
+  .wb-bands {
+    margin: 0 0 1.75rem;
+    padding: 1.1rem 1.35rem;
+    background: var(--wb-bg-card);
+    border: 1px solid var(--wb-border);
+    border-radius: var(--wb-radius);
+  }
+  .wb-bands__title {
+    font-size: 1.05rem;
+    margin: 0 0 0.85rem;
+    color: var(--wb-text);
+  }
+  .wb-bands__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 0.85rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .wb-bands__item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding-left: 0.75rem;
+    border-left: 3px solid var(--wb-border-strong);
+  }
+  /* Later notice, sharper colour: the tiers exist because they cost
+     the user progressively more. */
+  .wb-bands__item--early {
+    border-left-color: var(--wb-success);
+  }
+  .wb-bands__item--late {
+    border-left-color: var(--wb-warning);
+  }
+  .wb-bands__item--very_late {
+    border-left-color: var(--wb-danger);
+  }
+  .wb-bands__count {
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1.1;
+    color: var(--wb-text);
+  }
+  .wb-bands__label {
+    font-size: 0.85rem;
+    color: var(--wb-text-muted);
+  }
+  .wb-bands__note {
+    margin: 0.85rem 0 0;
+    font-size: 0.85rem;
+    color: var(--wb-text-muted);
   }
 
   .wb-calendar {
@@ -290,8 +333,9 @@
     .wb-stat-tile__value {
       font-size: 2rem;
     }
-    .wb-monthnav__label {
-      font-size: 1rem;
+    .wb-monthjump__heading {
+      flex-basis: 100%;
+      font-size: 1.1rem;
     }
   }
 </style>

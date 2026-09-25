@@ -116,6 +116,22 @@
           });
         }
       });
+      // Third pass: pickers that navigate rather than book submit their
+      // form on selection, so choosing a date is one gesture instead of
+      // select-then-confirm. The submit button stays in the markup for
+      // the no-JavaScript path. Wired here rather than as an inline
+      // handler, per the repo's event-attribute convention.
+      dateEls.forEach(function (el) {
+        if (!el.dataset.fpSubmit || !el._flatpickr) {
+          return;
+        }
+        el._flatpickr.config.onChange.push(function () {
+          var form = el.form || el.closest('form');
+          if (form) {
+            form.submit();
+          }
+        });
+      });
     }
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', initAll);

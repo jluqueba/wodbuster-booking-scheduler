@@ -34,9 +34,22 @@
         <span class="wb-stat-tile__hint">{{ month_label }}</span>
       </div>
       <div class="wb-stat-tile">
-        <span class="wb-stat-tile__value">{{ calendar.cancelled }}</span>
-        <span class="wb-stat-tile__label">{{ t("statistics.cancelled.tile") }}</span>
-        <span class="wb-stat-tile__hint">{{ t("statistics.cancelled.hint") }}</span>
+        {# A rate over nothing is unknown, not zero: reporting perfect
+           behaviour to someone who booked nothing is worse than a
+           dash. #}
+        <span class="wb-stat-tile__value">
+          {%- if abandonment.percent is none -%}—{%- else -%}{{ abandonment.percent }}%{%- endif -%}
+        </span>
+        <span class="wb-stat-tile__label">{{ t("statistics.abandonment.tile") }}</span>
+        <span class="wb-stat-tile__hint">
+          {%- if abandonment.percent is none -%}
+            {{ t("statistics.abandonment.none") }}
+          {%- else -%}
+            {{ t("statistics.abandonment.of",
+                  dropped=abandonment.cancelled,
+                  booked=abandonment.booked) }}
+          {%- endif -%}
+        </span>
       </div>
       {% if calendar.swapped %}
         <div class="wb-stat-tile">
@@ -45,32 +58,44 @@
           <span class="wb-stat-tile__hint">{{ t("statistics.swapped.hint") }}</span>
         </div>
       {% endif %}
+      {% if abandonment.no_show or abandonment.removed_after_start %}
+        <div class="wb-stat-tile">
+          <span class="wb-stat-tile__value">
+            {{- abandonment.no_show + abandonment.removed_after_start -}}
+          </span>
+          <span class="wb-stat-tile__label">{{ t("statistics.absent.tile") }}</span>
+          <span class="wb-stat-tile__hint">{{ t("statistics.absent.hint") }}</span>
+        </div>
+      {% endif %}
     </div>
 
-    <nav class="wb-monthnav" aria-label="{{ t('statistics.month.nav') }}">
-      {% if month.previous %}
-        <a class="wb-btn wb-monthnav__step"
-           href="{{ lang_url('/statistics') }}?month={{ month.previous }}"
-           rel="prev"
-        >{{- t("statistics.month.previous") -}}</a>
-      {% else %}
-        <span class="wb-monthnav__step wb-monthnav__step--off"></span>
-      {% endif %}
-      <span class="wb-monthnav__label">{{ month_label }}</span>
-      {% if month.next %}
-        <a class="wb-btn wb-monthnav__step"
-           href="{{ lang_url('/statistics') }}?month={{ month.next }}"
-           rel="next"
-        >{{- t("statistics.month.next") -}}</a>
-      {% else %}
-        <span class="wb-monthnav__step wb-monthnav__step--off"></span>
-      {% endif %}
-    </nav>
+    {% if bands.total %}
+      {# The bands answer what the rate cannot: a drop three days out
+         and one two hours out cost the user different things. #}
+      <section class="wb-bands">
+        <h2 class="wb-bands__title">{{ t("statistics.bands.title") }}</h2>
+        <ul class="wb-bands__list">
+          {% for band in band_labels %}
+            <li class="wb-bands__item wb-bands__item--{{ band.kind }}">
+              <span class="wb-bands__count">{{ band.count }}</span>
+              <span class="wb-bands__label">{{ band.label }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+        {% if bands.unknown_lead %}
+          <p class="wb-bands__note">
+            {{ t("statistics.bands.unknown", count=bands.unknown_lead) }}
+          </p>
+        {% endif %}
+      </section>
+    {% endif %}
 
     {# A plain GET form: picking a date and submitting works with the
-       date picker, with a typed value, and with no JavaScript at all.
-       The day is discarded server side; only the month matters. #}
+       date picker, with a typed value, and with no JavaScript. The
+       picker carries its own month and year navigation, so a pair of
+       step arrows beside it would be two mechanisms for one job. #}
     <form class="wb-monthjump" method="get" action="{{ lang_url('/statistics') }}">
+      <h2 class="wb-monthjump__heading">{{ month_label }}</h2>
       <label class="wb-monthjump__label" for="statistics-month">
         {{ t("statistics.month.jump_label") }}
       </label>
@@ -82,12 +107,19 @@
         value="{{ month.start.isoformat() }}"
         data-fp-min="{{ month.oldest.isoformat() }}"
         data-fp-max="{{ month.newest.isoformat() }}"
+        data-fp-submit="1"
         inputmode="numeric"
         autocomplete="off"
       >
-      <button type="submit" class="wb-btn wb-btn--primary">
-        {{- t("statistics.month.jump") -}}
-      </button>
+      {# Only rendered when scripting is off. With the picker loaded the
+         form submits on selection, so a confirm button would be a
+         second click for nothing; without it, a lone text field can
+         only be submitted by pressing Enter, which nobody guesses. #}
+      <noscript>
+        <button type="submit" class="wb-btn wb-btn--primary wb-monthjump__go">
+          {{- t("statistics.month.jump") -}}
+        </button>
+      </noscript>
     </form>
 
     <div class="wb-table-wrap">

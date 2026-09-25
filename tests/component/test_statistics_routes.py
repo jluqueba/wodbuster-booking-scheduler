@@ -227,6 +227,86 @@ def test_page_counts_a_settled_attendance(
     assert 'class="wb-stat-tile__value">1<' in body
 
 
+def test_the_drop_out_rate_shows_the_counts_behind_it(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """CC-003: a rate the reader cannot check is a rate they distrust."""
+    tc, _, gym_account_id, _ = signed_in
+    base = datetime.now(tz=UTC).date() - timedelta(days=10)
+    for offset in range(3):
+        _seed_attendance(
+            postgres_engine,
+            gym_account_id=gym_account_id,
+            local_date=base + timedelta(days=offset),
+            class_id=91000 + offset,
+        )
+    _seed_attendance(
+        postgres_engine,
+        gym_account_id=gym_account_id,
+        local_date=base + timedelta(days=3),
+        state="cancelled",
+        class_id=91003,
+    )
+
+    body = tc.get("/statistics").text
+
+    # One drop out of four bookings.
+    assert 'class="wb-stat-tile__value">25%<' in body
+    assert "1 of 4 bookings" in body
+
+
+def test_a_month_with_no_bookings_shows_a_dash_not_a_zero(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """Reporting a perfect rate to someone who booked nothing is worse
+    than admitting there is nothing to report."""
+    tc, _, _, _ = signed_in
+
+    body = tc.get("/statistics").text
+
+    assert "Nothing booked in this month" in body
+    assert 'class="wb-stat-tile__value">0%<' not in body
+
+
+def test_the_notice_bands_appear_with_the_gym_thresholds(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """CC-004 and CC-005 at the response boundary."""
+    tc, _, gym_account_id, _ = signed_in
+    day = datetime.now(tz=UTC).date() - timedelta(days=3)
+    # Dropped two hours before an 18:30 class: the middle band.
+    _seed_attendance(
+        postgres_engine,
+        gym_account_id=gym_account_id,
+        local_date=day,
+        state="cancelled",
+        class_id=91100,
+        changed_at=datetime(day.year, day.month, day.day, 16, 30, tzinfo=UTC),
+    )
+
+    body = tc.get("/statistics").text
+
+    assert "How much notice you gave" in body
+    assert "between 1 h and 4 h ahead" in body
+    assert 'class="wb-bands__item wb-bands__item--late"' in body
+
+
+def test_the_bands_are_absent_when_nothing_was_dropped(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """A block of three zeros teaches the reader to skip the block."""
+    tc, _, gym_account_id, _ = signed_in
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    _seed_attendance(postgres_engine, gym_account_id=gym_account_id, local_date=yesterday)
+
+    body = tc.get("/statistics").text
+
+    assert "How much notice you gave" not in body
+
+
 def test_every_number_is_present_without_any_script(
     signed_in: tuple[TestClient, int, int, RecordingClient],
     postgres_engine: Engine,
@@ -321,23 +401,28 @@ def test_a_day_holding_a_training_and_a_drop_shows_both_lines(
     assert 'class="wb-calendar__line wb-calendar__line--cancelled"' not in body
 
 
-def test_the_month_can_be_walked_backwards(
+def test_a_past_month_can_be_reached_and_is_bounded(
     signed_in: tuple[TestClient, int, int, RecordingClient],
 ) -> None:
-    """The current month offers a way back and no way forward."""
+    """The picker is the only way to travel, so it carries the bounds.
+
+    Without them the reader could open a month the backfill will never
+    populate and read its empty cells as a month they did not train.
+    """
     tc, _, _, _ = signed_in
     today = datetime.now(tz=UTC).date()
     previous = (today.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
 
     body = tc.get("/statistics").text
 
-    assert f"?month={previous}" in body
-    assert f"?month={today.strftime('%Y-%m')}" not in body
+    # No step arrows: the picker carries its own month and year nav.
+    assert "wb-monthnav" not in body
+    assert f'data-fp-max="{today.isoformat()}"' in body
+    assert 'data-fp-min="' in body
 
     older = tc.get(f"/statistics?month={previous}")
     assert older.status_code == 200
-    # From a past month, both arrows exist.
-    assert older.text.count("?month=") == 2
+    assert f'value="{previous}-01"' in older.text
 
 
 def test_a_crafted_month_parameter_does_not_break_the_page(
@@ -388,7 +473,12 @@ def test_the_month_can_be_reached_with_a_date_picker(
     signed_in: tuple[TestClient, int, int, RecordingClient],
 ) -> None:
     """A plain GET form, so it works with the picker, with a typed
-    value, and with no JavaScript at all."""
+    value, and with no JavaScript at all.
+
+    The submit button stays in the markup for that last case: with the
+    picker loaded the form submits on selection, so choosing a month is
+    one gesture rather than select-then-confirm.
+    """
     tc, _, _, _ = signed_in
 
     body = tc.get("/statistics").text
@@ -396,11 +486,17 @@ def test_the_month_can_be_reached_with_a_date_picker(
     assert 'class="wb-monthjump"' in body
     assert 'method="get"' in body
     assert "wb-date-flatpickr" in body
+    assert 'data-fp-submit="1"' in body
+    # The confirm button exists only inside noscript: with the picker
+    # loaded it would be a second click for nothing, and without it a
+    # lone text field is submittable only by pressing Enter.
+    assert "<noscript>" in body
+    assert body.index("<noscript>") < body.index("wb-monthjump__go")
 
     # The picker posts a whole day; the month is what matters.
     jumped = tc.get("/statistics?month=2026-07-14")
     assert jumped.status_code == 200
-    assert "?month=2026-06" in jumped.text
+    assert 'value="2026-07-01"' in jumped.text
 
 
 def test_no_third_party_athlete_reaches_the_page(
