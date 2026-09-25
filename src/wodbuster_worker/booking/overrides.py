@@ -24,7 +24,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..persistence.models import BookingDayOverride, BookingOutcome, SchedulerRule
-from ..scheduler.clock import DEFAULT_PREWARM_LEAD_S, operator_timezone
+from ..scheduler.clock import DEFAULT_PREWARM_LEAD_S, local_wall_time
+from ..scheduler.clock import local_date_for_slot as _clock_local_date_for_slot
 
 _log = structlog.get_logger(__name__)
 
@@ -95,10 +96,13 @@ class OverridePlan:
 
 
 def local_date_for_slot(target_slot: datetime) -> date:
-    """Return the operator-local calendar day a UTC slot belongs to."""
-    if target_slot.tzinfo is None:
-        raise ValueError("target_slot must be timezone-aware")
-    return target_slot.astimezone(operator_timezone()).date()
+    """Return the operator-local calendar day a UTC slot belongs to.
+
+    Re-exported from :mod:`scheduler.clock`, which owns the operator
+    clock primitives, so existing import sites keep working. Mirrors how
+    ``rule_jobs`` re-exports ``operator_timezone``.
+    """
+    return _clock_local_date_for_slot(target_slot)
 
 
 def effective_slot_for(rule: SchedulerRule, target_date: date, class_time: str) -> datetime:
@@ -146,15 +150,8 @@ def is_editable(rule: SchedulerRule, target_date: date, now: datetime) -> bool:
 
 
 def _local_wall_time(day: date, hhmm: str) -> datetime:
-    hh, mm = hhmm.split(":")
-    return datetime(
-        day.year,
-        day.month,
-        day.day,
-        int(hh),
-        int(mm),
-        tzinfo=operator_timezone(),
-    )
+    """Re-export of :func:`scheduler.clock.local_wall_time`."""
+    return local_wall_time(day, hhmm)
 
 
 # ---------------------------------------------------------------------------

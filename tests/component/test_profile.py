@@ -319,3 +319,115 @@ def test_login_fills_an_empty_email(
         pass
 
     assert _email(postgres_engine, operator_id) == "login@example.com"
+
+
+def _excluded_weekdays(engine: Engine, operator_id: int) -> list[int]:
+    with engine.connect() as conn:
+        return conn.execute(
+            text("SELECT statistics_excluded_weekdays FROM operator_profile WHERE id = :id"),
+            {"id": operator_id},
+        ).scalar_one()
+
+
+def test_profile_save_persists_the_days_that_never_break_a_streak(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    operator_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        resp = client.post(
+            "/profile",
+            data={
+                "display_name": "Alice",
+                "short_name": "Al",
+                "communication_language": "en",
+                "excluded_weekdays": ["6", "5"],
+                "_csrf": _csrf(client),
+            },
+        )
+
+    assert resp.status_code == 303
+    assert _excluded_weekdays(postgres_engine, operator_id) == [5, 6]
+
+
+def test_unticking_every_day_clears_the_selection(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Checkboxes only arrive when ticked, so absence has to mean none
+    rather than leave the previous choice standing."""
+    operator_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        form = {
+            "display_name": "Alice",
+            "short_name": "Al",
+            "communication_language": "en",
+            "_csrf": _csrf(client),
+        }
+        client.post("/profile", data={**form, "excluded_weekdays": ["6"]})
+        resp = client.post("/profile", data=form)
+
+    assert resp.status_code == 303
+    assert _excluded_weekdays(postgres_engine, operator_id) == []
+
+
+def test_a_weekday_outside_the_week_is_rejected(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only a crafted form can send it, and storing it would make the
+    streak rule consult an index that can never match."""
+    operator_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        resp = client.post(
+            "/profile",
+            data={
+                "display_name": "Alice",
+                "short_name": "Al",
+                "communication_language": "en",
+                "excluded_weekdays": ["7"],
+                "_csrf": _csrf(client),
+            },
+        )
+
+    assert resp.status_code == 303
+    assert "flash_kind=error" in resp.headers["location"]
+    assert _excluded_weekdays(postgres_engine, operator_id) == []
+
+
+def test_the_profile_page_ticks_the_stored_days(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        client.post(
+            "/profile",
+            data={
+                "display_name": "Alice",
+                "short_name": "Al",
+                "communication_language": "en",
+                "excluded_weekdays": ["6"],
+                "_csrf": _csrf(client),
+            },
+        )
+        resp = client.get("/profile")
+
+    assert resp.status_code == 200
+    assert 'name="excluded_weekdays" value="6" checked' in resp.text
+    assert 'name="excluded_weekdays" value="0" checked' not in resp.text

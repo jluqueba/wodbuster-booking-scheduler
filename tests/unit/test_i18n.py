@@ -200,3 +200,77 @@ def test_override_placeholders_match_across_languages() -> None:
 
 def _placeholders(template: str) -> set[str]:
     return {name for _, name, _, _ in Formatter().parse(template) if name}
+
+
+# ---------------------------------------------------------------------------
+# Attendance statistics catalog parity (T-AST-026, FR-036, SC-007)
+# ---------------------------------------------------------------------------
+
+# Namespaces the statistics feature introduced. Prefixes rather than a
+# literal key list, so a key added later is covered without editing this.
+_STATISTICS_PREFIXES: tuple[str, ...] = (
+    "statistics.",
+    "day.short.",
+    "month.",
+    "profile.streak_days.",
+)
+
+# The strings that exist to stop the reader over-trusting a number. A
+# literal translation of any of these loses the warning, so they are
+# asserted by name rather than only by namespace.
+_QUALIFYING_KEYS: tuple[str, ...] = (
+    "statistics.points.estimate.label",
+    "statistics.streak.at_least",
+    "statistics.points.balance.hint",
+    "statistics.legend.uncaptured",
+)
+
+
+def _statistics_keys(catalog: dict[str, str]) -> set[str]:
+    return {key for key in catalog if key.startswith(_STATISTICS_PREFIXES)}
+
+
+def test_statistics_namespaces_are_populated() -> None:
+    """Guards the test itself: a renamed namespace would turn every
+    assertion below into a comparison of two empty sets."""
+    for prefix in _STATISTICS_PREFIXES:
+        assert any(key.startswith(prefix) for key in EN), f"no key under {prefix}"
+
+
+@pytest.mark.parametrize("lang", SUPPORTED_LANGUAGES)
+def test_statistics_keys_exist_in_every_language(lang: str) -> None:
+    diff = _statistics_keys(EN) ^ _statistics_keys(CATALOGS[lang])
+    assert diff == set(), f"statistics key drift in {lang}: {sorted(diff)}"
+
+
+def test_statistics_placeholders_match_across_languages() -> None:
+    """A placeholder present in one catalog only degrades to the raw
+    template at runtime instead of raising, so it has to fail here."""
+    for key in sorted(_statistics_keys(EN)):
+        assert _placeholders(EN[key]) == _placeholders(ES[key]), f"placeholder drift in {key}"
+
+
+def test_statistics_spanish_strings_are_translated() -> None:
+    """An untranslated copy passes the key-parity check above.
+
+    A template with no prose of its own, such as ``{month} {year}``, is
+    legitimately identical in both languages, so it is excluded by
+    shape rather than by being listed.
+    """
+    copies = sorted(key for key in _statistics_keys(EN) if EN[key] == ES[key] and _letters(EN[key]))
+    assert copies == [], f"Spanish left as an English copy: {copies}"
+
+
+def test_the_qualifying_strings_exist_in_both_languages() -> None:
+    """Each of these exists to prevent over-trust in a figure. Losing
+    one in translation loses the warning, not just the wording."""
+    for key in _QUALIFYING_KEYS:
+        assert key in EN, f"missing qualifier {key}"
+        assert key in ES, f"missing qualifier {key}"
+        assert EN[key].strip() and ES[key].strip()
+
+
+def _letters(template: str) -> str:
+    """The prose of a template, with placeholders and digits removed."""
+    without_fields = "".join(literal for literal, _, _, _ in Formatter().parse(template) if literal)
+    return "".join(ch for ch in without_fields if ch.isalpha())

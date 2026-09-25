@@ -45,6 +45,8 @@ from sqlalchemy.exc import DataError, IntegrityError
 EXPECTED_TABLES: frozenset[str] = frozenset(
     {
         "alert",
+        "attendance_day",
+        "attendance_record",
         "booking_day_override",
         "booking_outcome",
         "cookie_credential",
@@ -299,6 +301,30 @@ def test_minimal_rows_round_trip_through_every_table(
             ),
             {"r": rule_id, "ga": gym_account_id, "d": now.date()},
         )
+        conn.execute(
+            text(
+                "INSERT INTO attendance_day "
+                "(gym_account_id, local_date, class_count, is_final) "
+                "VALUES (:ga, :d, 30, TRUE)"
+            ),
+            {"ga": gym_account_id, "d": now.date()},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO attendance_record "
+                "(gym_account_id, local_date, wodbuster_class_id, class_name, "
+                "class_type_id, start_at, state, state_changed_at, "
+                "reservation_type, capacity, occupancy, ever_full) "
+                "VALUES (:ga, :d, 47459, 'Cross Training', 1, :start, 'attended', "
+                ":changed, 'Tarifa', 14, 14, TRUE)"
+            ),
+            {
+                "ga": gym_account_id,
+                "d": now.date(),
+                "start": now,
+                "changed": now,
+            },
+        )
 
     with migrated_engine.connect() as conn:
         for table in EXPECTED_TABLES:
@@ -356,14 +382,20 @@ def test_revision_chain_has_exactly_one_head() -> None:
 
 
 def test_override_revision_downgrades_and_upgrades_again(migrated_engine: Engine) -> None:
-    """The revision is reversible from the current head and back."""
+    """The revision is reversible from the current head and back.
+
+    The target is the revision immediately before a7c3d9e1f4b2 rather
+    than a relative ``-1``: this revision stopped being the head when
+    b8e4f1c7a2d3 landed, and a relative step would silently test a
+    different migration every time a new one is added.
+    """
     schema = _search_path_schema(migrated_engine)
     cfg = Config(str(_ALEMBIC_INI))
 
     with migrated_engine.begin() as conn:
         cfg.attributes["connection"] = conn
         cfg.attributes["version_table_schema"] = schema
-        command.downgrade(cfg, "-1")
+        command.downgrade(cfg, "d4e5f6a7b8c9")
 
     insp = inspect(migrated_engine)
     assert "booking_day_override" not in insp.get_table_names(schema=schema)
@@ -476,3 +508,170 @@ def test_deleting_the_rule_cascades_its_overrides(migrated_engine: Engine) -> No
         remaining = conn.execute(text("SELECT COUNT(*) FROM booking_day_override")).scalar_one()
 
     assert remaining == 0
+
+
+# ---------------------------------------------------------------------------
+# b8e4f1c7a2d3 - attendance statistics (ADR-0013)
+# ---------------------------------------------------------------------------
+
+
+def _insert_attendance_record(conn: Any, gym_account_id: int, class_id: int) -> None:
+    conn.execute(
+        text(
+            "INSERT INTO attendance_record "
+            "(gym_account_id, local_date, wodbuster_class_id, class_name, "
+            "start_at, state, occupancy) "
+            "VALUES (:ga, DATE '2026-09-23', :cid, 'Cross Training', "
+            ":start, 'attended', 14)"
+        ),
+        {"ga": gym_account_id, "cid": class_id, "start": datetime(2026, 9, 23, 18, 30, tzinfo=UTC)},
+    )
+
+
+def test_statistics_revision_downgrades_and_upgrades_again(migrated_engine: Engine) -> None:
+    """The revision is reversible from the current head and back.
+
+    Unlike a7c3d9e1f4b2 this one adds no value to an existing enum, so
+    the downgrade is complete: both tables, both columns and the new
+    enum type are removed. The target is named explicitly rather than
+    relative, so a future revision does not silently repoint this test.
+    """
+    schema = _search_path_schema(migrated_engine)
+    cfg = Config(str(_ALEMBIC_INI))
+
+    with migrated_engine.begin() as conn:
+        cfg.attributes["connection"] = conn
+        cfg.attributes["version_table_schema"] = schema
+        command.downgrade(cfg, "a7c3d9e1f4b2")
+
+    insp = inspect(migrated_engine)
+    tables = set(insp.get_table_names(schema=schema))
+    assert "attendance_day" not in tables
+    assert "attendance_record" not in tables
+    profile_columns = {c["name"] for c in insp.get_columns("operator_profile", schema=schema)}
+    assert "statistics_excluded_weekdays" not in profile_columns
+    gym_columns = {c["name"] for c in insp.get_columns("gym_account", schema=schema)}
+    assert "points_model" not in gym_columns
+
+    with migrated_engine.begin() as conn:
+        cfg.attributes["connection"] = conn
+        command.upgrade(cfg, "head")
+
+    insp = inspect(migrated_engine)
+    tables = set(insp.get_table_names(schema=schema))
+    assert {"attendance_day", "attendance_record"} <= tables
+
+
+def test_attendance_indexes_are_present(migrated_engine: Engine) -> None:
+    schema = _search_path_schema(migrated_engine)
+    insp = inspect(migrated_engine)
+
+    names = {ix["name"] for ix in insp.get_indexes("attendance_record", schema=schema)}
+
+    assert "ix_attendance_record_gym_start" in names
+
+
+def test_statistics_settings_defaults_need_no_backfill(migrated_engine: Engine) -> None:
+    """Existing rows are covered without a data migration step."""
+    with migrated_engine.begin() as conn:
+        op_id = conn.execute(
+            text("INSERT INTO operator_profile (display_name) VALUES ('Statistician') RETURNING id")
+        ).scalar_one()
+        gym_account_id = conn.execute(
+            text(
+                "INSERT INTO gym_account (user_id, gym_slug, display_name, idu) "
+                "VALUES (:op, 'antworktrainingcenter', 'Adwork', 'idu-1') RETURNING id"
+            ),
+            {"op": op_id},
+        ).scalar_one()
+        excluded = conn.execute(
+            text("SELECT statistics_excluded_weekdays FROM operator_profile WHERE id = :id"),
+            {"id": op_id},
+        ).scalar_one()
+        points_model = conn.execute(
+            text("SELECT points_model FROM gym_account WHERE id = :id"),
+            {"id": gym_account_id},
+        ).scalar_one()
+
+    assert excluded == []
+    assert points_model is None
+
+
+def test_attendance_state_enum_rejects_an_unknown_state(migrated_engine: Engine) -> None:
+    with migrated_engine.begin() as conn:
+        gym_account_id, _ = _seed_rule(conn)
+
+    with pytest.raises(DataError), migrated_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO attendance_record "
+                "(gym_account_id, local_date, wodbuster_class_id, class_name, "
+                "start_at, state, occupancy) "
+                "VALUES (:ga, DATE '2026-09-23', 47459, 'Cross Training', "
+                ":start, 'removed_after_start', 14)"
+            ),
+            {
+                "ga": gym_account_id,
+                "start": datetime(2026, 9, 23, 18, 30, tzinfo=UTC),
+            },
+        )
+
+
+def test_unique_constraint_rejects_a_second_record_for_the_same_class(
+    migrated_engine: Engine,
+) -> None:
+    """This is what makes a repeated capture idempotent and two
+    concurrent page loads harmless."""
+    with migrated_engine.begin() as conn:
+        gym_account_id, _ = _seed_rule(conn)
+        _insert_attendance_record(conn, gym_account_id, 47459)
+
+    with pytest.raises(IntegrityError), migrated_engine.begin() as conn:
+        _insert_attendance_record(conn, gym_account_id, 47459)
+
+
+def test_unique_constraint_rejects_a_second_ledger_row_for_the_same_day(
+    migrated_engine: Engine,
+) -> None:
+    with migrated_engine.begin() as conn:
+        gym_account_id, _ = _seed_rule(conn)
+        conn.execute(
+            text(
+                "INSERT INTO attendance_day (gym_account_id, local_date, class_count) "
+                "VALUES (:ga, DATE '2026-09-23', 30)"
+            ),
+            {"ga": gym_account_id},
+        )
+
+    with pytest.raises(IntegrityError), migrated_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO attendance_day (gym_account_id, local_date, class_count) "
+                "VALUES (:ga, DATE '2026-09-23', 30)"
+            ),
+            {"ga": gym_account_id},
+        )
+
+
+def test_deleting_the_gym_account_cascades_its_attendance_history(
+    migrated_engine: Engine,
+) -> None:
+    """CC-023: deleting a gym account removes its captured history."""
+    with migrated_engine.begin() as conn:
+        gym_account_id, _ = _seed_rule(conn)
+        conn.execute(
+            text(
+                "INSERT INTO attendance_day (gym_account_id, local_date, class_count) "
+                "VALUES (:ga, DATE '2026-09-23', 30)"
+            ),
+            {"ga": gym_account_id},
+        )
+        _insert_attendance_record(conn, gym_account_id, 47459)
+
+    with migrated_engine.begin() as conn:
+        conn.execute(text("DELETE FROM gym_account WHERE id = :ga"), {"ga": gym_account_id})
+        days = conn.execute(text("SELECT COUNT(*) FROM attendance_day")).scalar_one()
+        records = conn.execute(text("SELECT COUNT(*) FROM attendance_record")).scalar_one()
+
+    assert days == 0
+    assert records == 0

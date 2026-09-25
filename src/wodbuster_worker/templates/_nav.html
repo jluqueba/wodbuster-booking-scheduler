@@ -2,8 +2,8 @@
 
    The ``active_nav`` context variable determines which link gets the
    ``aria-current="page"`` marker. Values match the route family:
-   ``dashboard``, ``cookie``, ``rules``, ``history``, ``vacation``,
-   ``telegram``, ``faq``.
+   ``dashboard``, ``cookie``, ``rules``, ``history``, ``statistics``,
+   ``vacation``, ``telegram``, ``faq``.
 
    Localised via the i18n ``t(...)`` helper registered as a Jinja
    global. Language is selected purely from the URL prefix
@@ -51,6 +51,11 @@
       <a href="{{ lang_url('/history') }}"
          {% if active_nav == "history" %}aria-current="page"{% endif %}
       >{{ t("nav.history") }}</a>
+    </li>
+    <li>
+      <a href="{{ lang_url('/statistics') }}"
+         {% if active_nav == "statistics" %}aria-current="page"{% endif %}
+      >{{ t("nav.statistics") }}</a>
     </li>
     <li>
       <a href="{{ lang_url('/vacation') }}"

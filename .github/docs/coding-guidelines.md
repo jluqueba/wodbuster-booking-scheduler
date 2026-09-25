@@ -203,6 +203,19 @@ Additional rules for code:
 
 - When writing commits, follow the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0-beta.2/) specification and apply the commit message guidelines from [Chris Beams](http://chris.beams.io/posts/git-commit/).
 
+- **Never commit a change the user can see without the developer having seen it running.** When a change touches a template, a stylesheet, client-side script, a route's rendered output, or any user-visible string, the agent starts the application locally, reports that it is running, and waits. Committing first and offering a demo afterwards is not the same thing: by then the diff is already in the history and the feedback arrives as a follow-up commit.
+
+  ```powershell
+  docker compose up -d
+  Remove-Item Env:PGSSLMODE -ErrorAction SilentlyContinue
+  .venv\Scripts\alembic.exe upgrade head
+  .venv\Scripts\uvicorn.exe wodbuster_worker.app:app --port 8000
+  ```
+
+  `GET http://localhost:8000/health` must return `200 {"status":"ok"}` before the developer is asked to look at anything. Start it without `--reload`: the reloader forks a child process and the application's `BackgroundScheduler` ends up running twice.
+
+- Changes with no user-visible surface (schema, parsers, pure functions, tests, documentation) do not need this step. The local gate and the test suite are the check there.
+
 ---
 
 ## Pull Requests

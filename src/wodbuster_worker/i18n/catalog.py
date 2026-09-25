@@ -68,6 +68,7 @@ EN: dict[str, str] = {
     "nav.dashboard": "🏠 Dashboard",
     "nav.rules": "📅 Rules",
     "nav.history": "📜 History",
+    "nav.statistics": "📊 Statistics",
     "nav.vacation": "🏖️ Vacation",
     "nav.cookie": "🍪 Cookie",
     "nav.telegram": "🤖 Telegram",
@@ -138,6 +139,13 @@ EN: dict[str, str] = {
         "Account emails (approval, rejection) are always sent, regardless of these settings."
     ),
     "profile.flash.bad_email": "That email address does not look valid.",
+    "profile.flash.bad_weekday": "That is not a valid weekday.",
+    "profile.streak_days.legend": "Days that never break a streak",
+    "profile.streak_days.note": (
+        "Tick the days you never train. A day the gym closes already counts as "
+        "neutral on its own, so tick a day only when the gym opens and you "
+        "choose not to go."
+    ),
     # -- dashboard ---------------------------------------------------
     "dashboard.eyebrow": "Welcome back",
     "dashboard.title.hero": "Hero",
@@ -920,6 +928,176 @@ EN: dict[str, str] = {
     ),
     "banner.unknown.heading": "Alert: {kind}",
     "banner.unknown.body": "See logs for details.",
+    # -- statistics --------------------------------------------------
+    "statistics.title": "Statistics",
+    "statistics.subtitle": "How you actually train at {gym}.",
+    "statistics.attended.tile": "Classes attended",
+    "statistics.attended.window": "Last {days} days",
+    "statistics.abandonment.tile": "Drop-out rate",
+    "statistics.abandonment.of": "{dropped} of {booked} bookings",
+    "statistics.abandonment.none": "Nothing booked in this month",
+    "statistics.absent.tile": "Absences",
+    "statistics.absent.hint": "Booked and did not turn up",
+    "statistics.streak.current.tile": "Current streak",
+    "statistics.streak.longest.tile": "Longest streak",
+    "statistics.streak.days": "{days} training days",
+    "statistics.streak.one_day": "1 training day",
+    "statistics.streak.none": "No streak running",
+    "statistics.streak.at_least": "at least {days}",
+    "statistics.streak.range": "{start} to {end}",
+    "statistics.streak.provisional": (
+        "Only the history read so far counts; an older run may still show up."
+    ),
+    "statistics.streak.rule": (
+        "A day the gym ran no classes never breaks a streak, and it does not add to it either."
+    ),
+    "statistics.streak.excluded": "Days you never train: {days}.",
+    "statistics.streak.excluded_link": "Change them in your profile",
+    "statistics.bands.title": "How much notice you gave",
+    "statistics.bands.early": "more than {hours} h ahead",
+    "statistics.bands.late": "between {lower} h and {upper} h ahead",
+    "statistics.bands.very_late": "under {hours} h ahead",
+    "statistics.bands.unknown": (
+        "{count} more could not be placed: the gym did not say when they happened."
+    ),
+    "statistics.period.label": "Charts cover",
+    "statistics.period.m1": "30 days",
+    "statistics.period.m3": "3 months",
+    "statistics.period.m12": "12 months",
+    "statistics.period.all": "Everything",
+    "statistics.period.billing": "This billing period",
+    "statistics.points.title": "Points",
+    "statistics.points.balance.tile": "Balance now",
+    "statistics.points.balance.hint": "Read from the gym, not calculated",
+    "statistics.points.penalties.tile": "Penalties in this period",
+    "statistics.points.penalties.hint": "Derived from when you left each class",
+    "statistics.points.estimate.tile": "Estimated cost",
+    "statistics.points.estimate.range": "{low} to {high} points",
+    "statistics.points.estimate.exact": "{low} points",
+    "statistics.points.estimate.label": "Estimate",
+    "statistics.points.assumptions.title": "What this estimate assumes",
+    "statistics.points.assumption.base_cost_unknown": (
+        "Booking costs a point only more than {hours} h ahead, and the gym overwrites "
+        "the moment you booked when you remove yourself. The upper end assumes you "
+        "always paid it; the lower end assumes you never did."
+    ),
+    "statistics.points.assumption.non_standard_cost": (
+        "Every class is priced at the base cost. The gym says some classes may cost "
+        "more, and its data does not say which."
+    ),
+    "statistics.points.assumption.recovery_base_only": (
+        "A class that never filled up gives the base cost back. That recovery is "
+        "applied to the base cost only, never to a penalty."
+    ),
+    "statistics.points.assumption.class_changes_charged": (
+        "A class change is counted. The gym sees a removal and charges for it, "
+        "whether or not you booked another hour the same day."
+    ),
+    "statistics.points.counts.changes": "{count} of them were class changes",
+    "statistics.points.counts.recovered": "{count} never filled up, so the base cost came back",
+    "statistics.points.counts.absences": (
+        "{no_shows} marked absent, {removed} removed once the class had started"
+    ),
+    "statistics.points.counts.unknown": "{count} could not be placed in a tier",
+    "statistics.pace.tile": "Sessions per week",
+    "statistics.pace.previous": "{value} in the period before",
+    "statistics.pace.no_previous": "No history for the period before",
+    "statistics.pace.up": "up {value}",
+    "statistics.pace.down": "down {value}",
+    "statistics.pace.flat": "same as before",
+    "statistics.chart.empty": "Not enough history in this period to show anything.",
+    "statistics.chart.show_data": "Show the numbers",
+    "statistics.occupancy.summary": (
+        "Your classes ran at {pct}% of capacity on average, and {full} of {sessions} "
+        "filled up completely."
+    ),
+    "statistics.chart.grid.title": "When you train",
+    "statistics.chart.grid.hint": "Sessions attended per weekday and class time,",
+    "statistics.chart.grid.cell": "{count} sessions, {weekday} at {hour}",
+    "statistics.chart.grid.slot": "Slot",
+    "statistics.chart.drop.title": "Which bookings you keep",
+    "statistics.chart.drop.hint": (
+        "Share of bookings you dropped, per class time, counting only times "
+        "with at least {min} bookings,"
+    ),
+    "statistics.chart.drop.of": "({dropped} of {booked})",
+    "statistics.chart.drop.hour": "Class time",
+    "statistics.chart.drop.rate": "Dropped",
+    "statistics.chart.trend.title": "Month by month",
+    "statistics.chart.trend.hint": "Classes attended and dropped per month,",
+    "statistics.chart.trend.month": "Month",
+    "statistics.chart.trend.split": "Attended / dropped",
+    "statistics.chart.lead.title": "How early you book",
+    "statistics.chart.lead.hint": (
+        "Booking under {hours} h ahead is free at this gym; booking earlier costs a point,"
+    ),
+    "statistics.chart.lead.same_day": "under {hours} h ahead",
+    "statistics.chart.lead.within_day": "{hours} h to a day ahead",
+    "statistics.chart.lead.early": "more than a day ahead",
+    "statistics.chart.lead.band": "Booked",
+    "statistics.chart.lead.unit": "classes",
+    "statistics.cancelled.tile": "Dropped",
+    "statistics.cancelled.hint": "Classes you booked and then left. A day can hold more than one",
+    "statistics.swapped.tile": "Class changes",
+    "statistics.swapped.hint": "Moved to another time the same day, not counted as dropped",
+    "statistics.calendar.caption": "Every day between {start} and {end}.",
+    "statistics.month.label": "{month} {year}",
+    "statistics.date": "{day} {month} {year}",
+    "statistics.month.jump_label": "Go to",
+    "statistics.month.jump": "📅 Go",
+    "statistics.calendar.attended": "Trained",
+    "statistics.calendar.cancelled": "Dropped",
+    "statistics.calendar.swapped": "Changed time",
+    "statistics.calendar.removed_after_start": "Removed after it started",
+    "statistics.calendar.no_show": "Did not turn up",
+    "statistics.calendar.no_activity": "Did not book",
+    "statistics.calendar.closed": "Closed",
+    "statistics.calendar.uncaptured": "Not read yet",
+    "statistics.calendar.future": "",
+    "statistics.legend.attended": "Trained",
+    "statistics.legend.cancelled": "Dropped",
+    "statistics.legend.swapped": "Changed time",
+    "statistics.legend.no_activity": "Open, you did not book",
+    "statistics.legend.closed": "Gym closed",
+    "statistics.legend.uncaptured": "Not read yet",
+    "statistics.empty.never_captured": (
+        "Nothing has been read from your gym calendar yet. Reload in a moment."
+    ),
+    "statistics.empty.no_activity_ever": (
+        "None of the days read so far shows any activity of yours."
+    ),
+    "statistics.capture.cookie_rejected": (
+        "Your WodBuster session is no longer valid, so nothing new could be read. "
+        "The days below are what was read before that."
+    ),
+    "statistics.capture.gym_unreachable": (
+        "The gym could not be reached, so nothing new could be read. "
+        "The days below are what was read before that."
+    ),
+    "statistics.capture.cookie_link": "Renew your session",
+    "statistics.no_gym": "Choose a gym from the selector above to see its statistics.",
+    "statistics.still_reading": (
+        "{days} days of this month have not been read yet. Reload in a few seconds."
+    ),
+    "month.january": "January",
+    "month.february": "February",
+    "month.march": "March",
+    "month.april": "April",
+    "month.may": "May",
+    "month.june": "June",
+    "month.july": "July",
+    "month.august": "August",
+    "month.september": "September",
+    "month.october": "October",
+    "month.november": "November",
+    "month.december": "December",
+    "day.short.monday": "Mon",
+    "day.short.tuesday": "Tue",
+    "day.short.wednesday": "Wed",
+    "day.short.thursday": "Thu",
+    "day.short.friday": "Fri",
+    "day.short.saturday": "Sat",
+    "day.short.sunday": "Sun",
 }
 
 
@@ -967,6 +1145,7 @@ ES: dict[str, str] = {
     "nav.dashboard": "🏠 Panel",
     "nav.rules": "📅 Reglas",
     "nav.history": "📜 Historial",
+    "nav.statistics": "📊 Estadísticas",
     "nav.vacation": "🏖️ Vacaciones",
     "nav.cookie": "🍪 Cookie",
     "nav.telegram": "🤖 Telegram",
@@ -1043,6 +1222,13 @@ ES: dict[str, str] = {
         "Los correos de cuenta (aprobación, rechazo) se envían siempre, al margen de estos ajustes."
     ),
     "profile.flash.bad_email": "Ese correo no parece válido.",
+    "profile.flash.bad_weekday": "Ese no es un día de la semana válido.",
+    "profile.streak_days.legend": "Días que nunca rompen una racha",
+    "profile.streak_days.note": (
+        "Marca los días en los que nunca entrenas. Un día que el gimnasio cierra "
+        "ya es neutro por sí solo, así que marca un día solo cuando el gimnasio "
+        "abre y tú decides no ir."
+    ),
     # -- dashboard ---------------------------------------------------
     "dashboard.eyebrow": "Hola de nuevo",
     "dashboard.title.hero": "Crack",
@@ -1869,6 +2055,176 @@ ES: dict[str, str] = {
     ),
     "banner.unknown.heading": "Alerta: {kind}",
     "banner.unknown.body": "Consulta los registros para más detalles.",
+    # -- statistics --------------------------------------------------
+    "statistics.title": "Estadísticas",
+    "statistics.subtitle": "Cómo entrenas de verdad en {gym}.",
+    "statistics.attended.tile": "Clases asistidas",
+    "statistics.attended.window": "Últimos {days} días",
+    "statistics.abandonment.tile": "Te borras",
+    "statistics.abandonment.of": "{dropped} de {booked} reservas",
+    "statistics.abandonment.none": "No reservaste nada este mes",
+    "statistics.absent.tile": "Ausencias",
+    "statistics.absent.hint": "Reservaste y no apareciste",
+    "statistics.streak.current.tile": "Racha actual",
+    "statistics.streak.longest.tile": "Mejor racha",
+    "statistics.streak.days": "{days} días entrenados",
+    "statistics.streak.one_day": "1 día entrenado",
+    "statistics.streak.none": "Sin racha en curso",
+    "statistics.streak.at_least": "al menos {days}",
+    "statistics.streak.range": "del {start} al {end}",
+    "statistics.streak.provisional": (
+        "Solo cuenta el histórico leído hasta ahora; puede aparecer una racha más antigua."
+    ),
+    "statistics.streak.rule": (
+        "Un día sin clases en el gimnasio nunca rompe una racha, y tampoco suma."
+    ),
+    "statistics.streak.excluded": "Días en los que nunca entrenas: {days}.",
+    "statistics.streak.excluded_link": "Cámbialos en tu perfil",
+    "statistics.bands.title": "Con cuánta antelación te borraste",
+    "statistics.bands.early": "con más de {hours} h",
+    "statistics.bands.late": "entre {lower} h y {upper} h antes",
+    "statistics.bands.very_late": "con menos de {hours} h",
+    "statistics.bands.unknown": (
+        "{count} más sin clasificar: el gimnasio no dijo cuándo ocurrieron."
+    ),
+    "statistics.period.label": "Los gráficos cubren",
+    "statistics.period.m1": "30 días",
+    "statistics.period.m3": "3 meses",
+    "statistics.period.m12": "12 meses",
+    "statistics.period.all": "Todo",
+    "statistics.period.billing": "Periodo actual",
+    "statistics.points.title": "Puntos",
+    "statistics.points.balance.tile": "Saldo ahora",
+    "statistics.points.balance.hint": "Leído del gimnasio, no calculado",
+    "statistics.points.penalties.tile": "Penalizaciones del periodo",
+    "statistics.points.penalties.hint": "Derivadas de cuándo te borraste de cada clase",
+    "statistics.points.estimate.tile": "Coste estimado",
+    "statistics.points.estimate.range": "entre {low} y {high} puntos",
+    "statistics.points.estimate.exact": "{low} puntos",
+    "statistics.points.estimate.label": "Estimación",
+    "statistics.points.assumptions.title": "Qué asume esta estimación",
+    "statistics.points.assumption.base_cost_unknown": (
+        "Reservar cuesta un punto solo con más de {hours} h de antelación, y el "
+        "gimnasio sobrescribe el momento en que reservaste cuando te borras. El "
+        "extremo alto asume que siempre lo pagaste; el bajo, que nunca."
+    ),
+    "statistics.points.assumption.non_standard_cost": (
+        "Todas las clases se tarifan al coste base. El gimnasio avisa de que algunas "
+        "pueden costar más, y sus datos no dicen cuáles."
+    ),
+    "statistics.points.assumption.recovery_base_only": (
+        "Una clase que nunca llegó a llenarse devuelve el coste base. Esa recuperación "
+        "se aplica solo al coste base, nunca a una penalización."
+    ),
+    "statistics.points.assumption.class_changes_charged": (
+        "Un cambio de hora cuenta. El gimnasio ve una baja y la cobra, hayas reservado "
+        "o no otra hora el mismo día."
+    ),
+    "statistics.points.counts.changes": "{count} de ellas fueron cambios de hora",
+    "statistics.points.counts.recovered": "{count} no se llenaron, así que recuperaste el base",
+    "statistics.points.counts.absences": (
+        "{no_shows} marcadas como ausencia, {removed} borradas con la clase empezada"
+    ),
+    "statistics.points.counts.unknown": "{count} sin tramo asignable",
+    "statistics.pace.tile": "Sesiones por semana",
+    "statistics.pace.previous": "{value} en el periodo anterior",
+    "statistics.pace.no_previous": "Sin histórico del periodo anterior",
+    "statistics.pace.up": "{value} más",
+    "statistics.pace.down": "{value} menos",
+    "statistics.pace.flat": "igual que antes",
+    "statistics.chart.empty": "No hay suficiente historial en este periodo para mostrar nada.",
+    "statistics.chart.show_data": "Ver los números",
+    "statistics.occupancy.summary": (
+        "Tus clases estuvieron al {pct}% de aforo de media, y {full} de {sessions} "
+        "llegaron a llenarse."
+    ),
+    "statistics.chart.grid.title": "Cuándo entrenas",
+    "statistics.chart.grid.hint": "Sesiones asistidas por día de la semana y hora de clase,",
+    "statistics.chart.grid.cell": "{count} sesiones, {weekday} a las {hour}",
+    "statistics.chart.grid.slot": "Franja",
+    "statistics.chart.drop.title": "Qué reservas cumples",
+    "statistics.chart.drop.hint": (
+        "Porcentaje de reservas que dejaste, por hora de clase, contando solo "
+        "las horas con al menos {min} reservas,"
+    ),
+    "statistics.chart.drop.of": "({dropped} de {booked})",
+    "statistics.chart.drop.hour": "Hora de clase",
+    "statistics.chart.drop.rate": "Te borraste",
+    "statistics.chart.trend.title": "Mes a mes",
+    "statistics.chart.trend.hint": "Clases asistidas y dejadas por mes,",
+    "statistics.chart.trend.month": "Mes",
+    "statistics.chart.trend.split": "Asistidas / dejadas",
+    "statistics.chart.lead.title": "Con cuánta antelación reservas",
+    "statistics.chart.lead.hint": (
+        "Reservar con menos de {hours} h es gratis en tu gimnasio; antes cuesta un punto,"
+    ),
+    "statistics.chart.lead.same_day": "con menos de {hours} h",
+    "statistics.chart.lead.within_day": "entre {hours} h y un día",
+    "statistics.chart.lead.early": "con más de un día",
+    "statistics.chart.lead.band": "Reservaste",
+    "statistics.chart.lead.unit": "clases",
+    "statistics.cancelled.tile": "Te borraste",
+    "statistics.cancelled.hint": "Clases que reservaste y dejaste. Un día puede tener más de una",
+    "statistics.swapped.tile": "Cambios de clase",
+    "statistics.swapped.hint": "Te moviste a otra hora el mismo día, no cuenta como baja",
+    "statistics.calendar.caption": "Todos los días entre el {start} y el {end}.",
+    "statistics.month.label": "{month} {year}",
+    "statistics.date": "{day} de {month} de {year}",
+    "statistics.month.jump_label": "Ir a",
+    "statistics.month.jump": "📅 Ir",
+    "statistics.calendar.attended": "Entrenaste",
+    "statistics.calendar.cancelled": "Te borraste",
+    "statistics.calendar.swapped": "Cambio de hora",
+    "statistics.calendar.removed_after_start": "Te borraron ya empezada",
+    "statistics.calendar.no_show": "No apareciste",
+    "statistics.calendar.no_activity": "No reservaste",
+    "statistics.calendar.closed": "Cerrado",
+    "statistics.calendar.uncaptured": "Sin leer",
+    "statistics.calendar.future": "",
+    "statistics.legend.attended": "Entrenaste",
+    "statistics.legend.cancelled": "Te borraste",
+    "statistics.legend.swapped": "Cambio de hora",
+    "statistics.legend.no_activity": "Abierto, no reservaste",
+    "statistics.legend.closed": "Gimnasio cerrado",
+    "statistics.legend.uncaptured": "Sin leer",
+    "statistics.empty.never_captured": (
+        "Todavía no se ha leído nada del calendario de tu gimnasio. Recarga en un momento."
+    ),
+    "statistics.empty.no_activity_ever": (
+        "Ninguno de los días leídos hasta ahora muestra actividad tuya."
+    ),
+    "statistics.capture.cookie_rejected": (
+        "Tu sesión de WodBuster ya no es válida, así que no se ha podido leer nada nuevo. "
+        "Los días de abajo son lo que se leyó antes."
+    ),
+    "statistics.capture.gym_unreachable": (
+        "No se ha podido contactar con el gimnasio, así que no se ha leído nada nuevo. "
+        "Los días de abajo son lo que se leyó antes."
+    ),
+    "statistics.capture.cookie_link": "Renovar la sesión",
+    "statistics.no_gym": "Elige un gimnasio en el selector de arriba para ver sus estadísticas.",
+    "statistics.still_reading": (
+        "Quedan {days} días de este mes por leer. Recarga en unos segundos."
+    ),
+    "month.january": "enero",
+    "month.february": "febrero",
+    "month.march": "marzo",
+    "month.april": "abril",
+    "month.may": "mayo",
+    "month.june": "junio",
+    "month.july": "julio",
+    "month.august": "agosto",
+    "month.september": "septiembre",
+    "month.october": "octubre",
+    "month.november": "noviembre",
+    "month.december": "diciembre",
+    "day.short.monday": "Lun",
+    "day.short.tuesday": "Mar",
+    "day.short.wednesday": "Mié",
+    "day.short.thursday": "Jue",
+    "day.short.friday": "Vie",
+    "day.short.saturday": "Sáb",
+    "day.short.sunday": "Dom",
 }
 
 

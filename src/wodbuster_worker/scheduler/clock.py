@@ -16,7 +16,7 @@ single-day override path needs: ``booking.overrides`` is imported by both
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 # US1.4 pre-warm lead. Schedule each booking job this many seconds
@@ -54,8 +54,35 @@ def midnight_utc_ticks(target_slot: datetime) -> int:
     return int(midnight.timestamp())
 
 
+def local_wall_time(day: date, hhmm: str) -> datetime:
+    """Return ``day`` at ``hhmm`` as an operator-local aware datetime.
+
+    The gym publishes class times as local wall clock, so a naive or
+    UTC reading lands on the wrong instant for half the year. Callers
+    that need UTC convert with ``.astimezone(UTC)``.
+    """
+    hh, mm = hhmm.split(":")
+    return datetime(
+        day.year,
+        day.month,
+        day.day,
+        int(hh),
+        int(mm),
+        tzinfo=operator_timezone(),
+    )
+
+
+def local_date_for_slot(target_slot: datetime) -> date:
+    """Return the operator-local calendar day a UTC slot belongs to."""
+    if target_slot.tzinfo is None:
+        raise ValueError("target_slot must be timezone-aware")
+    return target_slot.astimezone(operator_timezone()).date()
+
+
 __all__ = [
     "DEFAULT_PREWARM_LEAD_S",
+    "local_date_for_slot",
+    "local_wall_time",
     "midnight_utc_ticks",
     "operator_timezone",
 ]

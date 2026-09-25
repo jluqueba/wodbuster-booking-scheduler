@@ -39,8 +39,10 @@ that walk so both the executor and the picker read it the same way.
 from __future__ import annotations
 
 import re
+from calendar import monthrange
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from typing import Any, Literal
 
 # Enumerated string values observed in Phase 0. Kept as a Literal so
@@ -51,6 +53,12 @@ ClassStatus = Literal[
     "Avisable",  # full — "notify me" available
     "Unknown",  # any other / missing status value
 ]
+
+# What a past class says about the operator (ADR-0013). One value per
+# upstream athlete list. The "removed after the class began" category of
+# ADR-0015 is derived from 'cancelled' plus a state instant, not stored
+# here, so this vocabulary keeps saying only what WodBuster said.
+AttendanceState = Literal["attended", "cancelled", "no_show"]
 
 
 @dataclass(frozen=True)
@@ -308,6 +316,168 @@ def _athlete_is_operator(athlete: Any, guid: str, raw: str) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Attendance history (ADR-0013)
+# ---------------------------------------------------------------------------
+#
+# The same ``Data[].Valores[].Valor`` walk, read for a different purpose:
+# not "can I book this" but "what did I end up doing". A past class
+# carries three athlete lists, and which one the operator sits in is the
+# whole signal:
+#
+# - ``AtletasEntrenando`` — trained.
+# - ``AtletasBorradosVisibles`` — removed. The client bundle renders it
+#   with the CSS class ``noentrenandoBorrados``.
+# - ``AtletasNoEntrenandoVisibles`` — marked absent by a coach through
+#   ``calendario_noentreno.ashx``. Rendered as ``noentrenando``. The
+#   control is gated on ``MostrarAsistencia``, so at a gym with it
+#   disabled this list stays empty and an absence arrives as a removal
+#   instead (ADR-0015, Decision 5 handles that at read time).
+#
+# Each athlete entry also carries ``FechaEstado``, the instant the state
+# was set: when the booking was made for a trained class, when the
+# removal happened for a removed one.
+
+_ATTENDANCE_LIST_STATES: tuple[tuple[str, AttendanceState], ...] = (
+    # Order is precedence, not preference. An operator who booked,
+    # removed themselves and booked again can appear in two lists; the
+    # attending list is the one that describes how the class ended.
+    ("AtletasEntrenando", "attended"),
+    ("AtletasNoEntrenandoVisibles", "no_show"),
+    ("AtletasBorradosVisibles", "cancelled"),
+)
+
+_FECHA_ESTADO_FORMAT = "%d/%m/%Y %H:%M:%S"
+
+
+@dataclass(frozen=True)
+class OperatorClassState:
+    """What one past class says about the signed-in operator.
+
+    Deliberately has no field able to hold another athlete's identity.
+    The upstream entries carry ``DisplayName``, ``Url`` and ``UrlFoto``
+    for every athlete in the class; none of them reaches this object,
+    which is the storage-boundary expression of the data minimisation
+    decision in ADR-0013.
+
+    ``state_changed_at`` is naive: ``FechaEstado`` carries no timezone,
+    and attaching one is the caller's job, where the operator timezone
+    is already resolved.
+    """
+
+    class_id: int
+    class_name: str
+    class_type_id: int | None
+    hora_comienzo: str  # HH:MM
+    state: AttendanceState
+    state_changed_at: datetime | None
+    reservation_type: str | None
+    capacity: int | None
+    occupancy: int
+    ever_full: bool
+
+
+def _is_wall_time(value: str) -> bool:
+    """True when ``value`` is a real ``HH:MM`` or ``HH:MM:SS`` clock time.
+
+    Checking the shape is not enough. The previous version accepted any
+    string with a colon in third position, so ``"99:99:00"`` reached
+    persistence and raised there, taking the whole day's capture down
+    with it instead of skipping one malformed class.
+    """
+    head = value.strip()[:5]
+    if len(head) != 5 or head[2] != ":":
+        return False
+    hours, _, minutes = head.partition(":")
+    if not (hours.isdigit() and minutes.isdigit()):
+        return False
+    return 0 <= int(hours) <= 23 and 0 <= int(minutes) <= 59
+
+
+def parse_fecha_estado(value: Any) -> datetime | None:
+    """Parse an upstream ``FechaEstado`` into a naive datetime.
+
+    Returns ``None`` for a missing, non-string or unparseable value. A
+    record without it still counts in the abandonment rate; it is only
+    excluded from the cancellation lead-time bands, so failing softly
+    here loses less than raising would.
+    """
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.strptime(value.strip(), _FECHA_ESTADO_FORMAT)
+    except ValueError:
+        return None
+
+
+def read_operator_states(payload: dict[str, Any], *, operator_idu: str) -> list[OperatorClassState]:
+    """Return one entry per class of this day where the operator appears.
+
+    Walks every class instance once. A class where the operator is in
+    none of the three lists yields nothing, which is a legitimate
+    outcome and not an error: it is how a day the gym was open and the
+    operator did not train is recorded.
+
+    Malformed instances are skipped rather than raising, matching
+    :func:`parse_class_instance`.
+    """
+    guid = operator_idu_to_guid(operator_idu)
+    raw = operator_idu.strip().lower()
+    states: list[OperatorClassState] = []
+
+    for valor in _iter_raw_valores(payload):
+        class_id = valor.get("Id")
+        if not isinstance(class_id, int) or isinstance(class_id, bool) or class_id <= 0:
+            continue
+        nombre = valor.get("Nombre")
+        if not isinstance(nombre, str) or not nombre.strip():
+            continue
+        hora = valor.get("HoraComienzo")
+        if not isinstance(hora, str) or not _is_wall_time(hora):
+            continue
+
+        entry, state = _find_operator_entry(valor, guid, raw)
+        if entry is None or state is None:
+            continue
+
+        attending = valor.get("AtletasEntrenando")
+        states.append(
+            OperatorClassState(
+                class_id=class_id,
+                class_name=nombre.strip(),
+                class_type_id=_optional_int(valor.get("IdTipoEntrenamiento")),
+                hora_comienzo=hora[:5],
+                state=state,
+                state_changed_at=parse_fecha_estado(entry.get("FechaEstado")),
+                reservation_type=_optional_str(entry.get("TipoReserva")),
+                capacity=_optional_int(valor.get("Plazas")),
+                occupancy=len(attending) if isinstance(attending, list) else 0,
+                ever_full=valor.get("AlgunMomentoLlena") is True,
+            )
+        )
+    return states
+
+
+def _find_operator_entry(
+    valor: dict[str, Any], guid: str, raw: str
+) -> tuple[dict[str, Any] | None, AttendanceState | None]:
+    """Return the operator's own athlete entry and the state it implies."""
+    for field, state in _ATTENDANCE_LIST_STATES:
+        candidates = valor.get(field)
+        if not isinstance(candidates, list):
+            continue
+        for athlete in candidates:
+            if isinstance(athlete, dict) and _athlete_is_operator(athlete, guid, raw):
+                return athlete, state
+    return None, None
+
+
+def _optional_str(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
 def _iter_raw_valores(payload: dict[str, Any]) -> Iterator[dict[str, Any]]:
     """Yield each raw ``Valor`` object under ``Data[].Valores[]``."""
     data = payload.get("Data")
@@ -325,15 +495,133 @@ def _iter_raw_valores(payload: dict[str, Any]) -> Iterator[dict[str, Any]]:
 
 
 __all__ = [
+    "AttendanceState",
     "ClassSlot",
     "ClassStatus",
+    "OperatorClassState",
     "SlotEnrollment",
     "extract_class_slots",
     "extract_seconds_until_publication",
     "find_matching_slot",
     "operator_idu_to_guid",
     "parse_class_instance",
+    "parse_fecha_estado",
     "parse_self_idu",
+    "read_operator_states",
     "read_target_enrollment",
     "wodbuster_avatar_url",
 ]
+
+
+# The points page identifies its fields with ASP.NET control ids. The
+# ``body_ctl00_`` prefix is generated by the page's control tree, so the
+# suffix is matched rather than the whole id: a gym whose page nests the
+# controls differently still resolves.
+_PAID_UNTIL_RE = re.compile(
+    r'id="[^"]*CtlPagadoHasta"[^>]*>\s*([0-3]?\d/[01]?\d/\d{4})\s*<', re.IGNORECASE
+)
+_PERIOD_TEXT_RE = re.compile(r'id="[^"]*CtlPeriodo"[^>]*>\s*([^<]*)<', re.IGNORECASE)
+_BALANCE_RE = re.compile(r'data-id="puntosReserva"[^>]*>\s*(\d+)\s*<', re.IGNORECASE)
+
+# Month names are read only to confirm that the derived period matches
+# the one the gym printed. They never produce the dates themselves, so a
+# page served in a language absent from this table degrades to the
+# weaker day-only check rather than to a wrong range.
+_MONTH_NAMES: dict[str, int] = {
+    name: index
+    for index, names in enumerate(
+        (
+            ("enero", "january"),
+            ("febrero", "february"),
+            ("marzo", "march"),
+            ("abril", "april"),
+            ("mayo", "may"),
+            ("junio", "june"),
+            ("julio", "july"),
+            ("agosto", "august"),
+            ("septiembre", "setiembre", "september"),
+            ("octubre", "october"),
+            ("noviembre", "november"),
+            ("diciembre", "december"),
+        ),
+        start=1,
+    )
+    for name in names
+}
+
+
+@dataclass(frozen=True)
+class PointsSummary:
+    """What the gym's own points page states about this athlete.
+
+    Both fields are read, never derived. The balance in particular is
+    published by the gym, which is why the statistics page shows it as a
+    fact while everything it computes about points stays an estimate
+    (ADR-0015).
+
+    ``period`` is ``None`` when the page's own wording does not confirm
+    the derived range, because offering a wrong billing period is worse
+    than offering none (FR-031).
+    """
+
+    balance: int | None
+    period: tuple[date, date] | None
+
+
+def read_points_summary(html: str) -> PointsSummary:
+    """Read the points balance and the billing period from the page.
+
+    The period end comes from the numeric "paid until" date rather than
+    from the printed sentence, so the range does not depend on a
+    localized month name. The start is derived as the day after the same
+    point one month earlier, and is accepted only when the printed
+    sentence agrees with it. A tariff that is not monthly therefore
+    yields no period instead of a plausible-looking wrong one.
+    """
+    balance_match = _BALANCE_RE.search(html)
+    balance = int(balance_match.group(1)) if balance_match else None
+
+    paid_until = _PAID_UNTIL_RE.search(html)
+    if paid_until is None:
+        return PointsSummary(balance=balance, period=None)
+    try:
+        end = datetime.strptime(paid_until.group(1), "%d/%m/%Y").date()
+    except ValueError:
+        return PointsSummary(balance=balance, period=None)
+
+    start = _day_after_one_month_earlier(end)
+    printed = _PERIOD_TEXT_RE.search(html)
+    if printed is None or not _period_matches(printed.group(1), start, end):
+        return PointsSummary(balance=balance, period=None)
+    return PointsSummary(balance=balance, period=(start, end))
+
+
+def _day_after_one_month_earlier(end: date) -> date:
+    """Return the first day of the period ending on ``end``.
+
+    The day is clamped to the length of the earlier month so a period
+    ending on the 31st does not ask for a 31st that does not exist.
+    """
+    year, month = (end.year, end.month - 1) if end.month > 1 else (end.year - 1, 12)
+    day = min(end.day, monthrange(year, month)[1])
+    return date(year, month, day) + timedelta(days=1)
+
+
+def _period_matches(printed: str, start: date, end: date) -> bool:
+    """Check the derived range against the sentence the gym printed.
+
+    The days are digits and are always checked. The months are words:
+    when both are recognised they are checked too, which is what catches
+    a non-monthly tariff whose day numbers happen to line up.
+    """
+    days = [int(value) for value in re.findall(r"\d{1,2}", printed)]
+    if days[:2] != [start.day, end.day]:
+        return False
+    months = [
+        _MONTH_NAMES[word]
+        for word in re.findall(r"[^\W\d_]+", printed.lower(), flags=re.UNICODE)
+        if word in _MONTH_NAMES
+    ]
+    if len(months) != 2:
+        return True
+    return months == [start.month, end.month]

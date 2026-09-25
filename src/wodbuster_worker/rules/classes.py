@@ -8,9 +8,14 @@ text. Phase 0's ``LoadClass.ashx`` response exposes two arrays:
   the day, with fields ``NombreE`` for the class type name and
   ``Hora`` for the ``HH:MM:SS`` start time). Populated when the
   server returns the unfiltered view.
-- ``Data`` — the operator's own slots for the queried week. Each
-  entry carries ``Nombre`` and ``HoraComienzo``. Populated whenever
-  the operator has enrolled bookings.
+- ``Data`` — every class the gym runs on the queried day, each entry
+  carrying ``Nombre`` and ``HoraComienzo``. One call covers one day;
+  the picker below probes seven ticks precisely because of that.
+  Historically described here as "the operator's own slots for the
+  queried week", which is wrong on both counts and misled a reviewer
+  into reading the statistics capture as attributing a week's classes
+  to one date. The day scope was established by the spike recorded in
+  ADR-0013 and is asserted against a year of captured history.
 
 Historically we only read ``ClasesFiltradas``. Empirically it can
 come back empty depending on the operator's session state and

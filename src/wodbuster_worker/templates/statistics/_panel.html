@@ -1,0 +1,357 @@
+{# Statistics panel: one calendar month.
+
+   A calendar rather than a bar chart because the question is "what did
+   I do that day", which has one answer per day. A bar chart of ones and
+   zeros answers only "did I train", so a day the user booked and then
+   dropped renders identically to a day they did nothing, which is the
+   opposite of what this feature exists to show.
+
+   It is a real table, so it is also the accessible representation of
+   its own numbers (FR-034): no canvas, no parallel text version, and
+   nothing that disappears if a script fails to load. Every cell states
+   its outcome in words as well as in colour, so the grid is readable
+   without colour perception.
+#}
+<section class="wb-stats">
+  {% if capture_notice %}
+    <p class="wb-stats__alert">
+      {{ capture_notice }}
+      <a href="{{ cookie_url }}">{{ t("statistics.capture.cookie_link") }}</a>
+    </p>
+  {% endif %}
+  {% if not has_gym %}
+    <p class="wb-stats__empty">{{ t("statistics.no_gym") }}</p>
+  {% elif never_captured %}
+    <p class="wb-stats__empty">{{ t("statistics.empty.never_captured") }}</p>
+  {% else %}
+    {% if no_activity_ever %}
+      <p class="wb-stats__empty">{{ t("statistics.empty.no_activity_ever") }}</p>
+    {% endif %}
+    <div class="wb-stats__tiles">
+      <div class="wb-stat-tile">
+        <span class="wb-stat-tile__value">{{ calendar.attended }}</span>
+        <span class="wb-stat-tile__label">{{ t("statistics.attended.tile") }}</span>
+        <span class="wb-stat-tile__hint">{{ month_label }}</span>
+      </div>
+      <div class="wb-stat-tile">
+        {# A rate over nothing is unknown, not zero: reporting perfect
+           behaviour to someone who booked nothing is worse than a
+           dash. #}
+        <span class="wb-stat-tile__value">
+          {%- if abandonment.percent is none -%}—{%- else -%}{{ abandonment.percent }}%{%- endif -%}
+        </span>
+        <span class="wb-stat-tile__label">{{ t("statistics.abandonment.tile") }}</span>
+        <span class="wb-stat-tile__hint">
+          {%- if abandonment.percent is none -%}
+            {{ t("statistics.abandonment.none") }}
+          {%- else -%}
+            {{ t("statistics.abandonment.of",
+                  dropped=abandonment.cancelled,
+                  booked=abandonment.booked) }}
+          {%- endif -%}
+        </span>
+      </div>
+      {% if calendar.swapped %}
+        <div class="wb-stat-tile">
+          <span class="wb-stat-tile__value">{{ calendar.swapped }}</span>
+          <span class="wb-stat-tile__label">{{ t("statistics.swapped.tile") }}</span>
+          <span class="wb-stat-tile__hint">{{ t("statistics.swapped.hint") }}</span>
+        </div>
+      {% endif %}
+      {% if abandonment.no_show or abandonment.removed_after_start %}
+        <div class="wb-stat-tile">
+          <span class="wb-stat-tile__value">
+            {{- abandonment.no_show + abandonment.removed_after_start -}}
+          </span>
+          <span class="wb-stat-tile__label">{{ t("statistics.absent.tile") }}</span>
+          <span class="wb-stat-tile__hint">{{ t("statistics.absent.hint") }}</span>
+        </div>
+      {% endif %}
+    </div>
+
+    {% if streak_cards %}
+      {# Streaks read the whole history, not the month on screen, so
+         they sit apart from the month tiles. Mixing them would invite
+         the reader to reconcile a run against a calendar that does not
+         contain all of it. #}
+      <section class="wb-streaks">
+        <div class="wb-stats__tiles">
+          {% for card in streak_cards %}
+            <div class="wb-stat-tile wb-stat-tile--streak">
+              <span class="wb-stat-tile__value">{{ card.value }}</span>
+              <span class="wb-stat-tile__label">{{ card.label }}</span>
+              {% if card.hint %}
+                <span class="wb-stat-tile__hint">{{ card.hint }}</span>
+              {% endif %}
+              {% if card.provisional %}
+                <span class="wb-stat-tile__hint">{{ t("statistics.streak.provisional") }}</span>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+        <p class="wb-muted wb-note">
+          {{ t("statistics.streak.rule") }}
+          {% if excluded_weekday_labels %}
+            {{ t("statistics.streak.excluded", days=excluded_weekday_labels | join(", ")) }}
+          {% endif %}
+          <a href="{{ lang_url('/profile') }}">{{ t("statistics.streak.excluded_link") }}</a>
+        </p>
+      </section>
+    {% endif %}
+
+    {% if bands.total %}
+      {# The bands answer what the rate cannot: a drop three days out
+         and one two hours out cost the user different things. #}
+      <section class="wb-bands">
+        <h2 class="wb-bands__title">{{ t("statistics.bands.title") }}</h2>
+        <ul class="wb-bands__list">
+          {% for band in band_labels %}
+            <li class="wb-bands__item wb-bands__item--{{ band.kind }}">
+              <span class="wb-bands__count">{{ band.count }}</span>
+              <span class="wb-bands__label">{{ band.label }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+        {% if bands.unknown_lead %}
+          <p class="wb-bands__note">
+            {{ t("statistics.bands.unknown", count=bands.unknown_lead) }}
+          </p>
+        {% endif %}
+      </section>
+    {% endif %}
+
+    {# One selector for every chart. Per-chart windows were rejected:
+       a heatmap over a year beside a rate over a month invites the
+       reader to cross two figures that do not describe the same
+       thing. The calendar below keeps its own month, because a
+       calendar is a month. #}
+    <section class="wb-charts">
+      <form class="wb-periods" method="get" action="{{ lang_url('/statistics') }}">
+        <input type="hidden" name="month" value="{{ month.key }}">
+        <span class="wb-periods__label">{{ t("statistics.period.label") }}</span>
+        {% for key, label in period_options %}
+          {% if key == period.key %}
+            <span class="wb-periods__current" aria-current="true">{{ label }}</span>
+          {% else %}
+            <button type="submit" name="period" value="{{ key }}" class="wb-periods__option">
+              {{- label -}}
+            </button>
+          {% endif %}
+        {% endfor %}
+      </form>
+
+      {% if points %}
+        {# The balance is a fact the gym publishes and the penalties are
+           derived from instants it recorded. The base cost is neither,
+           so it travels as a range with its reasons attached: INV-004
+           is enforced here by keeping the label and the assumptions in
+           the same block as the figure. #}
+        <section class="wb-points">
+          <h2 class="wb-points__title">{{ t("statistics.points.title") }}</h2>
+          <div class="wb-stats__tiles">
+            {% if points_balance is not none %}
+              <div class="wb-stat-tile">
+                <span class="wb-stat-tile__value">{{ points_balance }}</span>
+                <span class="wb-stat-tile__label">{{ t("statistics.points.balance.tile") }}</span>
+                <span class="wb-stat-tile__hint">{{ t("statistics.points.balance.hint") }}</span>
+              </div>
+            {% endif %}
+            <div class="wb-stat-tile">
+              <span class="wb-stat-tile__value">{{ points.penalties }}</span>
+              <span class="wb-stat-tile__label">{{ t("statistics.points.penalties.tile") }}</span>
+              <span class="wb-stat-tile__hint">{{ t("statistics.points.penalties.hint") }}</span>
+            </div>
+            <div class="wb-stat-tile wb-stat-tile--streak">
+              <span class="wb-stat-tile__value">
+                {%- if points.is_range -%}
+                  {{ t("statistics.points.estimate.range",
+                        low=points.total_low, high=points.total_high) }}
+                {%- else -%}
+                  {{ t("statistics.points.estimate.exact", low=points.total_low) }}
+                {%- endif -%}
+              </span>
+              <span class="wb-stat-tile__label">
+                {{ t("statistics.points.estimate.tile") }}
+                <span class="wb-tag">{{ t("statistics.points.estimate.label") }}</span>
+              </span>
+              <span class="wb-stat-tile__hint">{{ period_label }}</span>
+            </div>
+            {% if pace and pace.per_week is not none %}
+              <div class="wb-stat-tile">
+                <span class="wb-stat-tile__value">{{ "%.1f" | format(pace.per_week) }}</span>
+                <span class="wb-stat-tile__label">{{ t("statistics.pace.tile") }}</span>
+                <span class="wb-stat-tile__hint">
+                  {%- if pace.previous_per_week is none -%}
+                    {{ t("statistics.pace.no_previous") }}
+                  {%- else -%}
+                    {{ t("statistics.pace.previous",
+                          value="%.1f" | format(pace.previous_per_week)) }}
+                  {%- endif -%}
+                </span>
+              </div>
+            {% endif %}
+          </div>
+
+          <ul class="wb-points__counts">
+            {% if points.class_changes %}
+              <li>{{ t("statistics.points.counts.changes", count=points.class_changes) }}</li>
+            {% endif %}
+            {% if points.recovered_bookings %}
+              <li>{{ t("statistics.points.counts.recovered", count=points.recovered_bookings) }}</li>
+            {% endif %}
+            {% if points.absences %}
+              <li>
+                {{ t("statistics.points.counts.absences",
+                      no_shows=points.no_shows, removed=points.removed_after_start) }}
+              </li>
+            {% endif %}
+            {% if points.unknown_lead %}
+              <li>{{ t("statistics.points.counts.unknown", count=points.unknown_lead) }}</li>
+            {% endif %}
+          </ul>
+
+          {% if points_assumptions %}
+            <h3 class="wb-points__subtitle">{{ t("statistics.points.assumptions.title") }}</h3>
+            <ul class="wb-points__assumptions">
+              {% for assumption in points_assumptions %}
+                <li>{{ assumption }}</li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </section>
+      {% endif %}
+
+      {% if occupancy.sessions %}
+        <p class="wb-charts__headline">
+          {{ t("statistics.occupancy.summary",
+                pct=(occupancy.average_fill * 100) | round | int,
+                full=occupancy.ever_full,
+                sessions=occupancy.sessions) }}
+        </p>
+      {% endif %}
+
+      {% for chart in charts %}
+        <figure class="wb-chart">
+          <figcaption class="wb-chart__head">
+            <span class="wb-chart__title">{{ chart.title }}</span>
+            <span class="wb-chart__hint">{{ chart.hint }} {{ period_label }}</span>
+          </figcaption>
+          {% if chart.payload.is_empty %}
+            <p class="wb-chart__empty">{{ t("statistics.chart.empty") }}</p>
+          {% else %}
+            <div class="wb-chart__canvas wb-chart__canvas--{{ chart.size }}">
+              <canvas id="{{ chart.id }}"
+                      role="img"
+                      aria-label="{{ chart.title }}. {{ chart.hint }}"
+                      data-wb-chart="{{ chart.id }}-data"></canvas>
+            </div>
+            {# A canvas is opaque to assistive technology and vanishes
+               if the library does not load, so the same numbers are
+               always here as markup. #}
+            <details class="wb-chart__data">
+              <summary>{{ t("statistics.chart.show_data") }}</summary>
+              <div class="wb-table-wrap">
+                <table class="wb-rules-table">
+                  <thead>
+                    <tr>
+                      {% for column in chart.columns %}<th scope="col">{{ column }}</th>{% endfor %}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for label, value in chart.rows %}
+                      <tr>
+                        <th scope="row">{{ label }}</th>
+                        <td>{{ value }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+            <script type="application/json" id="{{ chart.id }}-data">
+              {{ chart.payload.as_dict() | tojson }}
+            </script>
+          {% endif %}
+        </figure>
+      {% endfor %}
+    </section>
+
+    {# A plain GET form: picking a date and submitting works with the
+       date picker, with a typed value, and with no JavaScript. The
+       picker carries its own month and year navigation, so a pair of
+       step arrows beside it would be two mechanisms for one job. #}
+    <form class="wb-monthjump" method="get" action="{{ lang_url('/statistics') }}">
+      <h2 class="wb-monthjump__heading">{{ month_label }}</h2>
+      <label class="wb-monthjump__label" for="statistics-month">
+        {{ t("statistics.month.jump_label") }}
+      </label>
+      <input
+        type="text"
+        id="statistics-month"
+        name="month"
+        class="wb-date-flatpickr wb-monthjump__input"
+        value="{{ month.start.isoformat() }}"
+        data-fp-min="{{ month.oldest.isoformat() }}"
+        data-fp-max="{{ month.newest.isoformat() }}"
+        data-fp-submit="1"
+        inputmode="numeric"
+        autocomplete="off"
+      >
+      {# Only rendered when scripting is off. With the picker loaded the
+         form submits on selection, so a confirm button would be a
+         second click for nothing; without it, a lone text field can
+         only be submitted by pressing Enter, which nobody guesses. #}
+      <noscript>
+        <button type="submit" class="wb-btn wb-btn--primary wb-monthjump__go">
+          {{- t("statistics.month.jump") -}}
+        </button>
+      </noscript>
+    </form>
+
+    <div class="wb-table-wrap">
+      <table class="wb-calendar">
+        <caption class="wb-calendar__caption">{{ month_label }}</caption>
+        <thead>
+          <tr>
+            {% for label in weekday_labels %}
+              <th scope="col"><abbr title="{{ label.long }}">{{ label.short }}</abbr></th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for week in calendar.weeks %}
+            <tr>
+              {% for cell in week %}
+                {% if cell is none %}
+                  <td class="wb-calendar__pad"></td>
+                {% else %}
+                  <td class="wb-calendar__day wb-calendar__day--{{ cell.status }}">
+                    <time datetime="{{ cell.day.isoformat() }}">{{ cell.day.day }}</time>
+                    {% for line in cell_lines[cell.day.isoformat()] %}
+                      <span class="wb-calendar__line wb-calendar__line--{{ line.kind }}">
+                        {{- line.text -}}
+                      </span>
+                    {% endfor %}
+                  </td>
+                {% endif %}
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <ul class="wb-legend">
+      {% for key, label in legend %}
+        <li class="wb-legend__item">
+          <span class="wb-legend__swatch wb-legend__swatch--{{ key }}" aria-hidden="true"></span>
+          {{ label }}
+        </li>
+      {% endfor %}
+    </ul>
+
+    {% if unread_days %}
+      <p class="wb-stats__recency">{{ t("statistics.still_reading", days=unread_days) }}</p>
+    {% endif %}
+  {% endif %}
+</section>

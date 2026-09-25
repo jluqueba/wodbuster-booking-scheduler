@@ -1,0 +1,504 @@
+{# Statistics page (Attendance Statistics, slice 1).
+
+   No charting library is loaded here. The one visual this page shows is
+   a calendar, which is a table and not a chart: it needs no canvas, no
+   zoom and no 219 KB of JavaScript. ADR-0014 still stands and its pins
+   are recorded there; Chart.js arrives with the first metric that
+   genuinely needs it, the weekday by hour grid in a later slice.
+#}
+{% extends "base.html" %}
+
+{% block title %}{{ t("statistics.title") }} — WodBuster Booking Scheduler{% endblock %}
+
+{% block body_class %}wb-body--wide{% endblock %}
+
+{% block nav %}
+  {% set active_nav = "statistics" %}
+  {% include "_nav.html" %}
+{% endblock %}
+
+{% block head_extra %}
+{% include "_time_picker_script.html" %}
+<script
+  src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"
+  integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ"
+  crossorigin="anonymous"
+  defer
+></script>
+<script
+  src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"
+  integrity="sha384-dwwI6ICEN/0ZQlS5owhUa/6ZzvwUPmjH45bFVCAcjgjTulbHJvlE+TGU3g1k0N3R"
+  crossorigin="anonymous"
+  defer
+></script>
+<script
+  src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@3.1.0/dist/chartjs-chart-matrix.min.js"
+  integrity="sha384-Hh/MCM+3iQXRFUJvnuv7MmFpbVQ3biiOR8WRrhkzCFZRwvfe4QQEix4qCHIVyWNI"
+  crossorigin="anonymous"
+  defer
+></script>
+<script src="/static/wb-charts.js" defer></script>
+<style>
+  .wb-stats__tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.75rem;
+  }
+  .wb-stat-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 1.1rem 1.35rem;
+    background: var(--wb-bg-card);
+    border: 1px solid var(--wb-border);
+    border-radius: var(--wb-radius);
+  }
+  .wb-stat-tile__value {
+    font-size: 2.4rem;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--wb-accent);
+  }
+  .wb-stat-tile__label {
+    font-size: 1rem;
+    color: var(--wb-text);
+  }
+  .wb-stat-tile__hint {
+    font-size: 0.85rem;
+    color: var(--wb-text-muted);
+  }
+  /* A streak reads as a sentence, not a single number, so it needs a
+     size that fits words without wrapping mid-tile. */
+  .wb-stat-tile--streak .wb-stat-tile__value {
+    font-size: 1.5rem;
+    line-height: 1.2;
+  }
+  .wb-streaks {
+    margin-top: 1.5rem;
+  }
+  .wb-points {
+    margin: 1.75rem 0;
+    padding: 1.25rem;
+    border: 1px solid var(--wb-border);
+    border-radius: var(--wb-radius);
+  }
+  .wb-points__title,
+  .wb-points__subtitle {
+    margin: 0 0 0.75rem;
+    font-size: 1.05rem;
+  }
+  .wb-points__subtitle {
+    margin-top: 1.25rem;
+  }
+  .wb-points__counts,
+  .wb-points__assumptions {
+    margin: 1rem 0 0;
+    padding-left: 1.1rem;
+    font-size: 0.9rem;
+    color: var(--wb-text-muted);
+  }
+  /* The estimate label sits against the figure, never in a footnote:
+     a points number that travels without it is the failure INV-004
+     exists to prevent. */
+  .wb-tag {
+    display: inline-block;
+    margin-left: 0.4rem;
+    padding: 0.1rem 0.45rem;
+    border: 1px solid var(--wb-border);
+    border-radius: 999px;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--wb-text-muted);
+  }
+
+  .wb-monthjump {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  .wb-monthjump__heading {
+    flex: 1 1 auto;
+    margin: 0;
+    font-size: 1.25rem;
+    color: var(--wb-text);
+    text-transform: capitalize;
+  }
+  .wb-monthjump__input.wb-monthjump__input {
+    width: auto;
+    min-width: 8.5rem;
+    max-width: 11rem;
+    height: 2.4rem;
+    margin: 0;
+  }
+  /* Flatpickr swaps the real input for a visible clone when altInput is
+     on, so the width rule has to reach the clone too. */
+  .wb-monthjump .form-control.input {
+    width: auto;
+    min-width: 8.5rem;
+    max-width: 11rem;
+  }
+  .wb-monthjump__label {
+    font-size: 0.85rem;
+    color: var(--wb-text-muted);
+    margin: 0;
+  }
+
+  .wb-periods {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 1rem;
+  }
+  .wb-periods__label {
+    font-size: 0.85rem;
+    color: var(--wb-text-muted);
+    margin-right: 0.25rem;
+  }
+  .wb-periods__option.wb-periods__option,
+  .wb-periods__current {
+    display: inline-flex;
+    align-items: center;
+    height: 2rem;
+    padding: 0 0.7rem;
+    border-radius: var(--wb-radius-sm);
+    border: 1px solid var(--wb-border-strong);
+    background: var(--wb-bg-inset);
+    color: var(--wb-text-muted);
+    font-size: 0.82rem;
+    font-family: inherit;
+    margin: 0;
+    width: auto;
+    cursor: pointer;
+  }
+  .wb-periods__option:hover {
+    border-color: var(--wb-accent);
+    color: var(--wb-text);
+  }
+  .wb-periods__current {
+    background: var(--wb-accent);
+    border-color: var(--wb-accent);
+    color: var(--wb-accent-ink);
+    cursor: default;
+  }
+
+  .wb-charts__headline {
+    margin: 0 0 1.25rem;
+    font-size: 0.95rem;
+    color: var(--wb-text-muted);
+  }
+  .wb-chart {
+    margin: 0 0 1.5rem;
+    padding: 1.1rem 1.35rem 1.35rem;
+    background: var(--wb-bg-card);
+    border: 1px solid var(--wb-border);
+    border-radius: var(--wb-radius);
+  }
+  .wb-chart__head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    margin-bottom: 0.85rem;
+  }
+  .wb-chart__title {
+    font-size: 1.05rem;
+    color: var(--wb-text);
+  }
+  .wb-chart__hint {
+    font-size: 0.82rem;
+    color: var(--wb-text-muted);
+  }
+  .wb-chart__canvas {
+    position: relative;
+    height: 15rem;
+  }
+  /* The grid needs room for seven rows; the lead bands only have
+     three bars and look stranded in a tall box. */
+  .wb-chart__canvas--tall {
+    height: 18rem;
+  }
+  .wb-chart__canvas--short {
+    height: 12rem;
+  }
+  .wb-chart__empty {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--wb-text-muted);
+  }
+  .wb-chart__data {
+    margin-top: 0.85rem;
+  }
+  .wb-chart__data summary {
+    font-size: 0.82rem;
+    color: var(--wb-text-muted);
+    cursor: pointer;
+  }
+
+  .wb-bands {
+    margin: 0 0 1.75rem;
+    padding: 1.1rem 1.35rem;
+    background: var(--wb-bg-card);
+    border: 1px solid var(--wb-border);
+    border-radius: var(--wb-radius);
+  }
+  .wb-bands__title {
+    font-size: 1.05rem;
+    margin: 0 0 0.85rem;
+    color: var(--wb-text);
+  }
+  .wb-bands__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 0.85rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .wb-bands__item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding-left: 0.75rem;
+    border-left: 3px solid var(--wb-border-strong);
+  }
+  /* Later notice, sharper colour: the tiers exist because they cost
+     the user progressively more. */
+  .wb-bands__item--early {
+    border-left-color: var(--wb-success);
+  }
+  .wb-bands__item--late {
+    border-left-color: var(--wb-warning);
+  }
+  .wb-bands__item--very_late {
+    border-left-color: var(--wb-danger);
+  }
+  .wb-bands__count {
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1.1;
+    color: var(--wb-text);
+  }
+  .wb-bands__label {
+    font-size: 0.85rem;
+    color: var(--wb-text-muted);
+  }
+  .wb-bands__note {
+    margin: 0.85rem 0 0;
+    font-size: 0.85rem;
+    color: var(--wb-text-muted);
+  }
+
+  .wb-calendar {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 4px;
+    table-layout: fixed;
+  }
+  .wb-calendar__caption {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .wb-calendar th {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--wb-text-subtle);
+    text-align: center;
+    padding-bottom: 0.2rem;
+  }
+  .wb-calendar th abbr {
+    text-decoration: none;
+    border: 0;
+  }
+  /* The default cell is "the gym was open and nothing was booked": a
+     plain card, clearly a day that counted. Closed and unread days are
+     deliberately drawn as absences rather than as empty opportunities. */
+  .wb-calendar__day {
+    position: relative;
+    height: 4.4rem;
+    vertical-align: top;
+    padding: 0.35rem 0.4rem;
+    border-radius: var(--wb-radius-sm);
+    border: 1px solid var(--wb-border-strong);
+    background: var(--wb-bg-card);
+    color: var(--wb-text);
+    font-size: 0.85rem;
+  }
+  .wb-calendar__pad {
+    height: 4.4rem;
+  }
+  /* One line per thing that happened, each coloured by its own kind.
+     The cell background says what the day mostly was; these say what
+     it actually held, which is what lets the reader add up the grid
+     and reach the same figures as the tiles. */
+  .wb-calendar__line {
+    display: block;
+    margin-top: 0.12rem;
+    font-size: 0.7rem;
+    line-height: 1.2;
+    color: var(--wb-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .wb-calendar__line--attended {
+    color: var(--wb-success);
+  }
+  .wb-calendar__line--cancelled {
+    color: var(--wb-danger);
+  }
+  .wb-calendar__line--swapped {
+    color: var(--wb-modified);
+  }
+  .wb-calendar__line--removed_after_start,
+  .wb-calendar__line--no_show {
+    color: var(--wb-warning);
+  }
+  .wb-calendar__day--attended {
+    background: rgba(74, 222, 128, 0.16);
+    border-color: var(--wb-success);
+  }
+  .wb-calendar__day--cancelled {
+    background: rgba(248, 113, 113, 0.16);
+    border-color: var(--wb-danger);
+  }
+  .wb-calendar__day--swapped {
+    background: rgba(192, 132, 252, 0.16);
+    border-color: var(--wb-modified);
+  }
+  .wb-calendar__day--removed_after_start,
+  .wb-calendar__day--no_show {
+    background: rgba(251, 191, 36, 0.16);
+    border-color: var(--wb-warning);
+  }
+  /* Closed: flat grey, no border emphasis. Nothing was possible. */
+  .wb-calendar__day--closed {
+    background: var(--wb-bg-inset);
+    border-color: var(--wb-border);
+    color: var(--wb-text-subtle);
+  }
+  /* Unread: hatched, so a gap in coverage never passes for a decision
+     the user made (INV-005). */
+  .wb-calendar__day--uncaptured {
+    background: repeating-linear-gradient(
+      45deg,
+      var(--wb-bg-inset),
+      var(--wb-bg-inset) 4px,
+      var(--wb-border) 4px,
+      var(--wb-border) 5px
+    );
+    border-color: var(--wb-border);
+    color: var(--wb-text-subtle);
+  }
+  /* Future: present for the shape of the month, empty of meaning. */
+  .wb-calendar__day--future {
+    background: transparent;
+    border-color: var(--wb-border);
+    color: var(--wb-text-subtle);
+  }
+
+  .wb-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.1rem;
+    list-style: none;
+    padding: 0;
+    margin: 1rem 0 0;
+    font-size: 0.85rem;
+    color: var(--wb-text-muted);
+  }
+  .wb-legend__item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .wb-legend__swatch {
+    width: 0.85rem;
+    height: 0.85rem;
+    border-radius: 3px;
+    border: 1px solid var(--wb-border-strong);
+    background: var(--wb-bg-card);
+  }
+  .wb-legend__swatch--attended {
+    background: rgba(74, 222, 128, 0.35);
+    border-color: var(--wb-success);
+  }
+  .wb-legend__swatch--cancelled {
+    background: rgba(248, 113, 113, 0.35);
+    border-color: var(--wb-danger);
+  }
+  .wb-legend__swatch--swapped {
+    background: rgba(192, 132, 252, 0.35);
+    border-color: var(--wb-modified);
+  }
+  .wb-legend__swatch--closed {
+    background: var(--wb-bg-inset);
+    border-color: var(--wb-border);
+  }
+  .wb-legend__swatch--uncaptured {
+    background: repeating-linear-gradient(
+      45deg,
+      var(--wb-bg-inset),
+      var(--wb-bg-inset) 3px,
+      var(--wb-border) 3px,
+      var(--wb-border) 4px
+    );
+    border-color: var(--wb-border);
+  }
+
+  .wb-stats__empty,
+  .wb-stats__recency {
+    color: var(--wb-text-muted);
+    font-size: 0.95rem;
+  }
+  .wb-stats__alert {
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.25rem;
+    border-radius: var(--wb-radius);
+    border-left: 4px solid var(--wb-warning);
+    background: rgba(251, 191, 36, 0.06);
+    color: var(--wb-text);
+    font-size: 0.95rem;
+  }
+  .wb-stats__recency {
+    margin-top: 1rem;
+  }
+
+  @media (max-width: 720px) {
+    .wb-calendar {
+      border-spacing: 2px;
+    }
+    .wb-calendar__day,
+    .wb-calendar__pad {
+      height: 3.8rem;
+      padding: 0.25rem;
+      font-size: 0.78rem;
+    }
+    .wb-calendar__line {
+      font-size: 0.58rem;
+    }
+    .wb-stat-tile__value {
+      font-size: 2rem;
+    }
+    .wb-monthjump__heading {
+      flex-basis: 100%;
+      font-size: 1.1rem;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+  <h1 class="wb-page-title">{{ t("statistics.title") }}</h1>
+  {% if gym_name %}
+    <p class="wb-page-subtitle">{{ t("statistics.subtitle", gym=gym_name) }}</p>
+  {% endif %}
+  {% include "statistics/_panel.html" %}
+{% endblock %}

@@ -8,6 +8,20 @@
   {% include "_nav.html" %}
 {% endblock %}
 
+{% block head_extra %}
+<style>
+  /* Seven weekdays read as a row of chips, not as seven stacked lines. */
+  .wb-weekdays {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 1.2rem;
+  }
+  .wb-weekdays .wb-checkbox {
+    margin: 0;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
   <h1 class="wb-page-title">{{ t("profile.title") }}</h1>
   <p class="wb-page-subtitle">{{ t("profile.subtitle") }}</p>
@@ -78,6 +92,19 @@
         {{ t("profile.email_pref.session_alerts") }}
       </label>
       <p class="wb-muted wb-note">{{ t("profile.email_prefs_note") }}</p>
+    </fieldset>
+
+    <fieldset class="wb-streak-days">
+      <legend>{{ t("profile.streak_days.legend") }}</legend>
+      <p class="wb-muted wb-note">{{ t("profile.streak_days.note") }}</p>
+      <div class="wb-weekdays">
+        {% for option in weekday_options %}
+          <label class="wb-checkbox">
+            <input type="checkbox" name="excluded_weekdays" value="{{ option.value }}" {% if option.value in excluded_weekdays %}checked{% endif %}>
+            {{ option.label }}
+          </label>
+        {% endfor %}
+      </div>
     </fieldset>
 
     <button type="submit" class="wb-btn wb-btn--primary">{{- t("profile.save") -}}</button>

@@ -92,6 +92,14 @@ _ALERT_KINDS = (
     "booking_fallback",
 )
 _NOTIFICATION_KINDS = ("telegram", "banner", "email")
+# What the gym calendar said about the operator for one past class
+# (ADR-0013, Decision 3). These are the three upstream athlete lists,
+# stored verbatim. The "removed after the class began" category from
+# ADR-0015 Decision 5 is deliberately NOT a value here: it is derived at
+# read time from 'cancelled' plus a state instant at or after the class
+# start, so the stored row keeps saying what WodBuster said and the
+# interpretation can change without a migration.
+_ATTENDANCE_STATES = ("attended", "cancelled", "no_show")
 # Communication language for the operator (User Profile, ADR-0008). Governs
 # Telegram message rendering and the signed-in web default.
 _LANGUAGES = ("es", "en")
@@ -150,6 +158,16 @@ class OperatorProfile(Base):
         nullable=False,
         server_default="en",
     )
+    # Weekdays that never break a training streak for this user
+    # (Attendance Statistics FR-037), as a JSONB list of integers with
+    # Monday as 0. Applies to every gym account the user owns: a gym's
+    # own closing days need no configuration, because a day on which the
+    # gym ran no classes never breaks a streak (ADR-0015, Decision 1).
+    statistics_excluded_weekdays: Mapped[list[int]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'::jsonb"),
+    )
     # Optional until the operator binds Telegram via /start (US-007).
     telegram_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -181,6 +199,13 @@ class GymAccount(Base):
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
     idu: Mapped[str] = mapped_column(String(64), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.true())
+    # Per-gym override of the points economy used by the statistics
+    # estimate (Attendance Statistics FR-038). NULL means "use the
+    # application defaults from config". Nullable with no server default
+    # so the migration touches no existing row, and so a gym that never
+    # published its rules is distinguishable from one that matches the
+    # defaults.
+    points_model: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -556,8 +581,122 @@ class NotificationOutbox(Base):
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
 
 
+class AttendanceDay(Base):
+    """Capture ledger: one row per gym account and local calendar day.
+
+    Written whether or not the operator had any activity that day, which
+    is what makes three cases distinguishable (ADR-0013, Decision 3 and
+    INV-005 of the spec):
+
+    - no row at all: the day has never been read from the gym calendar;
+    - a row with ``class_count == 0``: the gym ran nothing that day, so
+      the day cannot break a training streak (ADR-0015, Decision 1);
+    - a row with ``class_count > 0`` and no attendance record: the gym
+      ran classes and the operator attended none of them.
+
+    ``is_final`` is true once the local day has ended. A final day is
+    never fetched again, because a finished class never changes. Today
+    is captured provisionally and re-read on the next visit, which is
+    also what lets a coach's later change correct itself.
+    """
+
+    __tablename__ = "attendance_day"
+    __table_args__ = (
+        UniqueConstraint("gym_account_id", "local_date", name="uq_attendance_day_gym_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    gym_account_id: Mapped[int] = mapped_column(
+        ForeignKey("gym_account.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Operator-local calendar day, resolved with the same timezone rules
+    # the scheduler uses, so a DST transition never duplicates or skips
+    # a day.
+    local_date: Mapped[date] = mapped_column(Date, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # How many class instances the gym ran that day, across all athletes.
+    # Not the operator's count: this is the "was the gym open" signal.
+    class_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_final: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.false())
+
+
+class AttendanceRecord(Base):
+    """One class instance where the operator appears upstream (ADR-0013).
+
+    Only the operator is described. The upstream payload carries every
+    athlete's display name, profile link and photograph link for each
+    class; none of it is persisted, and this class has no column able to
+    hold it (INV-001). The two numbers that survive, ``occupancy`` and
+    ``capacity``, are anonymous aggregates.
+
+    ``state_changed_at`` is the upstream ``FechaEstado``. Its meaning
+    depends on the state: for ``attended`` it is when the booking was
+    made, for ``cancelled`` it is when the operator was removed. It is
+    nullable because a row with an unparseable instant still counts in
+    the abandonment rate and is merely excluded from the lead time
+    bands.
+    """
+
+    __tablename__ = "attendance_record"
+    __table_args__ = (
+        UniqueConstraint(
+            "gym_account_id",
+            "wodbuster_class_id",
+            name="uq_attendance_record_gym_class",
+        ),
+        Index("ix_attendance_record_gym_start", "gym_account_id", "start_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    gym_account_id: Mapped[int] = mapped_column(
+        ForeignKey("gym_account.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Denormalized from ``start_at`` so the streak walk and the range
+    # queries join the ledger on a plain DATE without a per-row
+    # timezone conversion.
+    local_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # The upstream class-instance ``Id``. Stable per class, which is what
+    # makes a repeated capture an idempotent upsert rather than a
+    # duplicate (ADR-0013, Decision 7).
+    wodbuster_class_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    # String(100) matches ``BookingOutcome.target_class`` exactly, so
+    # origin attribution compares like with like without truncation.
+    class_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Upstream ``IdTipoEntrenamiento``. Preferred over the name for
+    # grouping, because it survives a rename at the gym.
+    class_type_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state: Mapped[str] = mapped_column(
+        Enum(*_ATTENDANCE_STATES, name="attendance_state_enum", native_enum=True),
+        nullable=False,
+    )
+    state_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Upstream ``TipoReserva`` (for example "Tarifa"). Kept because the
+    # published points rules price some reservations differently and we
+    # cannot yet tell which.
+    reservation_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Upstream ``Plazas``. Nullable: observed absent on some instances.
+    capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Number of athletes in the attending list. A count, never a roster.
+    occupancy: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Upstream ``AlgunMomentoLlena``. Stored separately from occupancy
+    # because occupancy is a snapshot and this is the only reliable
+    # answer to "did this class fill up".
+    ever_full: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.false())
+
+
 __all__ = [
     "Alert",
+    "AttendanceDay",
+    "AttendanceRecord",
     "Base",
     "BookingOutcome",
     "CookieCredential",

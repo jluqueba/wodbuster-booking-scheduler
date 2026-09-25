@@ -80,6 +80,15 @@
         if (el.dataset.fpMinToday) {
           opts.minDate = 'today';
         }
+        // Explicit bounds, for pickers that navigate rather than book:
+        // the statistics month jump cannot offer a month outside the
+        // captured horizon.
+        if (el.dataset.fpMin) {
+          opts.minDate = el.dataset.fpMin;
+        }
+        if (el.dataset.fpMax) {
+          opts.maxDate = el.dataset.fpMax;
+        }
         flatpickr(el, opts);
         // altInput replaces the visible control with a plain clone that
         // carries no id/label association (the original input, which the
@@ -106,6 +115,22 @@
             el._flatpickr.set('minDate', selected[0] || null);
           });
         }
+      });
+      // Third pass: pickers that navigate rather than book submit their
+      // form on selection, so choosing a date is one gesture instead of
+      // select-then-confirm. The submit button stays in the markup for
+      // the no-JavaScript path. Wired here rather than as an inline
+      // handler, per the repo's event-attribute convention.
+      dateEls.forEach(function (el) {
+        if (!el.dataset.fpSubmit || !el._flatpickr) {
+          return;
+        }
+        el._flatpickr.config.onChange.push(function () {
+          var form = el.form || el.closest('form');
+          if (form) {
+            form.submit();
+          }
+        });
       });
     }
     if (document.readyState === 'loading') {
