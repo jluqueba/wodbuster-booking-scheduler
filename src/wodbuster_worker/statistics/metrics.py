@@ -32,6 +32,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
 from ..persistence.models import AttendanceRecord
+from ..scheduler.clock import operator_timezone
 
 # What the metric layer sees, after the reclassifications above. The
 # stored vocabulary has three values; the extra two are derived rather
@@ -69,6 +70,16 @@ class CountedRecord:
     state_changed_at: datetime | None
 
     @property
+    def local_start(self) -> datetime:
+        """The class start in the operator's own clock.
+
+        Stored instants are UTC, and every question the reader asks
+        about time ("do I train in the evening") is a question about
+        their own clock, not about UTC.
+        """
+        return self.start_at.astimezone(operator_timezone())
+
+    @property
     def cancellation_lead(self) -> timedelta | None:
         """How far before the class the operator removed themselves.
 
@@ -77,6 +88,19 @@ class CountedRecord:
         or after the start is a different state entirely.
         """
         if self.state != "cancelled" or self.state_changed_at is None:
+            return None
+        return self.start_at - self.state_changed_at
+
+    @property
+    def booking_lead(self) -> timedelta | None:
+        """How far before the class the booking was made.
+
+        The other end of the same interval as
+        :attr:`cancellation_lead`. For an attended class the upstream
+        state instant is when the booking happened, which is what the
+        gym charges a point for.
+        """
+        if self.state != "attended" or self.state_changed_at is None:
             return None
         return self.start_at - self.state_changed_at
 
@@ -260,6 +284,225 @@ def cancellation_bands(
 
 
 @dataclass(frozen=True)
+class GridCell:
+    """One weekday and class-time bucket of the training pattern."""
+
+    weekday: int  # 0 = Monday
+    slot: str  # HH:MM in the operator's clock
+    attended: int
+
+
+@dataclass(frozen=True)
+class SlotStats:
+    """What happens to the classes the operator books at one start time."""
+
+    slot: str
+    attended: int
+    cancelled: int
+
+    @property
+    def booked(self) -> int:
+        return self.attended + self.cancelled
+
+    @property
+    def drop_rate(self) -> float | None:
+        if not self.booked:
+            return None
+        return self.cancelled / self.booked
+
+
+@dataclass(frozen=True)
+class MonthPoint:
+    """One month of the attendance trend."""
+
+    year: int
+    month: int
+    attended: int
+    cancelled: int
+
+    @property
+    def key(self) -> str:
+        return f"{self.year:04d}-{self.month:02d}"
+
+
+@dataclass(frozen=True)
+class LeadBands:
+    """How far ahead bookings were made.
+
+    Separate from :class:`CancellationBands`, which measures the other
+    end of the same interval. Booking early costs a point at a gym that
+    charges for advance booking; cancelling late costs more.
+    """
+
+    same_day: int
+    within_day: int
+    early: int
+    unknown: int
+    free_hours: float
+
+    @property
+    def total(self) -> int:
+        return self.same_day + self.within_day + self.early + self.unknown
+
+
+@dataclass(frozen=True)
+class Occupancy:
+    """How full the classes the operator attended were.
+
+    ``ever_full`` counts the upstream flag rather than comparing
+    occupancy to capacity, because occupancy is a snapshot taken at
+    capture time and the flag is the only reliable answer to "did this
+    class fill up".
+    """
+
+    sessions: int
+    average_fill: float | None
+    ever_full: int
+
+    @property
+    def ever_full_share(self) -> float | None:
+        if not self.sessions:
+            return None
+        return self.ever_full / self.sessions
+
+
+def weekday_hour_grid(records: Sequence[CountedRecord]) -> tuple[GridCell, ...]:
+    """Return attended sessions per weekday and class start time.
+
+    Bucketed on the exact ``HH:MM`` the class starts, not on the hour
+    it falls in. A gym runs classes at half past as readily as on the
+    hour, and this one also runs a 10:40, so rounding to the hour
+    would merge distinct slots and, worse, label a 20:30 session as
+    20:00.
+
+    Only populated buckets are returned. The template lays out the
+    full grid, so an empty Sunday is a decision about presentation
+    rather than a row of zeros invented here.
+    """
+    counts: Counter[tuple[int, str]] = Counter()
+    for record in records:
+        if record.state != "attended":
+            continue
+        local = record.local_start
+        counts[(local.weekday(), local.strftime("%H:%M"))] += 1
+    return tuple(
+        GridCell(weekday=weekday, slot=slot, attended=count)
+        for (weekday, slot), count in sorted(counts.items(), key=lambda kv: (kv[0][1], kv[0][0]))
+    )
+
+
+def drop_rate_by_slot(
+    records: Sequence[CountedRecord], *, min_bookings: int = 1
+) -> tuple[SlotStats, ...]:
+    """Return the drop rate for each class start time.
+
+    ``min_bookings`` hides slots with too little history to mean
+    anything: one drop out of one booking is a 100 percent rate and a
+    meaningless one. The caller picks the floor, because what counts as
+    enough depends on how much history there is.
+    """
+    attended: Counter[str] = Counter()
+    cancelled: Counter[str] = Counter()
+    for record in records:
+        slot = record.local_start.strftime("%H:%M")
+        if record.state == "attended":
+            attended[slot] += 1
+        elif record.state == "cancelled":
+            cancelled[slot] += 1
+
+    slots = sorted(set(attended) | set(cancelled))
+    stats = [
+        SlotStats(slot=slot, attended=attended[slot], cancelled=cancelled[slot]) for slot in slots
+    ]
+    return tuple(stat for stat in stats if stat.booked >= min_bookings)
+
+
+def monthly_trend(records: Sequence[CountedRecord]) -> tuple[MonthPoint, ...]:
+    """Return attended and dropped classes per calendar month.
+
+    Months with no activity inside the span are present with zeros: a
+    month off is information, and compressing it would draw a flatter
+    picture than the truth.
+    """
+    attended: Counter[tuple[int, int]] = Counter()
+    cancelled: Counter[tuple[int, int]] = Counter()
+    for record in records:
+        key = (record.local_date.year, record.local_date.month)
+        if record.state == "attended":
+            attended[key] += 1
+        elif record.state == "cancelled":
+            cancelled[key] += 1
+
+    keys = set(attended) | set(cancelled)
+    if not keys:
+        return ()
+
+    first, last = min(keys), max(keys)
+    points: list[MonthPoint] = []
+    year, month = first
+    while (year, month) <= last:
+        points.append(
+            MonthPoint(
+                year=year,
+                month=month,
+                attended=attended[(year, month)],
+                cancelled=cancelled[(year, month)],
+            )
+        )
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+    return tuple(points)
+
+
+def booking_lead_bands(records: Sequence[CountedRecord], *, free_hours: float) -> LeadBands:
+    """Group attended bookings by how far ahead they were made.
+
+    The boundary that matters is the gym's own free window: booking
+    inside it costs nothing, booking earlier costs a point. The wider
+    bands above it exist to show whether the operator books days ahead
+    or the night before.
+    """
+    free_cut = timedelta(hours=free_hours)
+    day_cut = timedelta(days=1)
+    same_day = within_day = early = unknown = 0
+
+    for record in records:
+        if record.state != "attended":
+            continue
+        lead = record.booking_lead
+        if lead is None:
+            unknown += 1
+        elif lead < free_cut:
+            same_day += 1
+        elif lead < day_cut:
+            within_day += 1
+        else:
+            early += 1
+
+    return LeadBands(
+        same_day=same_day,
+        within_day=within_day,
+        early=early,
+        unknown=unknown,
+        free_hours=free_hours,
+    )
+
+
+def occupancy(records: Sequence[CountedRecord]) -> Occupancy:
+    """Return how full the attended classes were."""
+    attended = [record for record in records if record.state == "attended"]
+    fills = [
+        record.occupancy / record.capacity
+        for record in attended
+        if record.capacity and record.capacity > 0
+    ]
+    return Occupancy(
+        sessions=len(attended),
+        average_fill=sum(fills) / len(fills) if fills else None,
+        ever_full=sum(1 for record in attended if record.ever_full),
+    )
+
+
+@dataclass(frozen=True)
 class DayCell:
     """One day of the calendar, with everything a cell needs to render.
 
@@ -418,9 +661,19 @@ __all__ = [
     "CountedState",
     "DayCell",
     "DayStatus",
+    "GridCell",
+    "LeadBands",
+    "MonthPoint",
+    "Occupancy",
+    "SlotStats",
     "abandonment",
+    "booking_lead_bands",
     "cancellation_bands",
     "counted_records",
     "day_calendar",
+    "drop_rate_by_slot",
+    "monthly_trend",
+    "occupancy",
     "settle_cutoff",
+    "weekday_hour_grid",
 ]
