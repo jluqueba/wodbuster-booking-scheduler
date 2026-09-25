@@ -90,6 +90,81 @@
       </section>
     {% endif %}
 
+    {# One selector for every chart. Per-chart windows were rejected:
+       a heatmap over a year beside a rate over a month invites the
+       reader to cross two figures that do not describe the same
+       thing. The calendar below keeps its own month, because a
+       calendar is a month. #}
+    <section class="wb-charts">
+      <form class="wb-periods" method="get" action="{{ lang_url('/statistics') }}">
+        <input type="hidden" name="month" value="{{ month.key }}">
+        <span class="wb-periods__label">{{ t("statistics.period.label") }}</span>
+        {% for key, label in period_options %}
+          {% if key == period.key %}
+            <span class="wb-periods__current" aria-current="true">{{ label }}</span>
+          {% else %}
+            <button type="submit" name="period" value="{{ key }}" class="wb-periods__option">
+              {{- label -}}
+            </button>
+          {% endif %}
+        {% endfor %}
+      </form>
+
+      {% if occupancy.sessions %}
+        <p class="wb-charts__headline">
+          {{ t("statistics.occupancy.summary",
+                pct=(occupancy.average_fill * 100) | round | int,
+                full=occupancy.ever_full,
+                sessions=occupancy.sessions) }}
+        </p>
+      {% endif %}
+
+      {% for chart in charts %}
+        <figure class="wb-chart">
+          <figcaption class="wb-chart__head">
+            <span class="wb-chart__title">{{ chart.title }}</span>
+            <span class="wb-chart__hint">{{ chart.hint }} {{ period_label }}</span>
+          </figcaption>
+          {% if chart.payload.is_empty %}
+            <p class="wb-chart__empty">{{ t("statistics.chart.empty") }}</p>
+          {% else %}
+            <div class="wb-chart__canvas wb-chart__canvas--{{ chart.size }}">
+              <canvas id="{{ chart.id }}"
+                      role="img"
+                      aria-label="{{ chart.title }}. {{ chart.hint }}"
+                      data-wb-chart="{{ chart.id }}-data"></canvas>
+            </div>
+            {# A canvas is opaque to assistive technology and vanishes
+               if the library does not load, so the same numbers are
+               always here as markup. #}
+            <details class="wb-chart__data">
+              <summary>{{ t("statistics.chart.show_data") }}</summary>
+              <div class="wb-table-wrap">
+                <table class="wb-rules-table">
+                  <thead>
+                    <tr>
+                      {% for column in chart.columns %}<th scope="col">{{ column }}</th>{% endfor %}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for label, value in chart.rows %}
+                      <tr>
+                        <th scope="row">{{ label }}</th>
+                        <td>{{ value }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+            <script type="application/json" id="{{ chart.id }}-data">
+              {{ chart.payload.as_dict() | tojson }}
+            </script>
+          {% endif %}
+        </figure>
+      {% endfor %}
+    </section>
+
     {# A plain GET form: picking a date and submitting works with the
        date picker, with a typed value, and with no JavaScript. The
        picker carries its own month and year navigation, so a pair of

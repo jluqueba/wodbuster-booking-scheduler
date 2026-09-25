@@ -38,14 +38,22 @@ from ..persistence.engine import get_session
 from ..persistence.models import AttendanceDay, AttendanceRecord, GymAccount
 from ..scheduler.clock import local_date_for_slot
 from .capture import CaptureStatus, catch_up
+from .charts import drop_rate_payload, grid_payload, lead_payload, trend_payload
 from .metrics import (
     Calendar,
     CancellationBands,
+    CountedRecord,
     abandonment,
+    booking_lead_bands,
     cancellation_bands,
     counted_records,
     day_calendar,
+    drop_rate_by_slot,
+    monthly_trend,
+    occupancy,
+    weekday_hour_grid,
 )
+from .periods import PERIOD_KEYS, Period, resolve_period
 
 _log = structlog.get_logger(__name__)
 
@@ -196,7 +204,9 @@ def _run_catch_up(
     return result.status
 
 
-def _build_context(request: Request, operator_id: int, month: str | None) -> dict[str, object]:
+def _build_context(
+    request: Request, operator_id: int, month: str | None, period_key: str | None
+) -> dict[str, object]:
     now = datetime.now(tz=UTC)
     gym_account_id = active_gym_account_id(request)
     if gym_account_id is None:
@@ -265,9 +275,39 @@ def _build_context(request: Request, operator_id: int, month: str | None) -> dic
                 .order_by(AttendanceRecord.start_at.asc())
             ).all()
         )
+        oldest_captured = session.scalar(
+            select(func.min(AttendanceDay.local_date)).where(
+                AttendanceDay.gym_account_id == gym_account_id
+            )
+        )
+        period = resolve_period(
+            period_key,
+            today=today,
+            horizon_days=settings.statistics_backfill_days,
+            oldest_captured=oldest_captured,
+        )
+        # A second read rather than a filter over the first: the charts
+        # cover the selected period, which is usually wider than the
+        # month on screen and never the same set of rows.
+        period_rows = list(
+            session.scalars(
+                select(AttendanceRecord)
+                .where(
+                    AttendanceRecord.gym_account_id == gym_account_id,
+                    AttendanceRecord.local_date >= period.start,
+                    AttendanceRecord.local_date <= period.end,
+                )
+                .order_by(AttendanceRecord.start_at.asc())
+            ).all()
+        )
 
     counted = counted_records(
         records,
+        now=now,
+        settle_window_hours=settings.statistics_settle_window_hours,
+    )
+    over_period = counted_records(
+        period_rows,
         now=now,
         settle_window_hours=settings.statistics_settle_window_hours,
     )
@@ -306,6 +346,116 @@ def _build_context(request: Request, operator_id: int, month: str | None) -> dic
         "weekday_labels": _weekday_labels(),
         "cell_lines": _cell_lines(calendar),
         "legend": _legend(),
+        **_chart_context(over_period, period, settings),
+    }
+
+
+# An hour with one or two bookings produces a rate that swings between
+# 0 and 100 percent on a single decision. The floor is what keeps the
+# chart from inviting conclusions the data cannot carry.
+_MIN_BOOKINGS_PER_HOUR = 5
+
+
+def _chart_context(
+    records: list[CountedRecord],
+    period: Period,
+    settings: Settings,
+) -> dict[str, object]:
+    """Everything the chart block needs, for the selected period."""
+    short_days = [t(f"day.short.{key}") for key in _WEEKDAY_KEYS]
+    grid = weekday_hour_grid(records)
+    hours = drop_rate_by_slot(records, min_bookings=_MIN_BOOKINGS_PER_HOUR)
+    trend = monthly_trend(records)
+    lead = booking_lead_bands(records, free_hours=settings.statistics_late_cancel_hours)
+    free = _hours_label(settings.statistics_late_cancel_hours)
+
+    return {
+        "period": period,
+        "period_options": [(key, t(f"statistics.period.{key}")) for key in PERIOD_KEYS],
+        "period_label": t(f"statistics.period.{period.key}"),
+        "occupancy": occupancy(records),
+        "charts": [
+            {
+                "id": "wb-chart-grid",
+                "title": t("statistics.chart.grid.title"),
+                "hint": t("statistics.chart.grid.hint"),
+                "size": "tall",
+                "payload": grid_payload(
+                    grid,
+                    weekday_labels=short_days,
+                    strings={"cell": t("statistics.chart.grid.cell")},
+                ),
+                "columns": (t("statistics.chart.grid.slot"), t("statistics.table.count")),
+                "rows": [
+                    (f"{short_days[cell.weekday]} {cell.slot}", str(cell.attended)) for cell in grid
+                ],
+            },
+            {
+                "id": "wb-chart-drop",
+                "title": t("statistics.chart.drop.title"),
+                "hint": t("statistics.chart.drop.hint", min=_MIN_BOOKINGS_PER_HOUR),
+                "size": "medium",
+                "payload": drop_rate_payload(hours, strings={"of": t("statistics.chart.drop.of")}),
+                "columns": (
+                    t("statistics.chart.drop.hour"),
+                    t("statistics.chart.drop.rate"),
+                ),
+                "rows": [
+                    (
+                        stat.slot,
+                        "{}% {}".format(
+                            round(100 * (stat.drop_rate or 0)),
+                            t("statistics.chart.drop.of")
+                            .replace("{dropped}", str(stat.cancelled))
+                            .replace("{booked}", str(stat.booked)),
+                        ),
+                    )
+                    for stat in hours
+                ],
+            },
+            {
+                "id": "wb-chart-trend",
+                "title": t("statistics.chart.trend.title"),
+                "hint": t("statistics.chart.trend.hint"),
+                "size": "medium",
+                "payload": trend_payload(
+                    trend,
+                    strings={
+                        "attended": t("statistics.attended.tile"),
+                        "cancelled": t("statistics.cancelled.tile"),
+                    },
+                ),
+                "columns": (
+                    t("statistics.chart.trend.month"),
+                    t("statistics.chart.trend.split"),
+                ),
+                "rows": [(point.key, f"{point.attended} / {point.cancelled}") for point in trend],
+            },
+            {
+                "id": "wb-chart-lead",
+                "title": t("statistics.chart.lead.title"),
+                "hint": t("statistics.chart.lead.hint", hours=free),
+                "size": "short",
+                "payload": lead_payload(
+                    lead,
+                    labels=[
+                        t("statistics.chart.lead.same_day", hours=free),
+                        t("statistics.chart.lead.within_day", hours=free),
+                        t("statistics.chart.lead.early"),
+                    ],
+                    strings={"unit": t("statistics.chart.lead.unit")},
+                ),
+                "columns": (t("statistics.chart.lead.band"), t("statistics.table.count")),
+                "rows": [
+                    (t("statistics.chart.lead.same_day", hours=free), str(lead.same_day)),
+                    (
+                        t("statistics.chart.lead.within_day", hours=free),
+                        str(lead.within_day),
+                    ),
+                    (t("statistics.chart.lead.early"), str(lead.early)),
+                ],
+            },
+        ],
     }
 
 
@@ -463,6 +613,11 @@ def _empty_context(request: Request, *, has_gym: bool) -> dict[str, object]:
         "abandonment": None,
         "bands": None,
         "band_labels": [],
+        "charts": [],
+        "period": None,
+        "period_options": [],
+        "period_label": None,
+        "occupancy": None,
         "month": None,
         "month_label": None,
     }
@@ -473,17 +628,19 @@ def statistics(
     request: Request,
     operator_id: int = Depends(require_session),
     month: str | None = None,
+    period: str | None = None,
 ) -> Response:
     """Render the statistics page for the active gym account.
 
-    ``month`` selects the calendar month as ``YYYY-MM``. It carries no
-    authority: the gym account still comes from the session, so the
-    parameter can only move the reader within their own history.
+    ``month`` selects the calendar month as ``YYYY-MM``; ``period``
+    selects the window the charts describe. Neither carries any
+    authority: the gym account still comes from the session, so both
+    can only move the reader within their own history.
     """
     return _templates(request).TemplateResponse(
         request=request,
         name="statistics/page.html",
-        context=_build_context(request, operator_id, month),
+        context=_build_context(request, operator_id, month, period),
     )
 
 

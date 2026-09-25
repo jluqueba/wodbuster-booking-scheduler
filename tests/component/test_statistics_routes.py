@@ -311,17 +311,22 @@ def test_every_number_is_present_without_any_script(
     signed_in: tuple[TestClient, int, int, RecordingClient],
     postgres_engine: Engine,
 ) -> None:
-    """FR-034: the calendar is a table, so it is its own text equivalent."""
+    """FR-034: the calendar is a table, so it is its own text equivalent.
+
+    The charts added in slice 5 do use a canvas, and each carries its
+    own table beside it. This test guards the calendar specifically:
+    it must never become a canvas, because it is the one view the
+    reader checks figures against.
+    """
     tc, _, gym_account_id, _ = signed_in
     yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
     _seed_attendance(postgres_engine, gym_account_id=gym_account_id, local_date=yesterday)
 
     body = tc.get("/statistics").text
+    calendar = body[body.index('<table class="wb-calendar">') :]
 
-    assert "wb-calendar" in body
-    assert f'<time datetime="{yesterday.isoformat()}">' in body
-    # No canvas, so nothing can disappear when a script fails to load.
-    assert "<canvas" not in body
+    assert f'<time datetime="{yesterday.isoformat()}">' in calendar
+    assert "<canvas" not in calendar
 
 
 def test_a_dropped_day_is_visible_on_the_page(
@@ -349,16 +354,90 @@ def test_a_dropped_day_is_visible_on_the_page(
 def test_no_charting_library_is_loaded_yet(
     signed_in: tuple[TestClient, int, int, RecordingClient],
 ) -> None:
-    """The page shows a calendar, which is a table and not a chart.
-
-    Chart.js stays pinned in ADR-0014 and arrives with the first metric
-    that needs a canvas. Loading 219 KB before then would be paid on
-    every visit for nothing.
-    """
+    """Superseded by slice 5: the charts arrived and so did the library."""
     body = signed_in[0].get("/statistics").text
 
-    assert "chart.js" not in body
-    assert "chartjs-plugin-zoom" not in body
+    assert "chart.js@4.5.1" in body
+
+
+def test_the_chart_scripts_are_pinned_with_integrity(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """A substituted CDN file must fail closed rather than execute."""
+    body = signed_in[0].get("/statistics").text
+
+    assert "chart.js@4.5.1/dist/chart.umd.min.js" in body
+    assert "chartjs-plugin-zoom@2.2.0" in body
+    assert "chartjs-chart-matrix@3.1.0" in body
+    assert body.count('integrity="sha384-') >= 3
+    assert body.count('crossorigin="anonymous"') >= 3
+
+
+def test_every_chart_carries_its_numbers_as_markup(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """FR-034: a canvas is opaque to assistive technology and vanishes
+    if the library does not load, so the same numbers are always here."""
+    tc, _, gym_account_id, _ = signed_in
+    base = datetime.now(tz=UTC).date() - timedelta(days=20)
+    for offset in range(6):
+        _seed_attendance(
+            postgres_engine,
+            gym_account_id=gym_account_id,
+            local_date=base + timedelta(days=offset),
+            class_id=92000 + offset,
+        )
+
+    body = tc.get("/statistics").text
+
+    assert "<canvas" in body
+    assert 'role="img"' in body
+    # Each canvas has a JSON block and a details block holding a table.
+    assert body.count('type="application/json"') >= 1
+    assert "wb-chart__data" in body
+    assert "wb-rules-table" in body
+
+
+def test_the_period_selector_governs_every_chart(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """One window for the whole page. Per-chart windows would let the
+    reader cross two figures that do not describe the same thing."""
+    tc, _, _, _ = signed_in
+
+    body = tc.get("/statistics").text
+    assert 'class="wb-periods"' in body
+    assert 'name="period"' in body
+    # The default is marked as current rather than offered again.
+    assert 'class="wb-periods__current"' in body
+
+    narrowed = tc.get("/statistics?period=m1")
+    assert narrowed.status_code == 200
+    assert "30" in narrowed.text
+
+
+def test_a_crafted_period_does_not_break_the_page(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    tc, _, _, _ = signed_in
+
+    for value in ("nonsense", "m99", "", "../../etc"):
+        assert tc.get(f"/statistics?period={value}").status_code == 200
+
+
+def test_the_period_survives_a_month_change(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """The two controls are independent: changing the month must not
+    silently reset the window the charts describe."""
+    tc, _, _, _ = signed_in
+    today = datetime.now(tz=UTC).date()
+
+    body = tc.get(f"/statistics?period=m3&month={today.strftime('%Y-%m')}").text
+
+    assert 'name="month"' in body
+    assert 'value="m3"' not in body or "wb-periods__current" in body
 
 
 def test_a_day_holding_a_training_and_a_drop_shows_both_lines(

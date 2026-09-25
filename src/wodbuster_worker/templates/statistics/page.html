@@ -19,6 +19,25 @@
 
 {% block head_extra %}
 {% include "_time_picker_script.html" %}
+<script
+  src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"
+  integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ"
+  crossorigin="anonymous"
+  defer
+></script>
+<script
+  src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"
+  integrity="sha384-dwwI6ICEN/0ZQlS5owhUa/6ZzvwUPmjH45bFVCAcjgjTulbHJvlE+TGU3g1k0N3R"
+  crossorigin="anonymous"
+  defer
+></script>
+<script
+  src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@3.1.0/dist/chartjs-chart-matrix.min.js"
+  integrity="sha384-Hh/MCM+3iQXRFUJvnuv7MmFpbVQ3biiOR8WRrhkzCFZRwvfe4QQEix4qCHIVyWNI"
+  crossorigin="anonymous"
+  defer
+></script>
+<script src="/static/wb-charts.js" defer></script>
 <style>
   .wb-stats__tiles {
     display: grid;
@@ -82,6 +101,97 @@
     font-size: 0.85rem;
     color: var(--wb-text-muted);
     margin: 0;
+  }
+
+  .wb-periods {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 1rem;
+  }
+  .wb-periods__label {
+    font-size: 0.85rem;
+    color: var(--wb-text-muted);
+    margin-right: 0.25rem;
+  }
+  .wb-periods__option.wb-periods__option,
+  .wb-periods__current {
+    display: inline-flex;
+    align-items: center;
+    height: 2rem;
+    padding: 0 0.7rem;
+    border-radius: var(--wb-radius-sm);
+    border: 1px solid var(--wb-border-strong);
+    background: var(--wb-bg-inset);
+    color: var(--wb-text-muted);
+    font-size: 0.82rem;
+    font-family: inherit;
+    margin: 0;
+    width: auto;
+    cursor: pointer;
+  }
+  .wb-periods__option:hover {
+    border-color: var(--wb-accent);
+    color: var(--wb-text);
+  }
+  .wb-periods__current {
+    background: var(--wb-accent);
+    border-color: var(--wb-accent);
+    color: var(--wb-accent-ink);
+    cursor: default;
+  }
+
+  .wb-charts__headline {
+    margin: 0 0 1.25rem;
+    font-size: 0.95rem;
+    color: var(--wb-text-muted);
+  }
+  .wb-chart {
+    margin: 0 0 1.5rem;
+    padding: 1.1rem 1.35rem 1.35rem;
+    background: var(--wb-bg-card);
+    border: 1px solid var(--wb-border);
+    border-radius: var(--wb-radius);
+  }
+  .wb-chart__head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    margin-bottom: 0.85rem;
+  }
+  .wb-chart__title {
+    font-size: 1.05rem;
+    color: var(--wb-text);
+  }
+  .wb-chart__hint {
+    font-size: 0.82rem;
+    color: var(--wb-text-muted);
+  }
+  .wb-chart__canvas {
+    position: relative;
+    height: 15rem;
+  }
+  /* The grid needs room for seven rows; the lead bands only have
+     three bars and look stranded in a tall box. */
+  .wb-chart__canvas--tall {
+    height: 18rem;
+  }
+  .wb-chart__canvas--short {
+    height: 12rem;
+  }
+  .wb-chart__empty {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--wb-text-muted);
+  }
+  .wb-chart__data {
+    margin-top: 0.85rem;
+  }
+  .wb-chart__data summary {
+    font-size: 0.82rem;
+    color: var(--wb-text-muted);
+    cursor: pointer;
   }
 
   .wb-bands {

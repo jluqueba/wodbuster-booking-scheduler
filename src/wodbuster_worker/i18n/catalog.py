@@ -938,6 +938,42 @@ EN: dict[str, str] = {
     "statistics.bands.unknown": (
         "{count} more could not be placed: the gym did not say when they happened."
     ),
+    "statistics.period.label": "Charts cover",
+    "statistics.period.m1": "30 days",
+    "statistics.period.m3": "3 months",
+    "statistics.period.m12": "12 months",
+    "statistics.period.all": "Everything",
+    "statistics.chart.empty": "Not enough history in this period to show anything.",
+    "statistics.chart.show_data": "Show the numbers",
+    "statistics.occupancy.summary": (
+        "Your classes ran at {pct}% of capacity on average, and {full} of {sessions} "
+        "filled up completely."
+    ),
+    "statistics.chart.grid.title": "When you train",
+    "statistics.chart.grid.hint": "Sessions attended per weekday and class time,",
+    "statistics.chart.grid.cell": "{count} sessions, {weekday} at {hour}",
+    "statistics.chart.grid.slot": "Slot",
+    "statistics.chart.drop.title": "Which bookings you keep",
+    "statistics.chart.drop.hint": (
+        "Share of bookings you dropped, per class time, counting only times "
+        "with at least {min} bookings,"
+    ),
+    "statistics.chart.drop.of": "({dropped} of {booked})",
+    "statistics.chart.drop.hour": "Class time",
+    "statistics.chart.drop.rate": "Dropped",
+    "statistics.chart.trend.title": "Month by month",
+    "statistics.chart.trend.hint": "Classes attended and dropped per month,",
+    "statistics.chart.trend.month": "Month",
+    "statistics.chart.trend.split": "Attended / dropped",
+    "statistics.chart.lead.title": "How early you book",
+    "statistics.chart.lead.hint": (
+        "Booking under {hours} h ahead is free at this gym; booking earlier costs a point,"
+    ),
+    "statistics.chart.lead.same_day": "under {hours} h ahead",
+    "statistics.chart.lead.within_day": "{hours} h to a day ahead",
+    "statistics.chart.lead.early": "more than a day ahead",
+    "statistics.chart.lead.band": "Booked",
+    "statistics.chart.lead.unit": "classes",
     "statistics.cancelled.tile": "Dropped",
     "statistics.cancelled.hint": "Classes you booked and then left. A day can hold more than one",
     "statistics.swapped.tile": "Class changes",
@@ -1966,6 +2002,42 @@ ES: dict[str, str] = {
     "statistics.bands.unknown": (
         "{count} más sin clasificar: el gimnasio no dijo cuándo ocurrieron."
     ),
+    "statistics.period.label": "Los gráficos cubren",
+    "statistics.period.m1": "30 días",
+    "statistics.period.m3": "3 meses",
+    "statistics.period.m12": "12 meses",
+    "statistics.period.all": "Todo",
+    "statistics.chart.empty": "No hay suficiente historial en este periodo para mostrar nada.",
+    "statistics.chart.show_data": "Ver los números",
+    "statistics.occupancy.summary": (
+        "Tus clases estuvieron al {pct}% de aforo de media, y {full} de {sessions} "
+        "llegaron a llenarse."
+    ),
+    "statistics.chart.grid.title": "Cuándo entrenas",
+    "statistics.chart.grid.hint": "Sesiones asistidas por día de la semana y hora de clase,",
+    "statistics.chart.grid.cell": "{count} sesiones, {weekday} a las {hour}",
+    "statistics.chart.grid.slot": "Franja",
+    "statistics.chart.drop.title": "Qué reservas cumples",
+    "statistics.chart.drop.hint": (
+        "Porcentaje de reservas que dejaste, por hora de clase, contando solo "
+        "las horas con al menos {min} reservas,"
+    ),
+    "statistics.chart.drop.of": "({dropped} de {booked})",
+    "statistics.chart.drop.hour": "Hora de clase",
+    "statistics.chart.drop.rate": "Te borraste",
+    "statistics.chart.trend.title": "Mes a mes",
+    "statistics.chart.trend.hint": "Clases asistidas y dejadas por mes,",
+    "statistics.chart.trend.month": "Mes",
+    "statistics.chart.trend.split": "Asistidas / dejadas",
+    "statistics.chart.lead.title": "Con cuánta antelación reservas",
+    "statistics.chart.lead.hint": (
+        "Reservar con menos de {hours} h es gratis en tu gimnasio; antes cuesta un punto,"
+    ),
+    "statistics.chart.lead.same_day": "con menos de {hours} h",
+    "statistics.chart.lead.within_day": "entre {hours} h y un día",
+    "statistics.chart.lead.early": "con más de un día",
+    "statistics.chart.lead.band": "Reservaste",
+    "statistics.chart.lead.unit": "clases",
     "statistics.cancelled.tile": "Te borraste",
     "statistics.cancelled.hint": "Clases que reservaste y dejaste. Un día puede tener más de una",
     "statistics.swapped.tile": "Cambios de clase",
