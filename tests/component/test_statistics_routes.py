@@ -1117,7 +1117,8 @@ def test_a_points_model_override_moves_the_tiers_everywhere_at_once(
     body = response.text
 
     # The cancellation gave four and a half hours' notice: early under
-    # the default four-hour tier, late under this gym's twelve.
+    # the default four-hour tier, late under this gym's twelve, which
+    # adds the late penalty to its estimated range.
     assert response.status_code == 200
     assert "1 to 2 points" in body
     assert "0 to 1 points" not in body
