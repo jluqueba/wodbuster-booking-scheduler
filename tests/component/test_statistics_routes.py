@@ -1098,7 +1098,12 @@ def test_a_points_model_override_moves_the_tiers_everywhere_at_once(
 ) -> None:
     """A gym charged under one boundary and labelled under another is a
     disagreement the reader cannot diagnose, so one model drives the
-    estimate, the bands and the chart alike."""
+    estimate, the bands and the chart alike.
+
+    Asserted on all three surfaces rather than on the bands alone: a
+    test that checks one of them passes while the other two still read
+    the defaults, which is the exact bug it is meant to catch.
+    """
     tc, _, gym_account_id, client = signed_in
     client.points_page = _this_month_page()
     _set_points_model(postgres_engine, gym_account_id, '{"late_hours": 12}')
@@ -1117,15 +1122,25 @@ def test_a_points_model_override_moves_the_tiers_everywhere_at_once(
     body = response.text
 
     # The cancellation gave four and a half hours' notice: early under
-    # the default four-hour tier, late under this gym's twelve, which
-    # adds the late penalty to its estimated range.
+    # the default four-hour tier and free, late under this gym's twelve
+    # and worth one penalty point.
     assert response.status_code == 200
-    assert "1 to 2 points" in body
-    assert "0 to 1 points" not in body
+
+    # The notice band names the gym's boundary.
     assert "more than 12 h ahead" in body
     assert "more than 4 h ahead" not in body
+
+    # The estimate charged that same boundary: one penalty plus a base
+    # cost that may or may not have been spent.
+    assert "1 to 2 points" in body
+    assert "0 to 1 points" not in body
+
+    # And the booking-lead chart drew it.
     assert "under 12 h ahead" in body
     assert "under 4 h ahead" not in body
+
+    # The assumption text names the gym's boundary, not ours.
+    assert "more than 12 h ahead, and the gym overwrites" in body
 
 
 def test_attendance_without_a_published_capacity_still_renders(

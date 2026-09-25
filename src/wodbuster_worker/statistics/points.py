@@ -102,6 +102,14 @@ class PointsModel:
                 continue
             values[key] = candidate
 
+        # A very late tier above the late one describes no gym and would
+        # empty the middle band while labelling it with an impossible
+        # range. The pair is taken together or not at all, because
+        # keeping one of the two is what produces the incoherence.
+        if values["very_late_hours"] > values["late_hours"]:
+            values["late_hours"] = defaults["late_hours"]
+            values["very_late_hours"] = defaults["very_late_hours"]
+
         return cls(
             base_cost=int(values["base_cost"]),
             late_penalty=int(values["late_penalty"]),
