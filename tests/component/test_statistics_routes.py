@@ -95,6 +95,12 @@ class RecordingClient:
         self.calls = 0
         self.ticks: list[int] = []
         self.error: Exception | None = None
+        # The points page is off by default. A test that asserts a
+        # points figure opts in, so every other test keeps rendering the
+        # page the gym would serve without one.
+        self.points_page: str | None = None
+        self.points_error: Exception | None = None
+        self.points_calls = 0
 
     def load_class(self, cookie_value: str, ticks: int) -> LoadClassResponse:
         self.calls += 1
@@ -106,6 +112,12 @@ class RecordingClient:
             latency_ms=100.0,
             payload=_payload_for(self.idu if self.include_operator else OTHER_IDU),
         )
+
+    def load_points_page(self, cookie_value: str) -> str:
+        self.points_calls += 1
+        if self.points_error is not None:
+            raise self.points_error
+        return self.points_page or ""
 
     def discover_idu(self, cookie_value: str) -> str:
         return self.idu
@@ -135,6 +147,7 @@ def _seed_attendance(
     class_id: int = 90001,
     hour: int = 18,
     changed_at: datetime | None = None,
+    ever_full: bool = False,
 ) -> None:
     with engine.begin() as conn:
         conn.execute(
@@ -148,8 +161,8 @@ def _seed_attendance(
             text(
                 "INSERT INTO attendance_record "
                 "(gym_account_id, local_date, wodbuster_class_id, class_name, "
-                "start_at, state, state_changed_at, occupancy, capacity) "
-                "VALUES (:ga, :d, :cid, 'Cross Training', :start, :state, :changed, 14, 14)"
+                "start_at, state, state_changed_at, occupancy, capacity, ever_full) "
+                "VALUES (:ga, :d, :cid, 'Cross Training', :start, :state, :changed, 14, 14, :full)"
             ),
             {
                 "ga": gym_account_id,
@@ -163,6 +176,7 @@ def _seed_attendance(
                     local_date.year, local_date.month, local_date.day, hour - 2, 0, tzinfo=UTC
                 ),
                 "state": state,
+                "full": ever_full,
             },
         )
 
@@ -923,3 +937,128 @@ def test_a_streak_reaching_the_oldest_reading_says_at_least(
     body = tc.get("/statistics").text
 
     assert "at least 2" in body
+
+
+_POINTS_PAGE = """
+<span id="body_ctl00_CtlPagadoHasta">{paid_until}</span>
+<span id="body_ctl00_CtlPeriodo">{printed}</span>
+<span data-id="puntosReserva">{balance}</span>
+"""
+
+
+def _points_page(*, balance: int = 12, paid_until: str, printed: str) -> str:
+    return _POINTS_PAGE.format(balance=balance, paid_until=paid_until, printed=printed)
+
+
+def _this_month_page(balance: int = 12) -> str:
+    """A billing period ending next month, built around today."""
+    today = datetime.now(tz=UTC).date()
+    end = date(today.year + (today.month == 12), today.month % 12 + 1, min(today.day, 28))
+    start_month = date(end.year, end.month, 1) - timedelta(days=1)
+    start = date(start_month.year, start_month.month, min(today.day, 28)) + timedelta(days=1)
+    printed = f"del {start.day:02d} x al {end.day:02d} y"
+    return _points_page(balance=balance, paid_until=end.strftime("%d/%m/%Y"), printed=printed)
+
+
+def test_the_points_balance_is_shown_as_read_not_calculated(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    tc, _, _, client = signed_in
+    client.points_page = _this_month_page(balance=9)
+
+    body = tc.get("/statistics").text
+
+    assert "Balance now" in body
+    assert 'class="wb-stat-tile__value">9<' in body
+    assert "Read from the gym, not calculated" in body
+
+
+def test_a_points_figure_never_appears_without_its_label(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """INV-004 at the response boundary. The label and the assumptions
+    have to travel with the number, not in a footnote elsewhere."""
+    tc, _, gym_account_id, client = signed_in
+    client.points_page = _this_month_page()
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    _seed_attendance(
+        postgres_engine,
+        gym_account_id=gym_account_id,
+        local_date=yesterday,
+        state="cancelled",
+        class_id=94000,
+        changed_at=datetime(yesterday.year, yesterday.month, yesterday.day, 16, 0, tzinfo=UTC),
+        ever_full=True,
+    )
+
+    body = tc.get("/statistics").text
+
+    assert "Estimated cost" in body
+    assert "Estimate" in body
+    assert "What this estimate assumes" in body
+    assert "the gym overwrites" in body
+
+
+def test_the_estimate_is_a_range_because_the_base_cost_is_unknowable(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    tc, _, gym_account_id, client = signed_in
+    client.points_page = _this_month_page()
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    _seed_attendance(
+        postgres_engine,
+        gym_account_id=gym_account_id,
+        local_date=yesterday,
+        state="cancelled",
+        class_id=94100,
+        changed_at=datetime(yesterday.year, yesterday.month, yesterday.day, 16, 0, tzinfo=UTC),
+        ever_full=True,
+    )
+
+    body = tc.get("/statistics").text
+
+    # One late cancellation: one point of penalty, plus a base cost that
+    # may or may not have been spent.
+    assert "1 to 2 points" in body
+
+
+def test_the_billing_period_is_offered_only_when_the_gym_states_it(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """FR-031: omit the option without error rather than offering a
+    range nobody can stand behind."""
+    tc, _, _, client = signed_in
+
+    without = tc.get("/statistics").text
+    client.points_page = _this_month_page()
+    with_period = tc.get("/statistics").text
+
+    assert "This billing period" not in without
+    assert "This billing period" in with_period
+
+
+def test_an_unreadable_points_page_costs_the_block_not_the_page(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    tc, _, _, client = signed_in
+    client.points_error = WodBusterTransportError("timeout")
+
+    response = tc.get("/statistics")
+
+    assert response.status_code == 200
+    assert "Balance now" not in response.text
+    assert "Statistics" in response.text
+
+
+def test_the_points_page_is_never_used_to_book(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """The reader opens a statistics page; nothing here may mutate."""
+    tc, _, _, client = signed_in
+    client.points_page = _this_month_page()
+
+    tc.get("/statistics")
+
+    assert client.points_calls >= 1

@@ -104,6 +104,19 @@ class CountedRecord:
             return None
         return self.start_at - self.state_changed_at
 
+    @property
+    def removal_lead(self) -> timedelta | None:
+        """How far before the class the operator left it, however classified.
+
+        Wider than :attr:`cancellation_lead`, which answers a question
+        about behaviour and therefore excludes a class change. The gym
+        charges for a removal without knowing it was a change, so the
+        points model needs the instant for both.
+        """
+        if self.state not in ("cancelled", "swapped") or self.state_changed_at is None:
+            return None
+        return self.start_at - self.state_changed_at
+
 
 def settle_cutoff(now: datetime, *, settle_window_hours: float) -> datetime:
     """Return the latest class start instant that already counts."""
@@ -503,6 +516,70 @@ def occupancy(records: Sequence[CountedRecord]) -> Occupancy:
 
 
 @dataclass(frozen=True)
+class WeeklyAverage:
+    """Sessions per week in a range, beside the range before it.
+
+    ``previous`` is ``None`` when the earlier range was never captured.
+    Absence of a reading is not zero training (INV-005), and rendering
+    a fall from nothing to something would be an invented comparison.
+    """
+
+    sessions: int
+    weeks: float
+    previous_sessions: int | None
+    previous_weeks: float
+
+    @property
+    def per_week(self) -> float | None:
+        return self.sessions / self.weeks if self.weeks > 0 else None
+
+    @property
+    def previous_per_week(self) -> float | None:
+        if self.previous_sessions is None or self.previous_weeks <= 0:
+            return None
+        return self.previous_sessions / self.previous_weeks
+
+    @property
+    def change(self) -> float | None:
+        """The difference per week, derived rather than stored."""
+        current, earlier = self.per_week, self.previous_per_week
+        if current is None or earlier is None:
+            return None
+        return current - earlier
+
+
+def weekly_average(
+    records: Sequence[CountedRecord],
+    *,
+    captured: Collection[date],
+    start: date,
+    end: date,
+) -> WeeklyAverage:
+    """Return sessions per week for ``start``..``end`` and the range before it.
+
+    The preceding range has exactly the same length, so the two figures
+    answer the same question. It is reported only when at least one of
+    its days was actually read; otherwise the comparison would measure
+    the backfill rather than the user.
+    """
+    span = (end - start).days + 1
+    earlier_end = start - timedelta(days=1)
+    earlier_start = earlier_end - timedelta(days=span - 1)
+
+    trained = [record for record in records if record.state == "attended"]
+    current = sum(1 for record in trained if start <= record.local_date <= end)
+    earlier = sum(1 for record in trained if earlier_start <= record.local_date <= earlier_end)
+
+    read = any(earlier_start <= day <= earlier_end for day in captured)
+    return WeeklyAverage(
+        sessions=current,
+        weeks=span / 7,
+        previous_sessions=earlier if read else None,
+        previous_weeks=span / 7,
+    )
+
+
+@dataclass(frozen=True)
 class Streak:
     """A run of training days unbroken by a day that could have held one."""
 
@@ -806,6 +883,7 @@ __all__ = [
     "SlotStats",
     "Streak",
     "Streaks",
+    "WeeklyAverage",
     "abandonment",
     "booking_lead_bands",
     "cancellation_bands",
@@ -817,4 +895,5 @@ __all__ = [
     "settle_cutoff",
     "streaks",
     "weekday_hour_grid",
+    "weekly_average",
 ]

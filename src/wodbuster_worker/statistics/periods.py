@@ -15,12 +15,14 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Literal
 
-PeriodKey = Literal["m1", "m3", "m12", "all"]
+PeriodKey = Literal["m1", "m3", "m12", "all", "billing"]
 
 DEFAULT_PERIOD: PeriodKey = "m12"
 
-# Ordered as the selector renders them.
-PERIOD_KEYS: tuple[PeriodKey, ...] = ("m1", "m3", "m12", "all")
+# Ordered as the selector renders them. ``billing`` comes first because
+# it is the window the gym itself bills on, and it is offered only when
+# the gym stated its boundaries.
+PERIOD_KEYS: tuple[PeriodKey, ...] = ("billing", "m1", "m3", "m12", "all")
 
 _PERIOD_DAYS: dict[PeriodKey, int] = {
     "m1": 30,
@@ -48,6 +50,7 @@ def resolve_period(
     today: date,
     horizon_days: int,
     oldest_captured: date | None,
+    billing: tuple[date, date] | None = None,
 ) -> Period:
     """Return the chart window for ``requested``.
 
@@ -58,8 +61,22 @@ def resolve_period(
     by the horizon, so the label does not promise history the backfill
     has not reached yet. With nothing captured it degrades to the
     horizon, which keeps the window non-empty.
+
+    ``billing`` is the gym's own period, available only when the points
+    page stated it. Asking for it when it is unknown falls back to the
+    default instead of erroring, which is FR-031 at this boundary.
     """
     key: PeriodKey = requested if requested in PERIOD_KEYS else DEFAULT_PERIOD  # type: ignore[assignment]
+    if key == "billing" and billing is None:
+        key = DEFAULT_PERIOD
+
+    if key == "billing":
+        assert billing is not None
+        # The period runs past today while it is still open. Charts
+        # describe what happened, so the window stops at today.
+        start, end = billing[0], min(billing[1], today)
+        floor = today - timedelta(days=horizon_days)
+        return Period(key=key, start=max(start, floor), end=end)
 
     if key == "all":
         start = oldest_captured or today - timedelta(days=horizon_days)

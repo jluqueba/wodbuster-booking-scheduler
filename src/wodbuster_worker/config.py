@@ -159,6 +159,15 @@ class Settings(BaseSettings):
     statistics_late_cancel_hours: float = 4.0
     statistics_very_late_cancel_hours: float = 1.0
 
+    # What each of those tiers costs, and what a booking costs in the
+    # first place. Same reasoning as the tiers: the gym publishes these
+    # on a page it can edit without telling anyone, so they are settings
+    # and never literals in the metric layer.
+    statistics_base_point_cost: int = 1
+    statistics_late_cancel_penalty: int = 1
+    statistics_very_late_cancel_penalty: int = 2
+    statistics_absence_penalty: int = 6
+
     @model_validator(mode="after")
     def _apply_env_defaults(self) -> Settings:
         """Fill mode-dependent Postgres defaults.

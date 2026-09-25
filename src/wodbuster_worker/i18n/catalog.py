@@ -965,6 +965,46 @@ EN: dict[str, str] = {
     "statistics.period.m3": "3 months",
     "statistics.period.m12": "12 months",
     "statistics.period.all": "Everything",
+    "statistics.period.billing": "This billing period",
+    "statistics.points.title": "Points",
+    "statistics.points.balance.tile": "Balance now",
+    "statistics.points.balance.hint": "Read from the gym, not calculated",
+    "statistics.points.penalties.tile": "Penalties in this period",
+    "statistics.points.penalties.hint": "Derived from when you left each class",
+    "statistics.points.estimate.tile": "Estimated cost",
+    "statistics.points.estimate.range": "{low} to {high} points",
+    "statistics.points.estimate.exact": "{low} points",
+    "statistics.points.estimate.label": "Estimate",
+    "statistics.points.assumptions.title": "What this estimate assumes",
+    "statistics.points.assumption.base_cost_unknown": (
+        "Booking costs a point only more than {hours} h ahead, and the gym overwrites "
+        "the moment you booked when you remove yourself. The upper end assumes you "
+        "always paid it; the lower end assumes you never did."
+    ),
+    "statistics.points.assumption.non_standard_cost": (
+        "Every class is priced at the base cost. The gym says some classes may cost "
+        "more, and its data does not say which."
+    ),
+    "statistics.points.assumption.recovery_base_only": (
+        "A class that never filled up gives the base cost back. That recovery is "
+        "applied to the base cost only, never to a penalty."
+    ),
+    "statistics.points.assumption.class_changes_charged": (
+        "A class change is counted. The gym sees a removal and charges for it, "
+        "whether or not you booked another hour the same day."
+    ),
+    "statistics.points.counts.changes": "{count} of them were class changes",
+    "statistics.points.counts.recovered": "{count} never filled up, so the base cost came back",
+    "statistics.points.counts.absences": (
+        "{no_shows} marked absent, {removed} removed once the class had started"
+    ),
+    "statistics.points.counts.unknown": "{count} could not be placed in a tier",
+    "statistics.pace.tile": "Sessions per week",
+    "statistics.pace.previous": "{value} in the period before",
+    "statistics.pace.no_previous": "No history for the period before",
+    "statistics.pace.up": "up {value}",
+    "statistics.pace.down": "down {value}",
+    "statistics.pace.flat": "same as before",
     "statistics.chart.empty": "Not enough history in this period to show anything.",
     "statistics.chart.show_data": "Show the numbers",
     "statistics.occupancy.summary": (
@@ -2052,6 +2092,46 @@ ES: dict[str, str] = {
     "statistics.period.m3": "3 meses",
     "statistics.period.m12": "12 meses",
     "statistics.period.all": "Todo",
+    "statistics.period.billing": "Periodo actual",
+    "statistics.points.title": "Puntos",
+    "statistics.points.balance.tile": "Saldo ahora",
+    "statistics.points.balance.hint": "Leído del gimnasio, no calculado",
+    "statistics.points.penalties.tile": "Penalizaciones del periodo",
+    "statistics.points.penalties.hint": "Derivadas de cuándo te borraste de cada clase",
+    "statistics.points.estimate.tile": "Coste estimado",
+    "statistics.points.estimate.range": "entre {low} y {high} puntos",
+    "statistics.points.estimate.exact": "{low} puntos",
+    "statistics.points.estimate.label": "Estimación",
+    "statistics.points.assumptions.title": "Qué asume esta estimación",
+    "statistics.points.assumption.base_cost_unknown": (
+        "Reservar cuesta un punto solo con más de {hours} h de antelación, y el "
+        "gimnasio sobrescribe el momento en que reservaste cuando te borras. El "
+        "extremo alto asume que siempre lo pagaste; el bajo, que nunca."
+    ),
+    "statistics.points.assumption.non_standard_cost": (
+        "Todas las clases se tarifan al coste base. El gimnasio avisa de que algunas "
+        "pueden costar más, y sus datos no dicen cuáles."
+    ),
+    "statistics.points.assumption.recovery_base_only": (
+        "Una clase que nunca llegó a llenarse devuelve el coste base. Esa recuperación "
+        "se aplica solo al coste base, nunca a una penalización."
+    ),
+    "statistics.points.assumption.class_changes_charged": (
+        "Un cambio de hora cuenta. El gimnasio ve una baja y la cobra, hayas reservado "
+        "o no otra hora el mismo día."
+    ),
+    "statistics.points.counts.changes": "{count} de ellas fueron cambios de hora",
+    "statistics.points.counts.recovered": "{count} no se llenaron, así que recuperaste el base",
+    "statistics.points.counts.absences": (
+        "{no_shows} marcadas como ausencia, {removed} borradas con la clase empezada"
+    ),
+    "statistics.points.counts.unknown": "{count} sin tramo asignable",
+    "statistics.pace.tile": "Sesiones por semana",
+    "statistics.pace.previous": "{value} en el periodo anterior",
+    "statistics.pace.no_previous": "Sin histórico del periodo anterior",
+    "statistics.pace.up": "{value} más",
+    "statistics.pace.down": "{value} menos",
+    "statistics.pace.flat": "igual que antes",
     "statistics.chart.empty": "No hay suficiente historial en este periodo para mostrar nada.",
     "statistics.chart.show_data": "Ver los números",
     "statistics.occupancy.summary": (

@@ -77,6 +77,41 @@
   .wb-streaks {
     margin-top: 1.5rem;
   }
+  .wb-points {
+    margin: 1.75rem 0;
+    padding: 1.25rem;
+    border: 1px solid var(--wb-border);
+    border-radius: var(--wb-radius);
+  }
+  .wb-points__title,
+  .wb-points__subtitle {
+    margin: 0 0 0.75rem;
+    font-size: 1.05rem;
+  }
+  .wb-points__subtitle {
+    margin-top: 1.25rem;
+  }
+  .wb-points__counts,
+  .wb-points__assumptions {
+    margin: 1rem 0 0;
+    padding-left: 1.1rem;
+    font-size: 0.9rem;
+    color: var(--wb-text-muted);
+  }
+  /* The estimate label sits against the figure, never in a footnote:
+     a points number that travels without it is the failure INV-004
+     exists to prevent. */
+  .wb-tag {
+    display: inline-block;
+    margin-left: 0.4rem;
+    padding: 0.1rem 0.45rem;
+    border: 1px solid var(--wb-border);
+    border-radius: 999px;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--wb-text-muted);
+  }
 
   .wb-monthjump {
     display: flex;

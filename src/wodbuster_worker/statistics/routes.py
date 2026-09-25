@@ -37,6 +37,12 @@ from ..persistence.cookie_store import CookieStore
 from ..persistence.engine import get_session
 from ..persistence.models import AttendanceDay, AttendanceRecord, GymAccount, OperatorProfile
 from ..scheduler.clock import local_date_for_slot
+from ..wodbuster_client.client import (
+    WodBusterAuthError,
+    WodBusterProtocolError,
+    WodBusterTransportError,
+)
+from ..wodbuster_client.parsers import PointsSummary, read_points_summary
 from .capture import CaptureStatus, catch_up
 from .charts import drop_rate_payload, grid_payload, lead_payload, trend_payload
 from .metrics import (
@@ -54,8 +60,10 @@ from .metrics import (
     occupancy,
     streaks,
     weekday_hour_grid,
+    weekly_average,
 )
 from .periods import PERIOD_KEYS, Period, resolve_period
+from .points import PointsModel, points_estimate
 
 _log = structlog.get_logger(__name__)
 
@@ -206,6 +214,42 @@ def _run_catch_up(
     return result.status
 
 
+def _read_points_summary(request: Request, gym_account_id: int) -> PointsSummary:
+    """Read the gym's own points page, or return nothing at all.
+
+    The balance and the billing period are conveniences, not the point
+    of the screen. Every failure here therefore degrades to absence:
+    the page renders without the points block and without the billing
+    range, which is FR-031 and the same contract the capture path
+    already honours.
+    """
+    store = getattr(request.app.state, "cookie_store", None)
+    factory = gym_client_factory(request.app.state)
+    if not isinstance(store, CookieStore) or factory is None:
+        return PointsSummary(balance=None, period=None)
+
+    with get_session() as session:
+        resolved = resolve_gym_client(factory, session, gym_account_id)
+        cookie_value = store.load(session, gym_account_id)
+    if resolved is None or cookie_value is None:
+        return PointsSummary(balance=None, period=None)
+
+    client, _ = resolved
+    reader = getattr(client, "load_points_page", None)
+    if reader is None:
+        return PointsSummary(balance=None, period=None)
+    try:
+        html = reader(cookie_value)
+    except (WodBusterAuthError, WodBusterTransportError, WodBusterProtocolError) as exc:
+        _log.info(
+            "statistics.points.unavailable",
+            gym_account_id=gym_account_id,
+            reason=type(exc).__name__,
+        )
+        return PointsSummary(balance=None, period=None)
+    return read_points_summary(html)
+
+
 def _build_context(
     request: Request, operator_id: int, month: str | None, period_key: str | None
 ) -> dict[str, object]:
@@ -227,6 +271,7 @@ def _build_context(
     # January must read January, not the fortnight the reader already
     # has on the current month's page.
     capture_status = _run_catch_up(request, gym_account_id, now, (start, min(end, today)))
+    points = _read_points_summary(request, gym_account_id)
 
     with get_session() as session:
         gym = session.get(GymAccount, gym_account_id)
@@ -310,6 +355,7 @@ def _build_context(
             today=today,
             horizon_days=settings.statistics_backfill_days,
             oldest_captured=oldest_captured,
+            billing=points.period,
         )
         # A second read rather than a filter over the first: the charts
         # cover the selected period, which is usually wider than the
@@ -367,6 +413,27 @@ def _build_context(
         if cell.status == "uncaptured"
     )
 
+    # Points and the weekly comparison describe the selected period, not
+    # the month: they answer "how am I doing lately", and the month on
+    # screen is chosen for a different reason.
+    estimate = points_estimate(
+        over_period,
+        model=PointsModel(
+            base_cost=settings.statistics_base_point_cost,
+            late_penalty=settings.statistics_late_cancel_penalty,
+            very_late_penalty=settings.statistics_very_late_cancel_penalty,
+            absence_penalty=settings.statistics_absence_penalty,
+            late_hours=settings.statistics_late_cancel_hours,
+            very_late_hours=settings.statistics_very_late_cancel_hours,
+        ),
+    )
+    pace = weekly_average(
+        all_counted,
+        captured=all_captured.keys(),
+        start=period.start,
+        end=period.end,
+    )
+
     return {
         "csrf_token": get_csrf_token(request) or "",
         "has_gym": True,
@@ -390,7 +457,18 @@ def _build_context(
         "weekday_labels": _weekday_labels(),
         "cell_lines": _cell_lines(calendar),
         "legend": _legend(),
-        **_chart_context(over_period, period, settings),
+        "points": estimate,
+        "points_balance": points.balance,
+        "points_assumptions": [
+            t(
+                f"statistics.points.assumption.{key}",
+                hours=_hours_label(settings.statistics_late_cancel_hours),
+            )
+            for key in estimate.assumptions
+        ],
+        "billing_period": points.period,
+        "pace": pace,
+        **_chart_context(over_period, period, settings, billing=points.period),
     }
 
 
@@ -404,6 +482,8 @@ def _chart_context(
     records: list[CountedRecord],
     period: Period,
     settings: Settings,
+    *,
+    billing: tuple[date, date] | None = None,
 ) -> dict[str, object]:
     """Everything the chart block needs, for the selected period."""
     short_days = [t(f"day.short.{key}") for key in _WEEKDAY_KEYS]
@@ -412,10 +492,14 @@ def _chart_context(
     trend = monthly_trend(records)
     lead = booking_lead_bands(records, free_hours=settings.statistics_late_cancel_hours)
     free = _hours_label(settings.statistics_late_cancel_hours)
+    # The gym's own period is offered only when the gym stated it.
+    # Listing it greyed out would advertise a capability the deployment
+    # cannot deliver for this account.
+    options = [key for key in PERIOD_KEYS if key != "billing" or billing is not None]
 
     return {
         "period": period,
-        "period_options": [(key, t(f"statistics.period.{key}")) for key in PERIOD_KEYS],
+        "period_options": [(key, t(f"statistics.period.{key}")) for key in options],
         "period_label": t(f"statistics.period.{period.key}"),
         "occupancy": occupancy(records),
         "charts": [
@@ -713,6 +797,11 @@ def _empty_context(request: Request, *, has_gym: bool) -> dict[str, object]:
         "streaks": None,
         "streak_cards": [],
         "excluded_weekday_labels": [],
+        "points": None,
+        "points_balance": None,
+        "points_assumptions": [],
+        "billing_period": None,
+        "pace": None,
         "bands": None,
         "band_labels": [],
         "charts": [],

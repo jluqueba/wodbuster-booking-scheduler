@@ -326,3 +326,44 @@ def test_no_period_reaches_past_the_horizon() -> None:
     window = resolve_period("all", today=TODAY, horizon_days=30, oldest_captured=date(2020, 1, 1))
 
     assert window.start == TODAY - timedelta(days=30)
+
+
+def test_the_billing_period_is_offered_when_the_gym_stated_it() -> None:
+    window = resolve_period(
+        "billing",
+        today=TODAY,
+        horizon_days=HORIZON,
+        oldest_captured=None,
+        billing=(date(2026, 9, 7), date(2026, 10, 6)),
+    )
+
+    assert window.key == "billing"
+    assert window.start == date(2026, 9, 7)
+
+
+def test_an_open_billing_period_stops_at_today() -> None:
+    """Charts describe what happened. Running the window to the end of
+    a period still in progress would average real days against days
+    that have not occurred."""
+    window = resolve_period(
+        "billing",
+        today=TODAY,
+        horizon_days=HORIZON,
+        oldest_captured=None,
+        billing=(date(2026, 9, 7), date(2026, 10, 6)),
+    )
+
+    assert window.end == TODAY
+
+
+def test_asking_for_a_billing_period_the_gym_did_not_state_falls_back() -> None:
+    """FR-031 at this boundary: omit without error."""
+    window = resolve_period(
+        "billing",
+        today=TODAY,
+        horizon_days=HORIZON,
+        oldest_captured=None,
+        billing=None,
+    )
+
+    assert window.key == DEFAULT_PERIOD

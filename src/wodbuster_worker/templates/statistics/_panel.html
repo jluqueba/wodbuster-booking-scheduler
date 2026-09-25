@@ -140,6 +140,87 @@
         {% endfor %}
       </form>
 
+      {% if points %}
+        {# The balance is a fact the gym publishes and the penalties are
+           derived from instants it recorded. The base cost is neither,
+           so it travels as a range with its reasons attached: INV-004
+           is enforced here by keeping the label and the assumptions in
+           the same block as the figure. #}
+        <section class="wb-points">
+          <h2 class="wb-points__title">{{ t("statistics.points.title") }}</h2>
+          <div class="wb-stats__tiles">
+            {% if points_balance is not none %}
+              <div class="wb-stat-tile">
+                <span class="wb-stat-tile__value">{{ points_balance }}</span>
+                <span class="wb-stat-tile__label">{{ t("statistics.points.balance.tile") }}</span>
+                <span class="wb-stat-tile__hint">{{ t("statistics.points.balance.hint") }}</span>
+              </div>
+            {% endif %}
+            <div class="wb-stat-tile">
+              <span class="wb-stat-tile__value">{{ points.penalties }}</span>
+              <span class="wb-stat-tile__label">{{ t("statistics.points.penalties.tile") }}</span>
+              <span class="wb-stat-tile__hint">{{ t("statistics.points.penalties.hint") }}</span>
+            </div>
+            <div class="wb-stat-tile wb-stat-tile--streak">
+              <span class="wb-stat-tile__value">
+                {%- if points.is_range -%}
+                  {{ t("statistics.points.estimate.range",
+                        low=points.total_low, high=points.total_high) }}
+                {%- else -%}
+                  {{ t("statistics.points.estimate.exact", low=points.total_low) }}
+                {%- endif -%}
+              </span>
+              <span class="wb-stat-tile__label">
+                {{ t("statistics.points.estimate.tile") }}
+                <span class="wb-tag">{{ t("statistics.points.estimate.label") }}</span>
+              </span>
+              <span class="wb-stat-tile__hint">{{ period_label }}</span>
+            </div>
+            {% if pace and pace.per_week is not none %}
+              <div class="wb-stat-tile">
+                <span class="wb-stat-tile__value">{{ "%.1f" | format(pace.per_week) }}</span>
+                <span class="wb-stat-tile__label">{{ t("statistics.pace.tile") }}</span>
+                <span class="wb-stat-tile__hint">
+                  {%- if pace.previous_per_week is none -%}
+                    {{ t("statistics.pace.no_previous") }}
+                  {%- else -%}
+                    {{ t("statistics.pace.previous",
+                          value="%.1f" | format(pace.previous_per_week)) }}
+                  {%- endif -%}
+                </span>
+              </div>
+            {% endif %}
+          </div>
+
+          <ul class="wb-points__counts">
+            {% if points.class_changes %}
+              <li>{{ t("statistics.points.counts.changes", count=points.class_changes) }}</li>
+            {% endif %}
+            {% if points.recovered_bookings %}
+              <li>{{ t("statistics.points.counts.recovered", count=points.recovered_bookings) }}</li>
+            {% endif %}
+            {% if points.absences %}
+              <li>
+                {{ t("statistics.points.counts.absences",
+                      no_shows=points.no_shows, removed=points.removed_after_start) }}
+              </li>
+            {% endif %}
+            {% if points.unknown_lead %}
+              <li>{{ t("statistics.points.counts.unknown", count=points.unknown_lead) }}</li>
+            {% endif %}
+          </ul>
+
+          {% if points_assumptions %}
+            <h3 class="wb-points__subtitle">{{ t("statistics.points.assumptions.title") }}</h3>
+            <ul class="wb-points__assumptions">
+              {% for assumption in points_assumptions %}
+                <li>{{ assumption }}</li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </section>
+      {% endif %}
+
       {% if occupancy.sessions %}
         <p class="wb-charts__headline">
           {{ t("statistics.occupancy.summary",
