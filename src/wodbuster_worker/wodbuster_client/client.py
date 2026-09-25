@@ -235,7 +235,19 @@ class WodBusterClient:
     # ------------------------------------------------------------------
 
     def load_class(self, cookie_value: str, ticks: int) -> LoadClassResponse:
-        """Fetch the operator's calendar view for the week at ``ticks``.
+        """Fetch the gym's calendar for the single day at ``ticks``.
+
+        One call returns one day, not a week. The handler's own ``Prev``
+        and ``Next`` step by a day and its ``Title`` names a single
+        date, established by the spike recorded in ADR-0013; a year of
+        captured history is therefore 365 calls. Earlier wording here
+        said "week", which is why ``rules/classes.py`` probes seven
+        ticks to cover one: it is calling this seven times on purpose.
+
+        ``Data`` holds every class the gym ran that day, not only the
+        ones the operator booked. That is what lets the statistics
+        ledger tell a day the gym was closed from a day it was open and
+        the operator did not book.
 
         A successful call implies the cookie is valid (Phase 0 evidence:
         the server serves authenticated JSON only when ``.WBAuth`` is
