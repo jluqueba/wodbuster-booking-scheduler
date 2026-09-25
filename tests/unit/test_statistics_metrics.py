@@ -7,16 +7,19 @@ Python (ADR-0014, Decision 2).
 
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping
 from datetime import UTC, date, datetime, timedelta
 
 from wodbuster_worker.persistence.models import AttendanceRecord
 from wodbuster_worker.statistics.metrics import (
     CancellationBands,
     CountedRecord,
+    Streaks,
     abandonment,
     cancellation_bands,
     counted_records,
     day_calendar,
+    streaks,
 )
 
 NOW = datetime(2026, 9, 24, 12, 0, tzinfo=UTC)
@@ -641,3 +644,192 @@ def test_only_voluntary_cancellations_are_banded() -> None:
     )
 
     assert result.total == 0
+
+
+# ---------------------------------------------------------------------------
+# Streaks (ADR-0015 Decision 1)
+# ---------------------------------------------------------------------------
+
+
+def _ledger(start: date, days: int, *, closed: Collection[date] = ()) -> dict[date, int]:
+    """A contiguous ledger: every day read, closed days holding zero classes."""
+    return {
+        start + timedelta(days=offset): (0 if start + timedelta(days=offset) in closed else 8)
+        for offset in range(days)
+    }
+
+
+def _streaks(
+    *trained_days: date,
+    ledger: Mapping[date, int],
+    today: date,
+    excluded: Collection[int] = (),
+) -> Streaks:
+    # The clock sits inside the day under test, otherwise the settle
+    # window would silently drop the most recent trainings.
+    now = datetime(today.year, today.month, today.day, 12, tzinfo=UTC)
+    records = counted_records(
+        [_trained(day) for day in trained_days],
+        now=now,
+        settle_window_hours=SETTLE,
+    )
+    return streaks(records, captured=ledger, today=today, excluded_weekdays=excluded)
+
+
+def test_consecutive_training_days_form_a_streak() -> None:
+    ledger = _ledger(date(2026, 9, 20), 6)
+
+    result = _streaks(
+        date(2026, 9, 22),
+        date(2026, 9, 23),
+        date(2026, 9, 24),
+        ledger=ledger,
+        today=date(2026, 9, 25),
+    )
+
+    assert result.current.days == 3
+    assert (result.current.start, result.current.end) == (date(2026, 9, 22), date(2026, 9, 24))
+
+
+def test_a_day_the_gym_ran_no_classes_does_not_break_a_streak() -> None:
+    """One rule covers the weekly closing day and a public holiday
+    alike, so neither has to be configured anywhere."""
+    sunday = date(2026, 9, 20)
+    ledger = _ledger(date(2026, 9, 14), 12, closed={sunday})
+
+    result = _streaks(
+        date(2026, 9, 19),
+        date(2026, 9, 21),
+        ledger=ledger,
+        today=date(2026, 9, 22),
+    )
+
+    assert result.current.days == 2
+
+
+def test_a_closed_day_does_not_add_to_the_streak_either() -> None:
+    """Counting it would claim a session on a day the gym was shut."""
+    sunday = date(2026, 9, 20)
+    ledger = _ledger(date(2026, 9, 14), 12, closed={sunday})
+
+    result = _streaks(
+        date(2026, 9, 19),
+        date(2026, 9, 21),
+        ledger=ledger,
+        today=date(2026, 9, 22),
+    )
+
+    assert result.current.days == 2
+    assert (result.current.start, result.current.end) == (date(2026, 9, 19), date(2026, 9, 21))
+
+
+def test_an_open_day_you_skipped_breaks_the_streak() -> None:
+    ledger = _ledger(date(2026, 9, 14), 12)
+
+    result = _streaks(
+        date(2026, 9, 19),
+        date(2026, 9, 21),
+        ledger=ledger,
+        today=date(2026, 9, 22),
+    )
+
+    assert result.current.days == 1
+    assert result.current.start == date(2026, 9, 21)
+
+
+def test_a_weekday_you_never_train_does_not_break_the_streak() -> None:
+    """The gym opens on Sunday, the user never goes. Without this the
+    streak would reset every week and the figure would say nothing."""
+    ledger = _ledger(date(2026, 9, 14), 12)
+    sunday = date(2026, 9, 20).weekday()
+
+    result = _streaks(
+        date(2026, 9, 19),
+        date(2026, 9, 21),
+        ledger=ledger,
+        today=date(2026, 9, 22),
+        excluded=(sunday,),
+    )
+
+    assert result.current.days == 2
+
+
+def test_today_does_not_break_the_streak_before_the_day_is_over() -> None:
+    """Otherwise the figure would reset every morning before the gym
+    opens and recover in the evening."""
+    ledger = _ledger(date(2026, 9, 20), 6)
+
+    result = _streaks(
+        date(2026, 9, 23),
+        date(2026, 9, 24),
+        ledger=ledger,
+        today=date(2026, 9, 25),
+    )
+
+    assert result.current.days == 2
+
+
+def test_a_run_reaching_the_oldest_reading_is_reported_as_a_lower_bound() -> None:
+    """Absence of a reading is not absence of training (INV-005), so
+    the page says "at least" instead of naming a number nobody
+    measured."""
+    ledger = _ledger(date(2026, 9, 22), 4)
+
+    result = _streaks(
+        date(2026, 9, 22),
+        date(2026, 9, 23),
+        date(2026, 9, 24),
+        ledger=ledger,
+        today=date(2026, 9, 25),
+    )
+
+    assert result.current.days == 3
+    assert result.current.is_lower_bound is True
+    assert result.longest_is_provisional is True
+
+
+def test_a_run_inside_the_read_history_is_a_fact_not_a_bound() -> None:
+    ledger = _ledger(date(2026, 9, 14), 12)
+
+    result = _streaks(
+        date(2026, 9, 19),
+        date(2026, 9, 20),
+        date(2026, 9, 21),
+        ledger=ledger,
+        today=date(2026, 9, 25),
+    )
+
+    assert result.longest.days == 3
+    assert result.longest.is_lower_bound is False
+    assert result.longest_is_provisional is False
+
+
+def test_the_longest_run_is_found_anywhere_in_the_history() -> None:
+    ledger = _ledger(date(2026, 9, 1), 25)
+
+    result = _streaks(
+        date(2026, 9, 3),
+        date(2026, 9, 4),
+        date(2026, 9, 5),
+        date(2026, 9, 6),
+        date(2026, 9, 24),
+        ledger=ledger,
+        today=date(2026, 9, 25),
+    )
+
+    assert result.current.days == 1
+    assert result.longest.days == 4
+    assert (result.longest.start, result.longest.end) == (date(2026, 9, 3), date(2026, 9, 6))
+
+
+def test_no_training_at_all_leaves_both_runs_at_zero() -> None:
+    result = streaks([], captured=_ledger(date(2026, 9, 1), 25), today=date(2026, 9, 25))
+
+    assert (result.current.days, result.longest.days) == (0, 0)
+    assert result.current.start is None
+
+
+def test_an_empty_ledger_yields_no_streak_rather_than_an_error() -> None:
+    result = streaks([], captured={}, today=date(2026, 9, 25))
+
+    assert (result.current.days, result.longest.days) == (0, 0)

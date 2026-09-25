@@ -68,6 +68,15 @@
     font-size: 0.85rem;
     color: var(--wb-text-muted);
   }
+  /* A streak reads as a sentence, not a single number, so it needs a
+     size that fits words without wrapping mid-tile. */
+  .wb-stat-tile--streak .wb-stat-tile__value {
+    font-size: 1.5rem;
+    line-height: 1.2;
+  }
+  .wb-streaks {
+    margin-top: 1.5rem;
+  }
 
   .wb-monthjump {
     display: flex;

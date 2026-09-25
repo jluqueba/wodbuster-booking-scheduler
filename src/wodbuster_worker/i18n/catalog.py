@@ -139,6 +139,13 @@ EN: dict[str, str] = {
         "Account emails (approval, rejection) are always sent, regardless of these settings."
     ),
     "profile.flash.bad_email": "That email address does not look valid.",
+    "profile.flash.bad_weekday": "That is not a valid weekday.",
+    "profile.streak_days.legend": "Days that never break a streak",
+    "profile.streak_days.note": (
+        "Tick the days you never train. A day the gym closes already counts as "
+        "neutral on its own, so tick a day only when the gym opens and you "
+        "choose not to go."
+    ),
     # -- dashboard ---------------------------------------------------
     "dashboard.eyebrow": "Welcome back",
     "dashboard.title.hero": "Hero",
@@ -931,6 +938,21 @@ EN: dict[str, str] = {
     "statistics.abandonment.none": "Nothing booked in this month",
     "statistics.absent.tile": "Absences",
     "statistics.absent.hint": "Booked and did not turn up",
+    "statistics.streak.current.tile": "Current streak",
+    "statistics.streak.longest.tile": "Longest streak",
+    "statistics.streak.days": "{days} training days",
+    "statistics.streak.one_day": "1 training day",
+    "statistics.streak.none": "No streak running",
+    "statistics.streak.at_least": "at least {days}",
+    "statistics.streak.range": "{start} to {end}",
+    "statistics.streak.provisional": (
+        "Only the history read so far counts; an older run may still show up."
+    ),
+    "statistics.streak.rule": (
+        "A day the gym ran no classes never breaks a streak, and it does not add to it either."
+    ),
+    "statistics.streak.excluded": "Days you never train: {days}.",
+    "statistics.streak.excluded_link": "Change them in your profile",
     "statistics.bands.title": "How much notice you gave",
     "statistics.bands.early": "more than {hours} h ahead",
     "statistics.bands.late": "between {lower} h and {upper} h ahead",
@@ -980,6 +1002,7 @@ EN: dict[str, str] = {
     "statistics.swapped.hint": "Moved to another time the same day, not counted as dropped",
     "statistics.calendar.caption": "Every day between {start} and {end}.",
     "statistics.month.label": "{month} {year}",
+    "statistics.date": "{day} {month} {year}",
     "statistics.month.jump_label": "Go to",
     "statistics.month.jump": "📅 Go",
     "statistics.calendar.attended": "Trained",
@@ -1159,6 +1182,13 @@ ES: dict[str, str] = {
         "Los correos de cuenta (aprobación, rechazo) se envían siempre, al margen de estos ajustes."
     ),
     "profile.flash.bad_email": "Ese correo no parece válido.",
+    "profile.flash.bad_weekday": "Ese no es un día de la semana válido.",
+    "profile.streak_days.legend": "Días que nunca rompen una racha",
+    "profile.streak_days.note": (
+        "Marca los días en los que nunca entrenas. Un día que el gimnasio cierra "
+        "ya es neutro por sí solo, así que marca un día solo cuando el gimnasio "
+        "abre y tú decides no ir."
+    ),
     # -- dashboard ---------------------------------------------------
     "dashboard.eyebrow": "Hola de nuevo",
     "dashboard.title.hero": "Crack",
@@ -1995,6 +2025,21 @@ ES: dict[str, str] = {
     "statistics.abandonment.none": "No reservaste nada este mes",
     "statistics.absent.tile": "Ausencias",
     "statistics.absent.hint": "Reservaste y no apareciste",
+    "statistics.streak.current.tile": "Racha actual",
+    "statistics.streak.longest.tile": "Mejor racha",
+    "statistics.streak.days": "{days} días entrenados",
+    "statistics.streak.one_day": "1 día entrenado",
+    "statistics.streak.none": "Sin racha en curso",
+    "statistics.streak.at_least": "al menos {days}",
+    "statistics.streak.range": "del {start} al {end}",
+    "statistics.streak.provisional": (
+        "Solo cuenta el histórico leído hasta ahora; puede aparecer una racha más antigua."
+    ),
+    "statistics.streak.rule": (
+        "Un día sin clases en el gimnasio nunca rompe una racha, y tampoco suma."
+    ),
+    "statistics.streak.excluded": "Días en los que nunca entrenas: {days}.",
+    "statistics.streak.excluded_link": "Cámbialos en tu perfil",
     "statistics.bands.title": "Con cuánta antelación te borraste",
     "statistics.bands.early": "con más de {hours} h",
     "statistics.bands.late": "entre {lower} h y {upper} h antes",
@@ -2044,6 +2089,7 @@ ES: dict[str, str] = {
     "statistics.swapped.hint": "Te moviste a otra hora el mismo día, no cuenta como baja",
     "statistics.calendar.caption": "Todos los días entre el {start} y el {end}.",
     "statistics.month.label": "{month} {year}",
+    "statistics.date": "{day} de {month} de {year}",
     "statistics.month.jump_label": "Ir a",
     "statistics.month.jump": "📅 Ir",
     "statistics.calendar.attended": "Entrenaste",

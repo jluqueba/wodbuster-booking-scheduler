@@ -25,7 +25,7 @@ every function:
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -503,6 +503,144 @@ def occupancy(records: Sequence[CountedRecord]) -> Occupancy:
 
 
 @dataclass(frozen=True)
+class Streak:
+    """A run of training days unbroken by a day that could have held one."""
+
+    days: int
+    start: date | None
+    end: date | None
+    # True when the run reached the oldest captured day, so it may have
+    # been longer than we can see. The page says "at least" rather than
+    # claiming a number the history cannot support.
+    is_lower_bound: bool = False
+
+
+@dataclass(frozen=True)
+class Streaks:
+    """The current run and the best one in the captured history."""
+
+    current: Streak
+    longest: Streak
+    # True while the backfill has not reached the horizon: a longer
+    # run may exist in history nobody has read yet.
+    longest_is_provisional: bool = False
+
+
+def streaks(
+    records: Sequence[CountedRecord],
+    *,
+    captured: Mapping[date, int],
+    today: date,
+    excluded_weekdays: Collection[int] = (),
+) -> Streaks:
+    """Return the current and longest training streaks.
+
+    A day breaks a streak only when it could have held a training and
+    did not: the gym ran classes, the weekday is not one the user
+    excluded, and the day is over. Everything else is neutral, which is
+    what lets one rule cover a gym's weekly closing day and a public
+    holiday without either being configured.
+
+    A neutral day does not count towards the streak either. Counting it
+    would claim a session on a day the gym was shut.
+
+    A day with no ledger entry ends the walk rather than breaking it.
+    Absence of a reading is not absence of training (INV-005), so the
+    run is reported as a lower bound instead of as a fact.
+    """
+    trained = {record.local_date for record in records if record.state == "attended"}
+    excluded = set(excluded_weekdays)
+
+    def breaks(day: date) -> bool:
+        classes = captured.get(day)
+        if classes is None or classes == 0:
+            return False
+        if day.weekday() in excluded:
+            return False
+        # A day still running cannot be a failure yet, or the streak
+        # would reset every morning before the gym opens.
+        return day < today
+
+    current = _walk_back(today, trained, captured, breaks)
+    longest = _best_run(trained, captured, breaks)
+    if current.days > longest.days:
+        longest = current
+
+    return Streaks(
+        current=current,
+        longest=longest,
+        longest_is_provisional=longest.is_lower_bound,
+    )
+
+
+def _walk_back(
+    today: date,
+    trained: set[date],
+    captured: Mapping[date, int],
+    breaks: Callable[[date], bool],
+) -> Streak:
+    """Return the run of training days ending at or before ``today``."""
+    days: list[date] = []
+    cursor = today
+    hit_edge = False
+    while True:
+        if cursor not in captured:
+            hit_edge = True
+            break
+        if cursor in trained:
+            days.append(cursor)
+        elif breaks(cursor):
+            break
+        cursor -= timedelta(days=1)
+
+    if not days:
+        return Streak(days=0, start=None, end=None, is_lower_bound=False)
+    return Streak(
+        days=len(days),
+        start=days[-1],
+        end=days[0],
+        is_lower_bound=hit_edge,
+    )
+
+
+def _best_run(
+    trained: set[date],
+    captured: Mapping[date, int],
+    breaks: Callable[[date], bool],
+) -> Streak:
+    """Return the longest run anywhere in the captured history.
+
+    A run whose neighbouring day was never read is reported as a lower
+    bound: the reading is missing, not the training (INV-005).
+    """
+    if not captured:
+        return Streak(days=0, start=None, end=None)
+
+    best = Streak(days=0, start=None, end=None)
+    run: list[date] = []
+
+    def close(run: list[date], best: Streak) -> Streak:
+        if not run or len(run) <= best.days:
+            return best
+        touches_edge = (
+            run[0] - timedelta(days=1) not in captured
+            or run[-1] + timedelta(days=1) not in captured
+        )
+        return Streak(days=len(run), start=run[0], end=run[-1], is_lower_bound=touches_edge)
+
+    cursor, last = min(captured), max(captured)
+    while cursor <= last:
+        if cursor in trained:
+            run.append(cursor)
+        elif breaks(cursor) or cursor not in captured:
+            best = close(run, best)
+            run = []
+        cursor += timedelta(days=1)
+
+    return close(run, best)
+
+
+@dataclass(frozen=True)
 class DayCell:
     """One day of the calendar, with everything a cell needs to render.
 
@@ -666,6 +804,8 @@ __all__ = [
     "MonthPoint",
     "Occupancy",
     "SlotStats",
+    "Streak",
+    "Streaks",
     "abandonment",
     "booking_lead_bands",
     "cancellation_bands",
@@ -675,5 +815,6 @@ __all__ = [
     "monthly_trend",
     "occupancy",
     "settle_cutoff",
+    "streaks",
     "weekday_hour_grid",
 ]

@@ -7,6 +7,7 @@ charting library is absent.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
@@ -799,3 +800,126 @@ def test_deleting_the_gym_account_removes_its_history(
     assert (days, records) == (0, 0)
     # The page survives its gym account disappearing mid-session.
     assert tc.get("/statistics").status_code == 200
+
+
+def _seed_closed_day(engine: Engine, *, gym_account_id: int, local_date: date) -> None:
+    """A day the gym ran no classes, already read and final."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO attendance_day (gym_account_id, local_date, class_count, is_final) "
+                "VALUES (:ga, :d, 0, TRUE) ON CONFLICT DO NOTHING"
+            ),
+            {"ga": gym_account_id, "d": local_date},
+        )
+
+
+def _set_excluded_weekdays(engine: Engine, operator_id: int, weekdays: list[int]) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE operator_profile SET statistics_excluded_weekdays = "
+                "CAST(:days AS jsonb) WHERE id = :id"
+            ),
+            {"id": operator_id, "days": json.dumps(weekdays)},
+        )
+
+
+def test_the_current_streak_counts_consecutive_training_days(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    tc, _, gym_account_id, _ = signed_in
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    for offset in range(3):
+        _seed_attendance(
+            postgres_engine,
+            gym_account_id=gym_account_id,
+            local_date=yesterday - timedelta(days=offset),
+            class_id=93000 + offset,
+        )
+
+    body = tc.get("/statistics").text
+
+    assert "Current streak" in body
+    assert "3 training days" in body
+
+
+def test_a_day_the_gym_was_shut_does_not_break_the_streak(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """CC-013: the same rule covers the weekly closing day and a public
+    holiday, so neither has to be configured anywhere."""
+    tc, _, gym_account_id, _ = signed_in
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    _seed_attendance(
+        postgres_engine,
+        gym_account_id=gym_account_id,
+        local_date=yesterday,
+        class_id=93100,
+    )
+    _seed_closed_day(
+        postgres_engine, gym_account_id=gym_account_id, local_date=yesterday - timedelta(days=1)
+    )
+    _seed_attendance(
+        postgres_engine,
+        gym_account_id=gym_account_id,
+        local_date=yesterday - timedelta(days=2),
+        class_id=93101,
+    )
+
+    body = tc.get("/statistics").text
+
+    assert "2 training days" in body
+
+
+def test_a_weekday_the_user_never_trains_does_not_break_the_streak(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """The gym opens, the user never goes. Without this the streak would
+    reset every week and the figure would say nothing."""
+    tc, operator_id, gym_account_id, _ = signed_in
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    skipped = yesterday - timedelta(days=1)
+    _set_excluded_weekdays(postgres_engine, operator_id, [skipped.weekday()])
+    _seed_attendance(
+        postgres_engine,
+        gym_account_id=gym_account_id,
+        local_date=yesterday,
+        class_id=93200,
+    )
+    _seed_attendance(
+        postgres_engine,
+        gym_account_id=gym_account_id,
+        local_date=yesterday - timedelta(days=2),
+        class_id=93201,
+    )
+
+    body = tc.get("/statistics").text
+
+    assert "2 training days" in body
+
+
+def test_a_streak_reaching_the_oldest_reading_says_at_least(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """Absence of a reading is not absence of training (INV-005)."""
+    tc, _, gym_account_id, client = signed_in
+    # No capture, so the ledger holds only the two seeded days and the
+    # walk back runs out of readings rather than out of trainings.
+    client.error = WodBusterTransportError("timeout")
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    for offset in range(2):
+        _seed_attendance(
+            postgres_engine,
+            gym_account_id=gym_account_id,
+            local_date=yesterday - timedelta(days=offset),
+            class_id=93300 + offset,
+        )
+
+    body = tc.get("/statistics").text
+
+    assert "at least 2" in body

@@ -20,7 +20,7 @@ URL-prefix language like the rest of the app.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import urlencode
 
 import structlog
@@ -48,6 +48,17 @@ _LANGUAGES = frozenset({"es", "en"})
 # Deliberately lenient: reject the obvious (no @, no dot) without pretending to
 # fully validate RFC 5322. Real deliverability is proven by an actual send.
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+# Monday first, matching ``date.weekday()`` and the calendar's columns.
+_WEEKDAY_KEYS = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
 
 
 def _templates(request: Request) -> Jinja2Templates:
@@ -117,6 +128,11 @@ def profile_view(
             "email_session_alerts": bool(
                 (profile.email_preferences or {}).get("session_alerts", True)
             ),
+            "excluded_weekdays": set(profile.statistics_excluded_weekdays or []),
+            "weekday_options": [
+                {"value": index, "label": t(f"day.{key}")}
+                for index, key in enumerate(_WEEKDAY_KEYS)
+            ],
             "picture_url": _active_avatar_url(request),
         }
     return templates.TemplateResponse(
@@ -140,6 +156,7 @@ def profile_save(
     email: str = Form(""),
     email_bookings: str = Form(""),
     email_session_alerts: str = Form(""),
+    excluded_weekdays: Annotated[list[int] | None, Form()] = None,
     operator_id: int = Depends(require_session),
 ) -> Response:
     """Validate and persist the editable profile fields."""
@@ -158,6 +175,13 @@ def profile_save(
         return _redirect_with_flash(t("profile.flash.bad_language"), kind="error")
     if email_clean and not _EMAIL_RE.match(email_clean):
         return _redirect_with_flash(t("profile.flash.bad_email"), kind="error")
+    # A weekday outside 0..6 can only come from a crafted form, and
+    # storing it would make the streak rule consult an index that can
+    # never match. Rejected rather than silently dropped, so a broken
+    # form is visible instead of quietly ignored.
+    if any(day not in range(7) for day in excluded_weekdays or ()):
+        return _redirect_with_flash(t("profile.flash.bad_weekday"), kind="error")
+    weekdays = sorted(set(excluded_weekdays or ()))
 
     # Checkbox form fields arrive only when ticked; absence means off.
     email_prefs = {
@@ -174,6 +198,7 @@ def profile_save(
         profile.communication_language = communication_language
         profile.email = email_clean or None
         profile.email_preferences = email_prefs
+        profile.statistics_excluded_weekdays = weekdays
         session.commit()
 
     # Keep the nav/greeting and the middleware language in sync within

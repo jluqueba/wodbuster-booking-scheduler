@@ -35,7 +35,7 @@ from ..gyms.service import gym_client_factory, resolve_gym_client
 from ..i18n import lang_url, t
 from ..persistence.cookie_store import CookieStore
 from ..persistence.engine import get_session
-from ..persistence.models import AttendanceDay, AttendanceRecord, GymAccount
+from ..persistence.models import AttendanceDay, AttendanceRecord, GymAccount, OperatorProfile
 from ..scheduler.clock import local_date_for_slot
 from .capture import CaptureStatus, catch_up
 from .charts import drop_rate_payload, grid_payload, lead_payload, trend_payload
@@ -43,6 +43,7 @@ from .metrics import (
     Calendar,
     CancellationBands,
     CountedRecord,
+    Streaks,
     abandonment,
     booking_lead_bands,
     cancellation_bands,
@@ -51,6 +52,7 @@ from .metrics import (
     drop_rate_by_slot,
     monthly_trend,
     occupancy,
+    streaks,
     weekday_hour_grid,
 )
 from .periods import PERIOD_KEYS, Period, resolve_period
@@ -280,6 +282,29 @@ def _build_context(
                 AttendanceDay.gym_account_id == gym_account_id
             )
         )
+        # The whole ledger and the whole record set, for the streaks.
+        # A run is not bounded by the window on screen.
+        all_captured: dict[date, int] = {
+            row.local_date: row.class_count
+            for row in session.execute(
+                select(AttendanceDay.local_date, AttendanceDay.class_count).where(
+                    AttendanceDay.gym_account_id == gym_account_id
+                )
+            ).all()
+        }
+        all_rows = list(
+            session.scalars(
+                select(AttendanceRecord).where(AttendanceRecord.gym_account_id == gym_account_id)
+            ).all()
+        )
+        excluded_weekdays = list(
+            session.scalar(
+                select(OperatorProfile.statistics_excluded_weekdays).where(
+                    OperatorProfile.id == operator_id
+                )
+            )
+            or []
+        )
         period = resolve_period(
             period_key,
             today=today,
@@ -311,12 +336,26 @@ def _build_context(
         now=now,
         settle_window_hours=settings.statistics_settle_window_hours,
     )
+    all_counted = counted_records(
+        all_rows,
+        now=now,
+        settle_window_hours=settings.statistics_settle_window_hours,
+    )
     calendar = day_calendar(counted, captured=captured, start=start, end=end, today=today)
     dropouts = abandonment(counted)
     bands = cancellation_bands(
         counted,
         late_hours=settings.statistics_late_cancel_hours,
         very_late_hours=settings.statistics_very_late_cancel_hours,
+    )
+    # Streaks read the whole captured history, not the month or the
+    # chart period: a run that started before the window on screen is
+    # still the run the reader is on.
+    runs = streaks(
+        all_counted,
+        captured=all_captured,
+        today=today,
+        excluded_weekdays=excluded_weekdays,
     )
 
     # Days of this month that are over and still unread. The cells say
@@ -341,6 +380,11 @@ def _build_context(
         "month_label": _month_label(window),
         "calendar": calendar,
         "abandonment": dropouts,
+        "streaks": runs,
+        "streak_cards": _streak_cards(runs),
+        "excluded_weekday_labels": [
+            t(f"day.{_WEEKDAY_KEYS[day]}") for day in sorted(excluded_weekdays)
+        ],
         "bands": bands,
         "band_labels": _band_labels(bands),
         "weekday_labels": _weekday_labels(),
@@ -509,6 +553,61 @@ def _month_label(window: MonthWindow) -> str:
     )
 
 
+def _date_label(day: date) -> str:
+    return t(
+        "statistics.date",
+        day=day.day,
+        month=t(f"month.{_MONTH_KEYS[day.month - 1]}"),
+        year=day.year,
+    )
+
+
+def _streak_cards(runs: Streaks) -> list[dict[str, object]]:
+    """Describe both runs in words the reader can check on the calendar.
+
+    A run that reached the oldest captured day is reported as "at
+    least", because the history behind it was never read and claiming
+    a exact number there would be claiming a fact nobody measured.
+    """
+    cards: list[dict[str, object]] = []
+    for key, run, provisional in (
+        ("current", runs.current, False),
+        ("longest", runs.longest, runs.longest_is_provisional),
+    ):
+        if run.days == 0:
+            value = t("statistics.streak.none")
+            hint = ""
+        else:
+            count = (
+                t("statistics.streak.at_least", days=run.days)
+                if run.is_lower_bound
+                else str(run.days)
+            )
+            value = (
+                t("statistics.streak.one_day")
+                if run.days == 1 and not run.is_lower_bound
+                else t("statistics.streak.days", days=count)
+            )
+            hint = (
+                t(
+                    "statistics.streak.range",
+                    start=_date_label(run.start),
+                    end=_date_label(run.end),
+                )
+                if run.start and run.end
+                else ""
+            )
+        cards.append(
+            {
+                "label": t(f"statistics.streak.{key}.tile"),
+                "value": value,
+                "hint": hint,
+                "provisional": provisional and run.days > 0,
+            }
+        )
+    return cards
+
+
 def _legend() -> list[tuple[str, str]]:
     return [(key, t(f"statistics.legend.{key}")) for key in _LEGEND_KEYS]
 
@@ -611,6 +710,9 @@ def _empty_context(request: Request, *, has_gym: bool) -> dict[str, object]:
         "cookie_url": lang_url("/cookie"),
         "no_activity_ever": False,
         "abandonment": None,
+        "streaks": None,
+        "streak_cards": [],
+        "excluded_weekday_labels": [],
         "bands": None,
         "band_labels": [],
         "charts": [],

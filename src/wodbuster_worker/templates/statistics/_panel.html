@@ -69,6 +69,36 @@
       {% endif %}
     </div>
 
+    {% if streak_cards %}
+      {# Streaks read the whole history, not the month on screen, so
+         they sit apart from the month tiles. Mixing them would invite
+         the reader to reconcile a run against a calendar that does not
+         contain all of it. #}
+      <section class="wb-streaks">
+        <div class="wb-stats__tiles">
+          {% for card in streak_cards %}
+            <div class="wb-stat-tile wb-stat-tile--streak">
+              <span class="wb-stat-tile__value">{{ card.value }}</span>
+              <span class="wb-stat-tile__label">{{ card.label }}</span>
+              {% if card.hint %}
+                <span class="wb-stat-tile__hint">{{ card.hint }}</span>
+              {% endif %}
+              {% if card.provisional %}
+                <span class="wb-stat-tile__hint">{{ t("statistics.streak.provisional") }}</span>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+        <p class="wb-muted wb-note">
+          {{ t("statistics.streak.rule") }}
+          {% if excluded_weekday_labels %}
+            {{ t("statistics.streak.excluded", days=excluded_weekday_labels | join(", ")) }}
+          {% endif %}
+          <a href="{{ lang_url('/profile') }}">{{ t("statistics.streak.excluded_link") }}</a>
+        </p>
+      </section>
+    {% endif %}
+
     {% if bands.total %}
       {# The bands answer what the rate cannot: a drop three days out
          and one two hours out cost the user different things. #}
