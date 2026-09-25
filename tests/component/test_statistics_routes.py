@@ -369,7 +369,7 @@ def test_a_dropped_day_is_visible_on_the_page(
 def test_no_charting_library_is_loaded_yet(
     signed_in: tuple[TestClient, int, int, RecordingClient],
 ) -> None:
-    """Superseded by slice 5: the charts arrived and so did the library."""
+    """CC-026: Superseded by slice 5: the charts arrived and so did the library."""
     body = signed_in[0].get("/statistics").text
 
     assert "chart.js@4.5.1" in body
@@ -417,7 +417,7 @@ def test_every_chart_carries_its_numbers_as_markup(
 def test_the_period_selector_governs_every_chart(
     signed_in: tuple[TestClient, int, int, RecordingClient],
 ) -> None:
-    """One window for the whole page. Per-chart windows would let the
+    """CC-027, CC-046: One window for the whole page. Per-chart windows would let the
     reader cross two figures that do not describe the same thing."""
     tc, _, _, _ = signed_in
 
@@ -702,7 +702,7 @@ def test_a_rejected_cookie_says_so_and_points_at_the_fix(
     signed_in: tuple[TestClient, int, int, RecordingClient],
     postgres_engine: Engine,
 ) -> None:
-    """CC-012: "stale" is not useful; "renew your session" is."""
+    """CC-034: CC-012: "stale" is not useful; "renew your session" is."""
     tc, _, gym_account_id, client = signed_in
     yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
     _seed_attendance(postgres_engine, gym_account_id=gym_account_id, local_date=yesterday)
@@ -719,7 +719,7 @@ def test_a_rejected_cookie_says_so_and_points_at_the_fix(
 def test_an_unreachable_gym_does_not_blame_the_session(
     signed_in: tuple[TestClient, int, int, RecordingClient],
 ) -> None:
-    """Telling a user to renew a working session wastes their time."""
+    """CC-035: Telling a user to renew a working session wastes their time."""
     tc, _, _, client = signed_in
     client.error = WodBusterTransportError("timeout")
 
@@ -963,6 +963,7 @@ def _this_month_page(balance: int = 12) -> str:
 def test_the_points_balance_is_shown_as_read_not_calculated(
     signed_in: tuple[TestClient, int, int, RecordingClient],
 ) -> None:
+    """CC-048."""
     tc, _, _, client = signed_in
     client.points_page = _this_month_page(balance=9)
 
@@ -977,7 +978,7 @@ def test_a_points_figure_never_appears_without_its_label(
     signed_in: tuple[TestClient, int, int, RecordingClient],
     postgres_engine: Engine,
 ) -> None:
-    """INV-004 at the response boundary. The label and the assumptions
+    """CC-018: INV-004 at the response boundary. The label and the assumptions
     have to travel with the number, not in a footnote elsewhere."""
     tc, _, gym_account_id, client = signed_in
     client.points_page = _this_month_page()
@@ -1004,6 +1005,7 @@ def test_the_estimate_is_a_range_because_the_base_cost_is_unknowable(
     signed_in: tuple[TestClient, int, int, RecordingClient],
     postgres_engine: Engine,
 ) -> None:
+    """CC-047."""
     tc, _, gym_account_id, client = signed_in
     client.points_page = _this_month_page()
     yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
@@ -1042,6 +1044,7 @@ def test_the_billing_period_is_offered_only_when_the_gym_states_it(
 def test_an_unreadable_points_page_costs_the_block_not_the_page(
     signed_in: tuple[TestClient, int, int, RecordingClient],
 ) -> None:
+    """CC-049."""
     tc, _, _, client = signed_in
     client.points_error = WodBusterTransportError("timeout")
 

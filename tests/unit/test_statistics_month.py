@@ -33,6 +33,7 @@ def test_the_picker_cannot_reach_beyond_today() -> None:
 
 
 def test_the_picker_cannot_reach_past_the_backfill_horizon() -> None:
+    """CC-033."""
     # 365 days before 2026-09-24 is 2025-09-24, so September 2025 is
     # the oldest month the backfill can ever populate.
     assert _resolve(None).oldest == date(2025, 9, 1)

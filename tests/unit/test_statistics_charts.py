@@ -65,7 +65,7 @@ def _counted(*records: AttendanceRecord):
 
 
 def test_the_grid_buckets_by_the_operator_clock_not_utc() -> None:
-    """A stored 18:30 UTC in September is 20:30 in Madrid.
+    """CC-044: A stored 18:30 UTC in September is 20:30 in Madrid.
 
     Bucketing on the raw instant would move every evening session two
     hours earlier and quietly invent a different routine.
@@ -78,7 +78,7 @@ def test_the_grid_buckets_by_the_operator_clock_not_utc() -> None:
 
 
 def test_the_grid_keeps_the_minutes_of_the_class_time() -> None:
-    """Rounding to the hour would merge distinct slots and label a
+    """CC-043: Rounding to the hour would merge distinct slots and label a
     20:30 session as 20:00, which is simply not true. This gym also
     runs a 10:40, so the minutes are not always 00 or 30."""
     cells = weekday_hour_grid(
@@ -132,7 +132,7 @@ def test_the_drop_rate_is_computed_per_slot() -> None:
 
 
 def test_slots_with_too_little_history_are_hidden() -> None:
-    """One drop out of one booking is a 100 percent rate and a
+    """CC-045: One drop out of one booking is a 100 percent rate and a
     meaningless one."""
     records = [_record(day=date(2026, 9, d), hour=18) for d in range(1, 6)]
     records.append(_record(day=date(2026, 9, 6), hour=10))

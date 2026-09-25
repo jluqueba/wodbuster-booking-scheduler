@@ -359,7 +359,7 @@ def test_a_write_failure_leaves_no_half_captured_day(
     gym_account_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """INV-009 against the other half: the records are written before
+    """CC-036: INV-009 against the other half: the records are written before
     the ledger row, so a failure between them would leave a day that
     looks captured and is not, or records nobody knows the origin of."""
 
@@ -460,7 +460,7 @@ def test_catch_up_reads_the_most_recent_days_first(gym_account_id: int) -> None:
 
 
 def test_catch_up_reads_the_month_on_screen_first(gym_account_id: int) -> None:
-    """Opening January must read January.
+    """CC-031: Opening January must read January.
 
     Without this, the budget goes to the days nearest today and the
     month the reader is looking at stays blank however many times they
@@ -499,7 +499,7 @@ def test_catch_up_stops_when_the_time_budget_runs_out(gym_account_id: int) -> No
 
 
 def test_catch_up_reports_work_left_to_do(gym_account_id: int) -> None:
-    """The page uses this to say "come back" rather than "nothing here"."""
+    """CC-032: The page uses this to say "come back" rather than "nothing here"."""
     client = StubClient()
 
     result = _catch_up(gym_account_id, client, cap=2)

@@ -224,3 +224,31 @@ def test_parse_fecha_estado_rejects_non_strings() -> None:
     assert parse_fecha_estado(1234) is None
     assert parse_fecha_estado("2026-09-21 18:29:00") is None
     assert parse_fecha_estado(" 21/09/2026 18:29:00 ") == datetime(2026, 9, 21, 18, 29, 0)
+
+
+def test_a_waitlist_entry_that_never_became_a_booking_yields_nothing() -> None:
+    """CC-019, INV-005 boundary: an unconsumed waitlist entry must reach
+    no metric, including the denominator of the abandonment rate.
+
+    The exclusion is structural rather than a rule applied later. The
+    parser reads the three athlete lists, and an athlete waiting for a
+    place is in none of them; only the waitlist length is published, as
+    a number with no identity attached.
+    """
+    crowd = [_athlete(OTHER_IDU) for _ in range(14)]
+    payload = _payload(_valor(attending=crowd, plazas=14, ever_full=True, AtletasEnListaDeEspera=3))
+
+    states = read_operator_states(payload, operator_idu=OPERATOR_IDU)
+
+    assert states == []
+
+
+def test_a_waitlist_that_turned_into_a_place_reads_as_attended() -> None:
+    """The other half of the same rule: once the place is granted the
+    athlete appears in the attending list like any other booking."""
+    crowd = [_athlete(OTHER_IDU) for _ in range(13)]
+    payload = _payload(_valor(attending=[*crowd, _athlete(OPERATOR_IDU)], AtletasEnListaDeEspera=2))
+
+    states = read_operator_states(payload, operator_idu=OPERATOR_IDU)
+
+    assert [state.state for state in states] == ["attended"]

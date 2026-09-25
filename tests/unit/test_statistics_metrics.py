@@ -156,7 +156,7 @@ def test_a_no_show_is_carried_through_unchanged() -> None:
 
 
 def test_a_removal_on_a_day_you_trained_is_a_class_change() -> None:
-    """The real 11/09 case: moved from 16:30 to 17:30.
+    """CC-029: The real 11/09 case: moved from 16:30 to 17:30.
 
     The rule is the owner's definition of the metric: "I booked and
     ended up not training". On a day holding a training, a removal is a
@@ -187,7 +187,7 @@ def test_a_removal_on_a_day_you_trained_is_a_class_change() -> None:
 
 
 def test_a_removal_is_a_class_change_even_when_the_acts_are_days_apart() -> None:
-    """The real 18/09 case: cancelled two days early, booked later.
+    """CC-030: The real 18/09 case: cancelled two days early, booked later.
 
     An earlier rule matched the identical upstream state instant, which
     is more precise about the mechanics and answers the wrong question.
@@ -259,7 +259,7 @@ def test_training_on_a_different_day_does_not_excuse_a_drop() -> None:
 
 
 def test_an_absence_is_not_excused_by_training_later_that_day() -> None:
-    """Removed once the class had started, then trained something else.
+    """CC-037: Removed once the class had started, then trained something else.
 
     That is still an absence from the first class. The order of the
     rules is what keeps it one.
@@ -346,7 +346,7 @@ def test_a_day_that_has_not_happened_is_not_a_day_we_failed_to_read() -> None:
 
 
 def test_a_dropped_day_is_visible_in_the_calendar() -> None:
-    """The 21/09 complaint: a drop must not look like an idle day."""
+    """CC-038: The 21/09 complaint: a drop must not look like an idle day."""
     day = date(2026, 9, 21)
     calendar = _calendar_for(
         [
@@ -495,7 +495,7 @@ def test_the_rate_is_dropped_over_bookings_that_resolved() -> None:
 
 
 def test_a_rate_over_nothing_is_unknown_not_zero() -> None:
-    """Reporting perfect behaviour to someone who booked nothing is
+    """CC-039: Reporting perfect behaviour to someone who booked nothing is
     worse than an honest dash."""
     result = abandonment([])
 
@@ -586,7 +586,7 @@ def test_the_observed_case_lands_between_one_and_four_hours() -> None:
 
 
 def test_a_boundary_counts_as_the_more_generous_band() -> None:
-    """The gym defines "more than four hours" and "less than four
+    """CC-040: The gym defines "more than four hours" and "less than four
     hours" and leaves four hours itself undefined, so the tie goes to
     the user rather than to an arbitrary choice."""
     exactly_four = _bands(_drop(date(2026, 9, 1), hours_before=4.0))
@@ -607,6 +607,7 @@ def test_a_cancellation_with_no_instant_is_reported_not_hidden() -> None:
 
 
 def test_the_bands_and_the_rate_agree_on_the_same_records() -> None:
+    """CC-041."""
     records = (
         _drop(date(2026, 9, 1), hours_before=30.0),
         _drop(date(2026, 9, 2), hours_before=2.0),
@@ -621,7 +622,7 @@ def test_the_bands_and_the_rate_agree_on_the_same_records() -> None:
 
 
 def test_the_thresholds_are_arguments_not_constants() -> None:
-    """A second gym will not share Antwork's penalty tiers."""
+    """CC-042: A second gym will not share Antwork's penalty tiers."""
     drop = _drop(date(2026, 9, 1), hours_before=6.0)
 
     antwork = cancellation_bands(_counted(drop), late_hours=4.0, very_late_hours=1.0)
@@ -770,7 +771,7 @@ def test_today_does_not_break_the_streak_before_the_day_is_over() -> None:
 
 
 def test_a_run_reaching_the_oldest_reading_is_reported_as_a_lower_bound() -> None:
-    """Absence of a reading is not absence of training (INV-005), so
+    """CC-016: Absence of a reading is not absence of training (INV-005), so
     the page says "at least" instead of naming a number nobody
     measured."""
     ledger = _ledger(date(2026, 9, 22), 4)

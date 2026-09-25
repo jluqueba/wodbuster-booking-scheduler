@@ -466,7 +466,7 @@ def test_the_period_end_comes_from_the_numeric_date_not_the_sentence() -> None:
 
 
 def test_a_tariff_that_is_not_monthly_yields_no_period() -> None:
-    """Offering a wrong billing period is worse than offering none
+    """CC-050: Offering a wrong billing period is worse than offering none
     (FR-031). A quarterly period's day numbers line up with a monthly
     one, so the month names are what catches it."""
     page = _POINTS_PAGE.replace("del 07 septiembre al 06 octubre", "del 07 julio al 06 octubre")

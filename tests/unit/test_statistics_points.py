@@ -130,7 +130,7 @@ def test_recovery_never_cancels_a_penalty() -> None:
 
 
 def test_a_class_change_is_priced_and_counted_separately() -> None:
-    """The gym sees a removal and charges for it, whether or not another
+    """CC-051: The gym sees a removal and charges for it, whether or not another
     hour was booked the same day."""
     day = date(2026, 9, 1)
     result = _estimate(
@@ -226,7 +226,7 @@ def test_the_comparison_counts_each_range_on_its_own() -> None:
 
 
 def test_an_unread_preceding_range_is_absent_not_zero() -> None:
-    """Otherwise the comparison would measure the backfill rather than
+    """CC-052: Otherwise the comparison would measure the backfill rather than
     the user (INV-005)."""
     start, end = date(2026, 9, 15), date(2026, 9, 21)
     result = _pace([date(2026, 9, 15)], captured={start}, start=start, end=end)
