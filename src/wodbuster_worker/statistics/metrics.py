@@ -24,9 +24,11 @@ every function:
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
 from ..persistence.models import AttendanceRecord
@@ -137,6 +139,124 @@ def _swapped_days(records: Sequence[AttendanceRecord]) -> set[date]:
     exists to report.
     """
     return {record.local_date for record in records if record.state == "attended"}
+
+
+@dataclass(frozen=True)
+class Abandonment:
+    """How often a booking ended in not training.
+
+    ``rate`` is ``None`` rather than zero when nothing was booked. A
+    rate over an empty denominator is unknown, and rendering it as
+    "0 percent" would report perfect behaviour to someone who has not
+    been to the gym.
+
+    The three excluded counts are carried so the page can say what the
+    rate leaves out. A figure whose exclusions are invisible is a
+    figure the reader cannot check.
+    """
+
+    attended: int
+    cancelled: int
+    swapped: int
+    removed_after_start: int
+    no_show: int
+
+    @property
+    def booked(self) -> int:
+        """Bookings the rate is computed over."""
+        return self.attended + self.cancelled
+
+    @property
+    def rate(self) -> float | None:
+        if not self.booked:
+            return None
+        return self.cancelled / self.booked
+
+    @property
+    def percent(self) -> int | None:
+        """The rate as whole percent, for display.
+
+        Rounded half up rather than to even: a reader comparing 2 of 16
+        against a rounded figure should not meet banker's rounding.
+        """
+        if self.rate is None:
+            return None
+        return int(Decimal(self.rate * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+@dataclass(frozen=True)
+class CancellationBands:
+    """Cancellations grouped by how much notice they gave.
+
+    The boundaries are the gym's own penalty tiers, because those are
+    the only ones with a consequence. ``unknown_lead`` is reported
+    rather than folded into a band: a cancellation whose upstream
+    instant was missing still happened, and hiding it would make the
+    bands disagree with the abandonment count.
+    """
+
+    early: int
+    late: int
+    very_late: int
+    unknown_lead: int
+    late_hours: float
+    very_late_hours: float
+
+    @property
+    def total(self) -> int:
+        return self.early + self.late + self.very_late + self.unknown_lead
+
+
+def abandonment(records: Sequence[CountedRecord]) -> Abandonment:
+    """Return the abandonment rate and everything it excludes."""
+    counts = Counter(record.state for record in records)
+    return Abandonment(
+        attended=counts["attended"],
+        cancelled=counts["cancelled"],
+        swapped=counts["swapped"],
+        removed_after_start=counts["removed_after_start"],
+        no_show=counts["no_show"],
+    )
+
+
+def cancellation_bands(
+    records: Sequence[CountedRecord],
+    *,
+    late_hours: float,
+    very_late_hours: float,
+) -> CancellationBands:
+    """Group voluntary cancellations by their notice period.
+
+    A cancellation exactly on a boundary counts as the more generous
+    band. The gym's own wording defines "more than four hours" and
+    "less than four hours" and leaves four hours itself undefined, so
+    the tie goes to the user rather than to an arbitrary choice.
+    """
+    early = late = very_late = unknown = 0
+    late_cut = timedelta(hours=late_hours)
+    very_late_cut = timedelta(hours=very_late_hours)
+
+    for record in records:
+        if record.state != "cancelled":
+            continue
+        lead = record.cancellation_lead
+        if lead is None:
+            unknown += 1
+        elif lead >= late_cut:
+            early += 1
+        elif lead >= very_late_cut:
+            late += 1
+        else:
+            very_late += 1
+
+    return CancellationBands(
+        early=early,
+        late=late,
+        very_late=very_late,
+        unknown_lead=unknown,
+        late_hours=late_hours,
+        very_late_hours=very_late_hours,
+    )
 
 
 @dataclass(frozen=True)
@@ -291,11 +411,15 @@ def _classify(record: AttendanceRecord, *, swapped_days: set[date]) -> CountedSt
 
 
 __all__ = [
+    "Abandonment",
     "Calendar",
+    "CancellationBands",
     "CountedRecord",
     "CountedState",
     "DayCell",
     "DayStatus",
+    "abandonment",
+    "cancellation_bands",
     "counted_records",
     "day_calendar",
     "settle_cutoff",

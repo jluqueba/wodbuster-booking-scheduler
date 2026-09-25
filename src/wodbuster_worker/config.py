@@ -150,6 +150,15 @@ class Settings(BaseSettings):
     statistics_capture_cap_per_request: int = 35
     statistics_capture_budget_seconds: float = 6.0
 
+    # Cancellation lead-time tiers, in hours before the class starts.
+    # These are the gym's own published penalty boundaries, not ours:
+    # Antwork charges an extra point under four hours and two under
+    # one. They are settings rather than constants because a gym can
+    # change them with a notice pinned to a wall and no signal to this
+    # system, and because a second gym will not share them.
+    statistics_late_cancel_hours: float = 4.0
+    statistics_very_late_cancel_hours: float = 1.0
+
     @model_validator(mode="after")
     def _apply_env_defaults(self) -> Settings:
         """Fill mode-dependent Postgres defaults.

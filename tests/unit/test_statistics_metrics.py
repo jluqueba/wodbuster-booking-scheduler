@@ -11,6 +11,10 @@ from datetime import UTC, date, datetime, timedelta
 
 from wodbuster_worker.persistence.models import AttendanceRecord
 from wodbuster_worker.statistics.metrics import (
+    CancellationBands,
+    CountedRecord,
+    abandonment,
+    cancellation_bands,
     counted_records,
     day_calendar,
 )
@@ -445,3 +449,195 @@ def test_an_empty_range_yields_an_empty_calendar() -> None:
 
     assert calendar.weeks == ()
     assert calendar.attended == 0
+
+
+# ---------------------------------------------------------------------------
+# Abandonment rate
+# ---------------------------------------------------------------------------
+
+
+def _counted(*records: AttendanceRecord) -> list[CountedRecord]:
+    return counted_records(list(records), now=NOW, settle_window_hours=SETTLE)
+
+
+def _drop(day: date, *, hours_before: float | None = 2.0) -> AttendanceRecord:
+    start = datetime(day.year, day.month, day.day, 18, 30, tzinfo=UTC)
+    return _record(
+        start_at=start,
+        local_date=day,
+        state="cancelled",
+        state_changed_at=(None if hours_before is None else start - timedelta(hours=hours_before)),
+    )
+
+
+def _trained(day: date, hour: int = 18) -> AttendanceRecord:
+    return _record(
+        start_at=datetime(day.year, day.month, day.day, hour, 30, tzinfo=UTC),
+        local_date=day,
+    )
+
+
+def test_the_rate_is_dropped_over_bookings_that_resolved() -> None:
+    records = _counted(
+        *(_trained(date(2026, 9, d)) for d in range(1, 9)),
+        _drop(date(2026, 9, 10)),
+        _drop(date(2026, 9, 11)),
+    )
+
+    result = abandonment(records)
+
+    assert (result.attended, result.cancelled, result.booked) == (8, 2, 10)
+    assert result.rate == 0.2
+    assert result.percent == 20
+
+
+def test_a_rate_over_nothing_is_unknown_not_zero() -> None:
+    """Reporting perfect behaviour to someone who booked nothing is
+    worse than an honest dash."""
+    result = abandonment([])
+
+    assert result.booked == 0
+    assert result.rate is None
+    assert result.percent is None
+
+
+def test_a_class_change_is_in_neither_half_of_the_rate() -> None:
+    day = date(2026, 9, 11)
+    records = _counted(_drop(day, hours_before=4.0), _trained(day, hour=20))
+
+    result = abandonment(records)
+
+    assert result.swapped == 1
+    assert (result.attended, result.cancelled) == (1, 0)
+    assert result.percent == 0
+
+
+def test_absences_are_reported_but_left_out_of_the_rate() -> None:
+    """They are not drop-outs, and folding them in would answer a
+    different question than the one the tile asks."""
+    records = _counted(
+        _trained(date(2026, 9, 1)),
+        _record(
+            start_at=datetime(2026, 9, 2, 18, 30, tzinfo=UTC),
+            local_date=date(2026, 9, 2),
+            state="no_show",
+        ),
+    )
+
+    result = abandonment(records)
+
+    assert result.no_show == 1
+    assert result.booked == 1
+    assert result.percent == 0
+
+
+def test_the_percent_rounds_half_up() -> None:
+    """A reader checking 1 of 8 against the tile should not meet
+    banker's rounding."""
+    records = _counted(
+        *(_trained(date(2026, 9, d)) for d in range(1, 8)),
+        _drop(date(2026, 9, 9)),
+    )
+
+    # 1/8 is 12.5 percent exactly.
+    assert abandonment(records).percent == 13
+
+
+# ---------------------------------------------------------------------------
+# Cancellation bands
+# ---------------------------------------------------------------------------
+
+
+def _bands(*records: AttendanceRecord) -> CancellationBands:
+    return cancellation_bands(_counted(*records), late_hours=4.0, very_late_hours=1.0)
+
+
+def test_each_band_catches_its_own_notice_period() -> None:
+    result = _bands(
+        _drop(date(2026, 9, 1), hours_before=30.0),
+        _drop(date(2026, 9, 2), hours_before=2.0),
+        _drop(date(2026, 9, 3), hours_before=0.5),
+    )
+
+    assert (result.early, result.late, result.very_late) == (1, 1, 1)
+    assert result.total == 3
+
+
+def test_the_observed_case_lands_between_one_and_four_hours() -> None:
+    """The real 21/09: removed at 18:29 from a class starting 20:30."""
+    start = datetime(2026, 9, 21, 20, 30, tzinfo=UTC)
+    result = cancellation_bands(
+        _counted(
+            _record(
+                start_at=start,
+                local_date=date(2026, 9, 21),
+                state="cancelled",
+                state_changed_at=datetime(2026, 9, 21, 18, 29, tzinfo=UTC),
+            )
+        ),
+        late_hours=4.0,
+        very_late_hours=1.0,
+    )
+
+    assert (result.early, result.late, result.very_late) == (0, 1, 0)
+
+
+def test_a_boundary_counts_as_the_more_generous_band() -> None:
+    """The gym defines "more than four hours" and "less than four
+    hours" and leaves four hours itself undefined, so the tie goes to
+    the user rather than to an arbitrary choice."""
+    exactly_four = _bands(_drop(date(2026, 9, 1), hours_before=4.0))
+    exactly_one = _bands(_drop(date(2026, 9, 2), hours_before=1.0))
+
+    assert (exactly_four.early, exactly_four.late) == (1, 0)
+    assert (exactly_one.late, exactly_one.very_late) == (1, 0)
+
+
+def test_a_cancellation_with_no_instant_is_reported_not_hidden() -> None:
+    """It still happened. Folding it into a band would invent a notice
+    period; dropping it would make the bands disagree with the rate."""
+    result = _bands(_drop(date(2026, 9, 1), hours_before=None))
+
+    assert result.unknown_lead == 1
+    assert (result.early, result.late, result.very_late) == (0, 0, 0)
+    assert result.total == 1
+
+
+def test_the_bands_and_the_rate_agree_on_the_same_records() -> None:
+    records = (
+        _drop(date(2026, 9, 1), hours_before=30.0),
+        _drop(date(2026, 9, 2), hours_before=2.0),
+        _drop(date(2026, 9, 3), hours_before=None),
+        _trained(date(2026, 9, 4)),
+    )
+
+    counted = _counted(*records)
+
+    assert cancellation_bands(counted, late_hours=4.0, very_late_hours=1.0).total == 3
+    assert abandonment(counted).cancelled == 3
+
+
+def test_the_thresholds_are_arguments_not_constants() -> None:
+    """A second gym will not share Antwork's penalty tiers."""
+    drop = _drop(date(2026, 9, 1), hours_before=6.0)
+
+    antwork = cancellation_bands(_counted(drop), late_hours=4.0, very_late_hours=1.0)
+    stricter = cancellation_bands(_counted(drop), late_hours=12.0, very_late_hours=3.0)
+
+    assert (antwork.early, antwork.late) == (1, 0)
+    assert (stricter.early, stricter.late) == (0, 1)
+
+
+def test_only_voluntary_cancellations_are_banded() -> None:
+    day = date(2026, 9, 11)
+    start = datetime(2026, 9, 11, 18, 30, tzinfo=UTC)
+    result = _bands(
+        _record(
+            start_at=start,
+            local_date=day,
+            state="cancelled",
+            state_changed_at=start + timedelta(minutes=10),
+        )
+    )
+
+    assert result.total == 0
