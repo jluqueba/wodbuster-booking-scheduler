@@ -89,6 +89,29 @@ button, submit input, and link styled as a button (`.wb-btn`, `[role="button"]`)
   rule and `.wb-ban-duration` reset the margin. Do not try to fix this with `vertical-align` or
   `line-height`; the offset is the phantom margin, not the alignment.
 
+## Date pickers: navigating versus filling in
+
+Both use the same `.wb-date-flatpickr` widget and the same shared loader
+(`_time_picker_script.html`). They differ in what choosing a date means,
+and the difference decides whether a confirm button belongs there.
+
+| The picker | Fields | Choosing a date is | Confirm button |
+|------------|--------|--------------------|----------------|
+| Navigates (statistics month) | One | The whole action | No. Add `data-fp-submit="1"` and the form submits on selection |
+| Fills in a form (vacation range) | Two or more | Half the input | Yes. The button is what says the form is complete |
+
+- Auto-submit is opt-in through `data-fp-submit`, never the loader's default.
+  Making it default would silently break the vacation form, where picking a
+  start date would submit a holiday with no end date.
+- A navigating picker still needs a submit button for the no-JavaScript path,
+  because a lone text field can only be submitted by pressing Enter and
+  nobody guesses that. Put it inside `<noscript>` so it is absent exactly
+  when the picker is doing the job.
+- A navigating picker carries `data-fp-min` and `data-fp-max`, because it is
+  the only way to travel and must not offer a destination that can hold no
+  data. A form picker uses `data-fp-min-today` or `data-fp-min-from` instead,
+  which express a constraint on the value rather than on navigation.
+
 ## Related gotchas
 
 - A `<label for="X">` must match the id the picker macro emits, which is hyphenated
