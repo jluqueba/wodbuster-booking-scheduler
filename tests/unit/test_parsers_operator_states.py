@@ -252,3 +252,33 @@ def test_a_waitlist_that_turned_into_a_place_reads_as_attended() -> None:
     states = read_operator_states(payload, operator_idu=OPERATOR_IDU)
 
     assert [state.state for state in states] == ["attended"]
+
+
+def test_a_class_with_an_impossible_start_time_is_skipped_not_fatal() -> None:
+    """The shape check alone accepted "99:99:00", which then raised at
+    persistence and took the whole day's capture down instead of
+    skipping one malformed class."""
+    payload = _payload(
+        _valor(class_id=1, attending=[_athlete(OPERATOR_IDU)], HoraComienzo="99:99:00"),
+        _valor(class_id=2, attending=[_athlete(OPERATOR_IDU)], HoraComienzo="20:30:00"),
+    )
+
+    states = read_operator_states(payload, operator_idu=OPERATOR_IDU)
+
+    assert [s.class_id for s in states] == [2]
+
+
+def test_a_start_time_that_is_not_a_clock_value_is_skipped() -> None:
+    for bad in ("ab:cd:ef", "24:00:00", "12:60:00", "1:30", "", "::"):
+        payload = _payload(_valor(class_id=7, attending=[_athlete(OPERATOR_IDU)], HoraComienzo=bad))
+        assert read_operator_states(payload, operator_idu=OPERATOR_IDU) == [], bad
+
+
+def test_a_valid_start_time_at_the_edges_is_kept() -> None:
+    for good in ("00:00:00", "23:59:00", "08:05"):
+        payload = _payload(
+            _valor(class_id=8, attending=[_athlete(OPERATOR_IDU)], HoraComienzo=good)
+        )
+        states = read_operator_states(payload, operator_idu=OPERATOR_IDU)
+        assert len(states) == 1, good
+        assert states[0].hora_comienzo == good[:5]

@@ -24,6 +24,26 @@
     return (v || "").trim() || fallback;
   }
 
+  /* Shade one palette colour without naming a second one. The heatmap
+     carries its count in the opacity, and a literal rgba() here would
+     be a colour the stylesheet cannot reach: the chart would keep its
+     green through every theme change. */
+  function withAlpha(colour, alpha) {
+    var hex = colour.replace("#", "");
+    if (hex.length === 3) {
+      hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+    }
+    if (hex.length < 6 || /[^0-9a-fA-F]/.test(hex.slice(0, 6))) {
+      /* Already a functional notation such as rgb() or oklch(); let the
+         browser composite it instead of guessing at its channels. */
+      return colour;
+    }
+    var r = parseInt(hex.slice(0, 2), 16);
+    var g = parseInt(hex.slice(2, 4), 16);
+    var b = parseInt(hex.slice(4, 6), 16);
+    return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+  }
+
   function palette() {
     return {
       series: [
@@ -220,7 +240,7 @@
              a legend. The floor keeps a single session visible. */
           backgroundColor: function (ctx) {
             var v = ctx.raw ? ctx.raw.v : 0;
-            return "rgba(74, 222, 128, " + (0.18 + 0.72 * (v / peak)) + ")";
+            return withAlpha(colours.good, 0.18 + 0.72 * (v / peak));
           },
           borderWidth: 0,
           width: function (ctx) {

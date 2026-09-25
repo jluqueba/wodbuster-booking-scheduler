@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 from wodbuster_worker.persistence.models import AttendanceRecord
+from wodbuster_worker.statistics.charts import trend_payload
 from wodbuster_worker.statistics.metrics import (
     booking_lead_bands,
     counted_records,
@@ -367,3 +368,22 @@ def test_asking_for_a_billing_period_the_gym_did_not_state_falls_back() -> None:
     )
 
     assert window.key == DEFAULT_PERIOD
+
+
+def test_a_trend_with_no_months_is_empty_rather_than_two_empty_series() -> None:
+    """Two empty arrays still read as present, which would put a blank
+    canvas where the page has an empty state that says so in words."""
+    payload = trend_payload((), strings={"attended": "Trained", "cancelled": "Dropped"})
+
+    assert payload.is_empty is True
+    assert payload.as_dict()["series"] == []
+
+
+def test_a_trend_with_months_keeps_both_series() -> None:
+    payload = trend_payload(
+        monthly_trend(_counted(_record(day=date(2026, 9, 1), hour=18))),
+        strings={"attended": "Trained", "cancelled": "Dropped"},
+    )
+
+    assert payload.is_empty is False
+    assert [s["key"] for s in payload.series] == ["attended", "cancelled"]

@@ -234,3 +234,61 @@ def test_an_unread_preceding_range_is_absent_not_zero() -> None:
     assert result.previous_sessions is None
     assert result.previous_per_week is None
     assert result.change is None
+
+
+# ---------------------------------------------------------------------------
+# Per-gym override of the points economy (FR-038)
+# ---------------------------------------------------------------------------
+
+DEFAULTS = {
+    "base_cost": 1,
+    "late_penalty": 1,
+    "very_late_penalty": 2,
+    "absence_penalty": 6,
+    "late_hours": 4.0,
+    "very_late_hours": 1.0,
+}
+
+
+def test_without_an_override_the_model_is_the_configured_default() -> None:
+    assert PointsModel.resolve(**DEFAULTS) == MODEL
+
+
+def test_a_gym_override_replaces_only_the_fields_it_names() -> None:
+    """A second gym will not share Antwork's published tiers, and may
+    differ in one of them rather than all six."""
+    model = PointsModel.resolve(**DEFAULTS, override={"absence_penalty": 10})
+
+    assert model.absence_penalty == 10
+    assert model.base_cost == MODEL.base_cost
+    assert model.late_hours == MODEL.late_hours
+
+
+def test_a_malformed_override_costs_the_customisation_not_the_page() -> None:
+    """The column is operator-supplied JSON, so it is not trusted. A
+    bad field falls back rather than raising in the middle of a render.
+    """
+    model = PointsModel.resolve(
+        **DEFAULTS,
+        override={
+            "base_cost": "free",
+            "late_penalty": -3,
+            "absence_penalty": True,
+            "nonsense": 99,
+            "very_late_penalty": 5,
+        },
+    )
+
+    assert model.base_cost == 1
+    assert model.late_penalty == 1
+    assert model.absence_penalty == 6
+    assert model.very_late_penalty == 5
+
+
+def test_an_override_reaches_the_estimate() -> None:
+    drop = _record(day=date(2026, 9, 1), state="cancelled", hours_before=2.0)
+    counted = counted_records([drop], now=NOW, settle_window_hours=SETTLE)
+
+    model = PointsModel.resolve(**DEFAULTS, override={"late_penalty": 7})
+
+    assert points_estimate(counted, model=model).penalties == 7

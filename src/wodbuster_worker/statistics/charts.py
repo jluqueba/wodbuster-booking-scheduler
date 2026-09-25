@@ -101,7 +101,15 @@ def drop_rate_payload(stats: tuple[SlotStats, ...], strings: dict[str, str]) -> 
 
 
 def trend_payload(points: tuple[MonthPoint, ...], strings: dict[str, str]) -> ChartPayload:
-    """Attended and dropped classes per calendar month."""
+    """Attended and dropped classes per calendar month.
+
+    With no months to draw, the payload is empty rather than two series
+    of nothing. Two empty arrays still read as present to ``is_empty``,
+    which would put a blank canvas on screen where the page has an
+    empty state that says so in words.
+    """
+    if not points:
+        return ChartPayload(kind="bar-stacked", labels=(), values=(), strings=strings, meta={})
     return ChartPayload(
         kind="bar-stacked",
         labels=tuple(point.key for point in points),

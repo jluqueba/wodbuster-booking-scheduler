@@ -19,8 +19,12 @@ _STYLE_SOURCES = (
     _ROOT / "src" / "wodbuster_worker" / "templates" / "statistics" / "page.html",
 )
 
-_CSS_VAR_CALL = re.compile(r'cssVar\("(--[a-z0-9-]+)"\s*,\s*"(#[0-9a-fA-F]{3,8})"\)')
+_CSS_VAR_CALL = re.compile(r'cssVar\("(--[a-z0-9-]+)"\s*,\s*"([^"]+)"\)')
 _HEX_COLOUR = re.compile(r"#[0-9a-fA-F]{3,8}\b")
+# Functional notations too. The first version of this test looked only
+# for hex and missed a literal rgba() in the heatmap, which is exactly
+# the drift it exists to catch.
+_FUNCTIONAL_COLOUR = re.compile(r"\b(?:rgba?|hsla?|oklch|oklab|color)\(\s*\d")
 _CUSTOM_PROPERTY = re.compile(r"(--[a-z0-9-]+)\s*:")
 
 
@@ -52,13 +56,23 @@ def test_every_colour_the_script_uses_is_declared_in_the_stylesheet() -> None:
 
 def test_no_colour_sits_in_the_script_outside_a_stylesheet_fallback() -> None:
     """A literal anywhere else is a second source of truth for the
-    palette, and the two diverge silently."""
-    script = _script()
-    inside_fallbacks = {colour for _, colour in _CSS_VAR_CALL.findall(script)}
-    every_colour = set(_HEX_COLOUR.findall(script))
+    palette, and the two diverge silently.
 
-    stray = sorted(every_colour - inside_fallbacks)
-    assert stray == [], f"colour values outside a cssVar fallback: {stray}"
+    Both hex and functional notations count. Checking only hex is how a
+    literal ``rgba()`` survived in the heatmap until review caught it.
+    """
+    script = _script()
+    fallbacks = {colour for _, colour in _CSS_VAR_CALL.findall(script)}
+
+    stray_hex = sorted(set(_HEX_COLOUR.findall(script)) - fallbacks)
+    assert stray_hex == [], f"hex colours outside a cssVar fallback: {stray_hex}"
+
+    stray_functional = [
+        line.strip()
+        for line in script.splitlines()
+        if _FUNCTIONAL_COLOUR.search(line) and "cssVar(" not in line
+    ]
+    assert stray_functional == [], f"functional colours outside a fallback: {stray_functional}"
 
 
 def test_the_script_takes_its_sentences_from_the_server() -> None:

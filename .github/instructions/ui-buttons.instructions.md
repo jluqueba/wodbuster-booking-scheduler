@@ -63,6 +63,32 @@ button, submit input, and link styled as a button (`.wb-btn`, `[role="button"]`)
   Reactivate is neutral, not green.
 - Every button includes the `wb-btn` base class plus an optional modifier.
 
+## Segmented controls are not action buttons
+
+A row of `<button type="submit">` that selects which slice of data the
+page shows (the statistics period selector: 30 days, 3 months, 12
+months, Everything, This billing period) is a segmented control, not a
+set of actions. It is exempt from the two rules above, and the reason
+is what the emoji is for: an emoji distinguishes one action from
+another in a column of unlike buttons. In a segmented control every
+option is the same verb applied to a different value, so five identical
+emoji add noise and five different ones invent a meaning the options do
+not have. The selected segment is marked with `aria-current="true"` and
+carries the accent background; that is what tells the reader where they
+are.
+
+What a segmented control still owes:
+
+- The Pico defence. `button[type=submit] { width: 100% }` has
+  specificity (0,1,1) and beats a single class, so the option class must
+  be doubled exactly like `.wb-btn.wb-btn` does. `.wb-periods__option`
+  uses `.wb-periods__option.wb-periods__option { width: auto }` for
+  precisely this reason. Dropping it makes every option fill its row.
+- `margin: 0`, for the phantom `margin-bottom` Pico adds to real form
+  controls.
+- The no-JavaScript path. The control is a real form with real submit
+  buttons, so it works with scripting disabled.
+
 ## Table actions
 
 - One action per column. Do not group actions under a single "Actions" column.

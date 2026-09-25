@@ -30,7 +30,7 @@ this system.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 
@@ -60,6 +60,52 @@ class PointsModel:
     absence_penalty: int
     late_hours: float
     very_late_hours: float
+
+    @classmethod
+    def resolve(
+        cls,
+        *,
+        base_cost: int,
+        late_penalty: int,
+        very_late_penalty: int,
+        absence_penalty: int,
+        late_hours: float,
+        very_late_hours: float,
+        override: Mapping[str, object] | None = None,
+    ) -> PointsModel:
+        """Build the model from defaults, with a per-gym override on top.
+
+        The override is whatever the gym account carries in
+        ``points_model``, which is operator-supplied and therefore not
+        trusted. A field that is missing, non-numeric or negative falls
+        back to the default rather than raising: a malformed override
+        should cost the customisation, never the page.
+        """
+        defaults: dict[str, float] = {
+            "base_cost": base_cost,
+            "late_penalty": late_penalty,
+            "very_late_penalty": very_late_penalty,
+            "absence_penalty": absence_penalty,
+            "late_hours": late_hours,
+            "very_late_hours": very_late_hours,
+        }
+        values = dict(defaults)
+        for key in defaults:
+            candidate = (override or {}).get(key)
+            if isinstance(candidate, bool) or not isinstance(candidate, int | float):
+                continue
+            if candidate < 0:
+                continue
+            values[key] = candidate
+
+        return cls(
+            base_cost=int(values["base_cost"]),
+            late_penalty=int(values["late_penalty"]),
+            very_late_penalty=int(values["very_late_penalty"]),
+            absence_penalty=int(values["absence_penalty"]),
+            late_hours=float(values["late_hours"]),
+            very_late_hours=float(values["very_late_hours"]),
+        )
 
 
 @dataclass(frozen=True)

@@ -377,6 +377,23 @@ class OperatorClassState:
     ever_full: bool
 
 
+def _is_wall_time(value: str) -> bool:
+    """True when ``value`` is a real ``HH:MM`` or ``HH:MM:SS`` clock time.
+
+    Checking the shape is not enough. The previous version accepted any
+    string with a colon in third position, so ``"99:99:00"`` reached
+    persistence and raised there, taking the whole day's capture down
+    with it instead of skipping one malformed class.
+    """
+    head = value.strip()[:5]
+    if len(head) != 5 or head[2] != ":":
+        return False
+    hours, _, minutes = head.partition(":")
+    if not (hours.isdigit() and minutes.isdigit()):
+        return False
+    return 0 <= int(hours) <= 23 and 0 <= int(minutes) <= 59
+
+
 def parse_fecha_estado(value: Any) -> datetime | None:
     """Parse an upstream ``FechaEstado`` into a naive datetime.
 
@@ -416,7 +433,7 @@ def read_operator_states(payload: dict[str, Any], *, operator_idu: str) -> list[
         if not isinstance(nombre, str) or not nombre.strip():
             continue
         hora = valor.get("HoraComienzo")
-        if not isinstance(hora, str) or len(hora) < 5 or hora[2] != ":":
+        if not isinstance(hora, str) or not _is_wall_time(hora):
             continue
 
         entry, state = _find_operator_entry(valor, guid, raw)

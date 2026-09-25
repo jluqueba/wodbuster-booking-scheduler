@@ -281,6 +281,10 @@ def _build_context(
             # than as an error, so nothing confirms the account exists.
             return _empty_context(request, has_gym=False)
         gym_name = str(gym.display_name)
+        # Read inside the session: the estimate is computed after it
+        # closes, and a detached instance would raise on attribute
+        # access. NULL means "use the application defaults".
+        points_override = gym.points_model
 
         data_through = session.scalar(
             select(func.max(AttendanceDay.local_date)).where(
@@ -418,13 +422,14 @@ def _build_context(
     # screen is chosen for a different reason.
     estimate = points_estimate(
         over_period,
-        model=PointsModel(
+        model=PointsModel.resolve(
             base_cost=settings.statistics_base_point_cost,
             late_penalty=settings.statistics_late_cancel_penalty,
             very_late_penalty=settings.statistics_very_late_cancel_penalty,
             absence_penalty=settings.statistics_absence_penalty,
             late_hours=settings.statistics_late_cancel_hours,
             very_late_hours=settings.statistics_very_late_cancel_hours,
+            override=points_override,
         ),
     )
     pace = weekly_average(
