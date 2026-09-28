@@ -103,12 +103,15 @@
      destroyed and rebuilt rather than left pointing at nodes that are
      no longer in the document.
 
-     Only the section that actually holds canvases asks for this. The
+     Asked for only where canvases are involved, before or after. The
      rebuild is global, so running it after an attendance click would
      throw away a zoom the reader had applied to a chart that did not
-     change. */
-  function redrawCharts(host) {
-    if (!host.querySelector("canvas[data-wb-chart]")) {
+     change. Testing only the new markup is not enough: a period with
+     no data renders no canvas at all, and skipping the rebuild there
+     would leave every old instance registered against a detached
+     node. */
+  function redrawCharts(host, hadCharts) {
+    if (!hadCharts && !host.querySelector("canvas[data-wb-chart]")) {
       return;
     }
     if (window.wbCharts && typeof window.wbCharts.render === "function") {
@@ -129,6 +132,7 @@
 
     event.preventDefault();
     var urls = urlFor(form, event.submitter);
+    var hadCharts = !!host.querySelector("canvas[data-wb-chart]");
     inFlight[name] = true;
     host.setAttribute("aria-busy", "true");
 
@@ -152,7 +156,7 @@
         var params = stateWith(urls.change);
         window.history.replaceState({}, "", urls.action + "?" + params.toString());
         syncForms(params);
-        redrawCharts(host);
+        redrawCharts(host, hadCharts);
       })
       .catch(function () {
         /* Whatever went wrong, the server can still render this. A

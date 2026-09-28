@@ -1507,3 +1507,65 @@ def test_a_fragment_does_not_discard_a_window_it_cannot_verify(
     body = tc.get("/statistics?section=attendance&points=billing").text
 
     assert 'name="points" value="billing"' in body
+
+
+def test_a_window_wider_than_the_ledger_says_how_much_is_unread(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """Widening a window does not widen the ledger. Figures under a
+    label the history cannot fill are the failure INV-005 exists to
+    prevent, so the gap is named rather than left to be inferred."""
+    tc, _, gym_account_id, client = signed_in
+    client.error = WodBusterTransportError("timeout")
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    _seed_attendance(postgres_engine, gym_account_id=gym_account_id, local_date=yesterday)
+
+    body = tc.get("/statistics?attendance=m12").text
+
+    assert "have never been read" in body
+
+
+def test_a_window_the_ledger_covers_says_nothing(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """The notice is a warning, not decoration. A fully read window
+    must not carry it, or it stops meaning anything."""
+    tc, _, gym_account_id, client = signed_in
+    client.error = WodBusterTransportError("timeout")
+    today = datetime.now(tz=UTC).date()
+    with postgres_engine.begin() as conn:
+        for offset in range(40):
+            conn.execute(
+                text(
+                    "INSERT INTO attendance_day "
+                    "(gym_account_id, local_date, class_count, is_final) "
+                    "VALUES (:ga, :d, 20, TRUE) ON CONFLICT DO NOTHING"
+                ),
+                {"ga": gym_account_id, "d": today - timedelta(days=offset)},
+            )
+
+    body = tc.get("/statistics?attendance=m1").text
+    start = body.index('data-wb-section="attendance"')
+    attendance = body[start : body.index("</section>", start)]
+
+    assert "have never been read" not in attendance
+
+
+def test_the_notice_reaches_a_section_fragment_too(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """The fragment is where widening actually happens, and it is the
+    one response the calendar's own unread notice cannot cover."""
+    tc, _, gym_account_id, client = signed_in
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    _seed_attendance(postgres_engine, gym_account_id=gym_account_id, local_date=yesterday)
+    tc.get("/statistics")
+    client.error = WodBusterTransportError("timeout")
+
+    body = tc.get("/statistics?section=patterns&patterns=m12").text
+
+    assert 'data-wb-section="patterns"' in body
+    assert "have never been read" in body

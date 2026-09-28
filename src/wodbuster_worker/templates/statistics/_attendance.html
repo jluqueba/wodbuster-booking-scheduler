@@ -17,6 +17,15 @@
     {% include "statistics/_filter.html" %}
   {% endwith %}
 
+  {% if data.unread_in_window %}
+    {# Widening a window does not widen the ledger. Figures under a
+       label the history cannot fill are the failure INV-005 exists to
+       prevent, so the gap is named rather than left to be inferred. #}
+    <p class="wb-stats__recency">
+      {{ t("statistics.window.partial", days=data.unread_in_window) }}
+    </p>
+  {% endif %}
+
   <div class="wb-stats__tiles">
     <div class="wb-stat-tile">
       <span class="wb-stat-tile__value">{{ data.abandonment.attended }}</span>

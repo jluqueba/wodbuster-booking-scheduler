@@ -283,6 +283,21 @@ class History:
     def ledger(self, start: date, end: date) -> dict[date, int]:
         return {day: count for day, count in self.captured.items() if start <= day <= end}
 
+    def unread(self, start: date, end: date) -> int:
+        """How many days of a window have never been read.
+
+        Widening a window does not widen the ledger. A reader who asks
+        for a year on an account whose backfill has covered a month
+        would otherwise be shown a month's figures under a year's
+        label, which is the failure INV-005 exists to prevent.
+        """
+        span = (end - start).days + 1
+        if span <= 0:
+            return 0
+        return sum(
+            1 for offset in range(span) if start + timedelta(days=offset) not in self.captured
+        )
+
 
 def _read_history(
     gym_account_id: int,
@@ -421,6 +436,7 @@ def _attendance_context(
         "period": period,
         "period_label": t(f"statistics.period.{period.key}"),
         "period_options": _period_options(PERIOD_KEYS, period),
+        "unread_in_window": history.unread(period.start, period.end),
         "abandonment": dropouts,
         "bands": bands,
         "band_labels": _band_labels(bands),
@@ -457,6 +473,7 @@ def _points_context(
         "period_options": _period_options(
             POINTS_PERIOD_KEYS if summary.period else PERIOD_KEYS, period
         ),
+        "unread_in_window": history.unread(period.start, period.end),
         "estimate": estimate,
         "balance": summary.balance,
         "billing_period": summary.period,
@@ -501,6 +518,7 @@ def _patterns_context(
         "period": period,
         "period_label": t(f"statistics.period.{period.key}"),
         "period_options": _period_options(PERIOD_KEYS, period),
+        "unread_in_window": history.unread(period.start, period.end),
         **_chart_context(records, period, model),
     }
 

@@ -215,4 +215,16 @@ def test_only_a_section_holding_canvases_asks_for_a_redraw() -> None:
 
     assert 'host.querySelector("canvas[data-wb-chart]")' in body
     assert body.index("canvas[data-wb-chart]") < body.index("wbCharts.render")
-    assert "redrawCharts(host)" in script
+    assert "redrawCharts(host, hadCharts)" in script
+
+
+def test_a_section_that_loses_its_charts_still_destroys_them() -> None:
+    """A period with no data renders no canvas at all. Testing only the
+    new markup would skip the rebuild there, leaving every old instance
+    registered against a node no longer in the document."""
+    script = _filters()
+
+    assert "var hadCharts" in script
+    assert "redrawCharts(host, hadCharts)" in script
+    body = script[script.index("function redrawCharts") :]
+    assert "!hadCharts &&" in body

@@ -967,6 +967,10 @@ EN: dict[str, str] = {
     "statistics.period.all": "Everything",
     "statistics.period.billing": "This billing period",
     "statistics.period.billing.range": "Your gym bills from {start} to {end}.",
+    "statistics.window.partial": (
+        "{days} days of this window have never been read, so these figures cover "
+        "less than the period says."
+    ),
     "statistics.section.attendance": "Your attendance",
     "statistics.section.patterns": "Your training patterns",
     "statistics.section.calendar": "Day by day",
@@ -2110,6 +2114,10 @@ ES: dict[str, str] = {
     "statistics.period.all": "Todo",
     "statistics.period.billing": "Periodo actual",
     "statistics.period.billing.range": "Tu gimnasio factura del {start} al {end}.",
+    "statistics.window.partial": (
+        "Hay {days} días de esta ventana que nunca se han leído, así que estas "
+        "cifras cubren menos de lo que dice el periodo."
+    ),
     "statistics.section.attendance": "Tu asistencia",
     "statistics.section.patterns": "Tus patrones de entrenamiento",
     "statistics.section.calendar": "Día a día",
