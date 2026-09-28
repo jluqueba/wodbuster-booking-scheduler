@@ -48,6 +48,7 @@ ASSUMPTION_BASE_COST_UNKNOWN = "base_cost_unknown"
 ASSUMPTION_RECOVERY_BASE_ONLY = "recovery_base_only"
 ASSUMPTION_NON_STANDARD_COST = "non_standard_cost"
 ASSUMPTION_CLASS_CHANGES_CHARGED = "class_changes_charged"
+ASSUMPTION_FILED_AS_ABSENT = "filed_as_absent"
 
 
 @dataclass(frozen=True)
@@ -134,6 +135,7 @@ class PointsEstimate:
     """
 
     penalties: int
+    disputed_penalties: int
     base_cost_low: int
     base_cost_high: int
     late_cancellations: int
@@ -142,6 +144,7 @@ class PointsEstimate:
     class_changes: int
     no_shows: int
     removed_after_start: int
+    filed_as_absent: int
     recovered_bookings: int
     unknown_lead: int
     assumptions: tuple[Assumption, ...] = field(default=())
@@ -153,7 +156,7 @@ class PointsEstimate:
 
     @property
     def total_high(self) -> int:
-        return self.penalties + self.base_cost_high
+        return self.penalties + self.disputed_penalties + self.base_cost_high
 
     @property
     def is_range(self) -> bool:
@@ -195,8 +198,9 @@ def points_estimate(
     very_late_cut = timedelta(hours=model.very_late_hours)
 
     penalties = 0
+    disputed = 0
     early = late = very_late = unknown = 0
-    changes = no_shows = post_start = recovered = 0
+    changes = no_shows = post_start = recovered = filed_absent = 0
     chargeable = 0
 
     for record in records:
@@ -204,16 +208,25 @@ def points_estimate(
             if record.state == "swapped":
                 changes += 1
             lead = record.removal_lead
+            charged = 0
             if lead is None:
                 unknown += 1
             elif lead >= late_cut:
                 early += 1
             elif lead >= very_late_cut:
                 late += 1
-                penalties += model.late_penalty
+                charged = model.late_penalty
             else:
                 very_late += 1
-                penalties += model.very_late_penalty
+                charged = model.very_late_penalty
+            penalties += charged
+            if record.filed_as_absent:
+                # The gym filed this removal as "did not train", which
+                # may mean it charged the absence penalty instead of the
+                # tier. The difference is carried as disputed rather
+                # than resolved, because the payload does not say.
+                filed_absent += 1
+                disputed += max(model.absence_penalty - charged, 0)
         elif record.state == "no_show":
             no_shows += 1
             penalties += model.absence_penalty
@@ -238,9 +251,12 @@ def points_estimate(
         assumptions.append(ASSUMPTION_RECOVERY_BASE_ONLY)
     if changes:
         assumptions.append(ASSUMPTION_CLASS_CHANGES_CHARGED)
+    if filed_absent:
+        assumptions.append(ASSUMPTION_FILED_AS_ABSENT)
 
     return PointsEstimate(
         penalties=penalties,
+        disputed_penalties=disputed,
         base_cost_low=0,
         base_cost_high=chargeable * model.base_cost,
         late_cancellations=late,
@@ -249,6 +265,7 @@ def points_estimate(
         class_changes=changes,
         no_shows=no_shows,
         removed_after_start=post_start,
+        filed_as_absent=filed_absent,
         recovered_bookings=recovered,
         unknown_lead=unknown,
         assumptions=tuple(assumptions),

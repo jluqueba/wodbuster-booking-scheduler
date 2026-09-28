@@ -834,3 +834,76 @@ def test_an_empty_ledger_yields_no_streak_rather_than_an_error() -> None:
     result = streaks([], captured={}, today=date(2026, 9, 25))
 
     assert (result.current.days, result.longest.days) == (0, 0)
+
+
+# ---------------------------------------------------------------------------
+# Removals the gym filed as "did not train" (ADR-0015 Decision 5, revised)
+# ---------------------------------------------------------------------------
+
+
+def _filed_absent(day: date, *, minutes_before: float | None = 24.0) -> AttendanceRecord:
+    """A row WodBuster put in its "did not train" list."""
+    start = datetime(day.year, day.month, day.day, 14, 30, tzinfo=UTC)
+    return _record(
+        start_at=start,
+        local_date=day,
+        state="no_show",
+        state_changed_at=(
+            None if minutes_before is None else start - timedelta(minutes=minutes_before)
+        ),
+    )
+
+
+def test_a_removal_before_the_class_is_a_cancellation_whatever_list_it_lands_in() -> None:
+    """The instant is evidence of what the athlete did; the list is
+    evidence of how the gym filed it. Calling a removal recorded
+    twenty four minutes early an absence contradicts the record stored
+    beside it."""
+    counted = _counted(_filed_absent(date(2026, 9, 20)))
+
+    assert [r.state for r in counted] == ["cancelled"]
+    assert counted[0].filed_as_absent is True
+
+
+def test_such_a_removal_feeds_the_drop_out_rate_and_its_notice_band() -> None:
+    """It is a drop, so it belongs in the figure that counts drops and
+    in the band that says how little notice it gave."""
+    counted = _counted(_filed_absent(date(2026, 9, 20), minutes_before=24.0))
+
+    assert abandonment(counted).cancelled == 1
+    assert abandonment(counted).no_show == 0
+    bands = cancellation_bands(counted, late_hours=4.0, very_late_hours=1.0)
+    assert (bands.very_late, bands.total) == (1, 1)
+
+
+def test_a_did_not_train_row_at_or_after_the_start_stays_an_absence() -> None:
+    """Nothing before the class began, so nothing contradicts the list."""
+    counted = _counted(_filed_absent(date(2026, 9, 20), minutes_before=-10.0))
+
+    assert [r.state for r in counted] == ["no_show"]
+    assert counted[0].filed_as_absent is False
+
+
+def test_a_did_not_train_row_with_no_instant_stays_an_absence() -> None:
+    """With no instant there is no evidence against the gym's filing,
+    and inventing one would be worse than trusting it."""
+    counted = _counted(_filed_absent(date(2026, 9, 20), minutes_before=None))
+
+    assert [r.state for r in counted] == ["no_show"]
+    assert counted[0].filed_as_absent is False
+
+
+def test_such_a_removal_on_a_day_you_trained_is_still_a_class_change() -> None:
+    """The class-change rule asks whether the day held a training. How
+    the gym filed the removal does not change the answer."""
+    day = date(2026, 9, 20)
+    counted = _counted(_filed_absent(day), _trained(day, hour=20))
+
+    states = sorted(r.state for r in counted)
+    assert states == ["attended", "swapped"]
+
+
+def test_an_ordinary_cancellation_is_not_flagged() -> None:
+    counted = _counted(_drop(date(2026, 9, 20), hours_before=2.0))
+
+    assert counted[0].filed_as_absent is False

@@ -68,6 +68,11 @@ class CountedRecord:
     occupancy: int
     ever_full: bool
     state_changed_at: datetime | None
+    # True when the gym filed this pre-start removal as "did not train".
+    # The instant says the athlete acted before the class; the list says
+    # the gym did not treat it as an ordinary removal. Both are kept,
+    # because the payload does not say which one the charge followed.
+    filed_as_absent: bool = False
 
     @property
     def local_start(self) -> datetime:
@@ -152,6 +157,7 @@ def counted_records(
                 occupancy=record.occupancy,
                 ever_full=record.ever_full,
                 state_changed_at=record.state_changed_at,
+                filed_as_absent=_filed_as_absent(record),
             )
         )
     return counted
@@ -852,12 +858,26 @@ def _cell_for(
 
 
 def _classify(record: AttendanceRecord, *, swapped_days: set[date]) -> CountedState:
-    """Apply the reclassification rules to one stored row."""
-    if record.state != "cancelled":
-        # ``state`` is constrained by the database enum, so the three
-        # stored values are the only ones that reach here.
-        return "attended" if record.state == "attended" else "no_show"
+    """Apply the reclassification rules to one stored row.
+
+    A row WodBuster filed as "did not train" whose state instant falls
+    before the class started is treated as a cancellation, because the
+    instant is evidence of what the athlete did and the list is
+    evidence of how the gym filed it. Real data falsified the reading
+    that put those two in agreement: see :func:`_filed_as_absent`.
+    """
+    if record.state == "attended":
+        return "attended"
     changed = record.state_changed_at
+    if record.state == "no_show":
+        if changed is None or changed >= record.start_at:
+            return "no_show"
+        # Acted before the class began, so it is a removal whatever
+        # list it landed in. Still subject to the class-change rule
+        # below, for the same reason an ordinary removal is.
+        return "swapped" if record.local_date in swapped_days else "cancelled"
+    # ``state`` is constrained by the database enum, so only the stored
+    # ``cancelled`` reaches here.
     if changed is not None and changed >= record.start_at:
         # Checked before the class-change rule on purpose: being removed
         # once the class had started is an absence, and training
@@ -866,6 +886,23 @@ def _classify(record: AttendanceRecord, *, swapped_days: set[date]) -> CountedSt
     if record.local_date in swapped_days:
         return "swapped"
     return "cancelled"
+
+
+def _filed_as_absent(record: AttendanceRecord) -> bool:
+    """True when the gym filed a pre-start removal as "did not train".
+
+    ADR-0015 assumed this could not happen: the upstream list is driven
+    by a coach control, and that control is disabled at the gym the
+    feature was built against. Two records falsified it, both very late
+    removals from classes that had filled up, with ``MostrarAsistencia``
+    reading false at the moment of capture.
+
+    What the gym charged for them is not knowable from the payload. The
+    flag exists so the points estimate can carry both readings rather
+    than pick one, which is the same device the base cost already uses.
+    """
+    changed = record.state_changed_at
+    return record.state == "no_show" and changed is not None and changed < record.start_at
 
 
 __all__ = [
