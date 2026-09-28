@@ -165,10 +165,22 @@ def test_the_next_url_is_built_from_the_address_bar_not_the_form() -> None:
     assert "new FormData(form)" not in script
 
 
+def test_the_address_bar_is_read_when_the_response_lands_not_when_clicked() -> None:
+    """Two requests can be in flight at once. A snapshot taken at click
+    time would be written back by whichever resolves second, dropping
+    the window the first had just set."""
+    script = _filters()
+    handler = script[script.index("function onSubmit") :]
+
+    # The write-back recomputes rather than replaying a captured value.
+    assert "stateWith(urls.change)" in handler
+    assert "urls.page" not in handler
+    assert "urls.params" not in handler
+
+
 def test_the_forms_are_brought_back_in_step_after_a_swap() -> None:
     """The no-script fallback and the next click both submit whatever
     the hidden inputs say, so they have to match what is on screen."""
     script = _filters()
 
-    assert "syncForms" in script
-    assert script.index("function syncForms") < script.index("syncForms(urls.params)")
+    assert script.index("function syncForms") < script.index("syncForms(params)")

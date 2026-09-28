@@ -1,12 +1,28 @@
-"""The period the charts describe (FR-030, slice 5).
+"""The window a block of figures describes (FR-064, FR-031).
 
-One selector governs every chart on the page. Per-chart windows were
-considered and rejected: a heatmap over a year beside a rate over a
-month invites the reader to cross two figures that do not describe the
-same thing, and it multiplies the interface by the number of charts.
+One window per question, not one per page and not one per chart.
 
-The calendar is deliberately not governed by this. A calendar is a
-month by nature, and it carries its own navigation.
+Per-chart windows were considered and rejected: a heatmap over a year
+beside a rate over a month invites the reader to cross two figures that
+do not describe the same thing, and it multiplies the interface by the
+number of charts. The four charts therefore share one window.
+
+A single page-wide window was rejected in turn, because the page asks
+more than one question. "How often did I drop a class this month" and
+"which hour do I train at over a year" are both reasonable, and one
+control for both means giving one of them up. Attendance, points and
+training patterns each carry their own.
+
+``PERIOD_KEYS`` is what a section offers by default. ``POINTS_PERIOD_KEYS``
+adds the gym's own billing cycle, which only the points section can
+ask about: a gym bills in periods, and offering that option beside a
+heatmap would invite a comparison between a billing cycle and a
+training pattern. :func:`resolve_period` takes the set the calling
+section offers, so a key typed into a URL cannot produce a window that
+section's own control never showed.
+
+The calendar is governed by none of them. A calendar is a month by
+nature, and it carries its own navigation.
 """
 
 from __future__ import annotations

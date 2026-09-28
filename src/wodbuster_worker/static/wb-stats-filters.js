@@ -27,21 +27,29 @@
    * the other two still carry the window that section had when the
    * page was rendered. Building the next URL from a form would then
    * undo a change made a moment earlier, and the page would look right
-   * until a reload lost it. Reading the current URL and applying only
-   * the submitted change keeps every window, whatever order the
-   * clicks arrive in.
+   * until a reload lost it.
+   *
+   * Read at the moment it is needed rather than captured at click
+   * time: two requests can be in flight at once, and the one that
+   * resolves second would otherwise write back a snapshot taken
+   * before the first had landed.
    */
-  function urlFor(form, button) {
+  function stateWith(change) {
     var params = new URLSearchParams(window.location.search);
-    if (button && button.name) {
-      params.set(button.name, button.value);
+    if (change && change.name) {
+      params.set(change.name, change.value);
     }
-    var fragment = new URLSearchParams(params);
+    return params;
+  }
+
+  function urlFor(form, button) {
+    var change = button && button.name ? { name: button.name, value: button.value } : null;
+    var fragment = stateWith(change);
     fragment.set("section", sectionOf(form));
     return {
-      page: form.action + "?" + params.toString(),
-      fragment: form.action + "?" + fragment.toString(),
-      params: params
+      change: change,
+      action: form.action,
+      fragment: form.action + "?" + fragment.toString()
     };
   }
 
@@ -113,17 +121,19 @@
         if (!swap(host, markup)) {
           throw new Error("no section in fragment");
         }
-        /* The address bar follows the page, not the fragment, so a
-           reload or a shared link lands on what is on screen. */
-        window.history.replaceState({}, "", urls.page);
-        syncForms(urls.params);
+        /* Recomputed here, not at click time: another section may have
+           landed while this request was in flight, and writing back a
+           stale snapshot would drop its window from the URL. */
+        var params = stateWith(urls.change);
+        window.history.replaceState({}, "", urls.action + "?" + params.toString());
+        syncForms(params);
         redrawCharts();
       })
       .catch(function () {
         /* Whatever went wrong, the server can still render this. A
            filter that silently does nothing is worse than one that
            costs a page load. */
-        window.location.assign(urls.page);
+        window.location.assign(urls.action + "?" + stateWith(urls.change).toString());
       })
       .then(function () {
         delete inFlight[name];
