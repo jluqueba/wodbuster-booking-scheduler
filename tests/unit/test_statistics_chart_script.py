@@ -259,3 +259,37 @@ def test_focus_returns_to_the_block_that_was_replaced() -> None:
     assert "host.focus" in body
     # Not taken from a reader who has tabbed on in the meantime.
     assert "if (!wasInside)" in body
+
+
+def test_the_fragment_marker_never_reaches_the_address_bar() -> None:
+    """It is transport, not state. It lands in the URL whenever the
+    route answers a fragment request with the whole page, and from
+    there it would be copied into every form and survive a reload,
+    which would serve a bare block with no page around it."""
+    script = _filters()
+    body = script[script.index("function stateWith") :]
+
+    assert 'params.delete("section")' in body
+    # Deleted before the click's own change is applied.
+    assert body.index('params.delete("section")') < body.index("params.set(change.name")
+
+
+def test_a_form_field_is_found_by_name_not_by_a_built_selector() -> None:
+    """A parameter name is data. Interpolating one into CSS turns a
+    crafted query string into a parse error rather than a no-op, and
+    the thrown selector would take the whole sync with it."""
+    script = _filters()
+    body = script[script.index("function syncForms") :]
+
+    assert "form.elements.namedItem(key)" in body
+    assert 'querySelector("[name=' not in script
+
+
+def test_only_the_windows_this_page_owns_are_copied_into_forms() -> None:
+    """Copying an arbitrary query parameter into a form would submit it
+    back as though the page had meant it."""
+    script = _filters()
+
+    assert 'var CARRIED = ["month", "attendance", "points", "patterns"]' in script
+    body = script[script.index("function syncForms") :]
+    assert "CARRIED.forEach" in body

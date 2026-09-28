@@ -36,6 +36,11 @@
    */
   function stateWith(change) {
     var params = new URLSearchParams(window.location.search);
+    /* Transport, never state. It reaches the address bar whenever the
+       route answers a fragment request with the whole page, and from
+       there it would be copied into every form and survive a reload,
+       which would then serve a bare block with no page around it. */
+    params.delete("section");
     if (change && change.name) {
       params.set(change.name, change.value);
     }
@@ -53,22 +58,32 @@
     };
   }
 
+  /* The windows this page owns. Everything else in the query string
+     is somebody else's, and copying an arbitrary parameter into a
+     form would submit it back as though the page had meant it. */
+  var CARRIED = ["month", "attendance", "points", "patterns"];
+
   /* Bring every form back in step with the URL, so the no-script
      fallback and a later click both submit the state actually on
      screen.
 
      Creates the input when it is missing rather than only updating
      what the server happened to render. A visible control owns its
-     own value, which is how the calendar keeps its month field. */
+     own value, which is how the calendar keeps its month field.
+
+     Looked up through ``form.elements`` rather than a built selector:
+     a name is data, and interpolating one into CSS makes a crafted
+     query string a parse error rather than a no-op. */
   function syncForms(params) {
     var forms = document.querySelectorAll("form[data-wb-filter], form.wb-monthjump");
     Array.prototype.forEach.call(forms, function (form) {
       var own = form.getAttribute("data-wb-filter");
-      params.forEach(function (value, key) {
-        if (key === "section" || key === own) {
+      CARRIED.forEach(function (key) {
+        if (key === own || !params.has(key)) {
           return;
         }
-        var existing = form.querySelector("[name='" + key + "']");
+        var value = params.get(key);
+        var existing = form.elements.namedItem(key);
         if (existing) {
           if (existing.type === "hidden") {
             existing.value = value;
