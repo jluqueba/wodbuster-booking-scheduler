@@ -410,3 +410,37 @@ def test_an_ordinary_estimate_disputes_nothing() -> None:
 
     assert result.disputed_penalties == 0
     assert result.filed_as_absent == 0
+
+
+def test_the_range_contains_both_readings_whatever_their_order() -> None:
+    """Nothing stops a gym charging less for an absence than for a very
+    late removal. Taking the notice tier as the floor would then print
+    a range that excludes the cheaper of the two readings, which is the
+    one thing a range exists to prevent."""
+    cheap_absence = PointsModel.resolve(
+        base_cost=1,
+        late_penalty=1,
+        very_late_penalty=5,
+        absence_penalty=2,
+        late_hours=4.0,
+        very_late_hours=1.0,
+    )
+    counted = counted_records(
+        [_filed_absent(date(2026, 9, 1))], now=NOW, settle_window_hours=SETTLE
+    )
+
+    result = points_estimate(counted, model=cheap_absence)
+
+    assert result.penalties == 2
+    assert result.disputed_penalties == 3
+    assert result.total_low == 2
+    assert result.total_high == 5 + cheap_absence.base_cost
+
+
+def test_the_usual_ordering_still_puts_the_tier_at_the_floor() -> None:
+    """With the gym's published values the cheaper reading is the tier,
+    so the floor is what the instant supports."""
+    result = _estimate(_filed_absent(date(2026, 9, 1)))
+
+    assert result.penalties == MODEL.very_late_penalty
+    assert result.penalties + result.disputed_penalties == MODEL.absence_penalty

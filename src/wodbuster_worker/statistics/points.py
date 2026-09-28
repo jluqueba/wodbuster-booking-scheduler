@@ -125,9 +125,12 @@ class PointsModel:
 class PointsEstimate:
     """What the captured behaviour cost, separated by how well it is known.
 
-    ``penalties`` is a fact. ``base_cost_low`` and ``base_cost_high``
-    bound the part that cannot be known, so the page can say "at least
-    N" without pretending the upper end is measured.
+    ``penalties`` is the floor and is a fact for every record except
+    one: where the gym filed a pre-start removal as "did not train" it
+    holds the cheaper of the two readings, and ``disputed_penalties``
+    holds the gap to the dearer one. ``base_cost_low`` and
+    ``base_cost_high`` bound the part that cannot be known, so the page
+    can say "at least N" without pretending the upper end is measured.
 
     ``assumptions`` is never empty when anything was priced, which is
     the structural half of INV-004: a template cannot reach the figure
@@ -219,14 +222,19 @@ def points_estimate(
             else:
                 very_late += 1
                 charged = model.very_late_penalty
-            penalties += charged
             if record.filed_as_absent:
                 # The gym filed this removal as "did not train", which
                 # may mean it charged the absence penalty instead of the
-                # tier. The difference is carried as disputed rather
-                # than resolved, because the payload does not say.
+                # tier. Both readings are bracketed rather than assumed
+                # to be ordered: nothing stops a gym charging less for
+                # an absence than for a very late removal, and taking
+                # the tier as the floor would then put the cheaper
+                # reading outside the range the page prints.
                 filed_absent += 1
-                disputed += max(model.absence_penalty - charged, 0)
+                floor = min(charged, model.absence_penalty)
+                disputed += max(charged, model.absence_penalty) - floor
+                charged = floor
+            penalties += charged
         elif record.state == "no_show":
             no_shows += 1
             penalties += model.absence_penalty
