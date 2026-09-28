@@ -907,3 +907,15 @@ def test_an_ordinary_cancellation_is_not_flagged() -> None:
     counted = _counted(_drop(date(2026, 9, 20), hours_before=2.0))
 
     assert counted[0].filed_as_absent is False
+
+
+def test_an_early_removal_the_gym_filed_as_absent_is_flagged_all_the_same() -> None:
+    """The flag has no lateness threshold, and should not: what makes
+    these records uncertain is the gym's filing, not how late they
+    were. The copy beside the figure has to match that, so it says
+    "removals the gym filed as not having trained" and claims nothing
+    about notice."""
+    counted = _counted(_filed_absent(date(2026, 9, 20), minutes_before=48 * 60))
+
+    assert [r.state for r in counted] == ["cancelled"]
+    assert counted[0].filed_as_absent is True

@@ -1006,7 +1006,7 @@ EN: dict[str, str] = {
         "the upper end the absence penalty, because the gym does not say which it used."
     ),
     "statistics.points.counts.filed_as_absent": (
-        "{count} were last-minute removals the gym filed as not having trained"
+        "{count} were removals the gym filed as not having trained"
     ),
     "statistics.points.counts.changes": "{count} of them were class changes",
     "statistics.points.counts.recovered": "{count} never filled up, so the base cost came back",
@@ -2152,7 +2152,7 @@ ES: dict[str, str] = {
         "gimnasio no dice cuál aplicó."
     ),
     "statistics.points.counts.filed_as_absent": (
-        "{count} fueron bajas de última hora que el gimnasio archivó como no entrenar"
+        "{count} fueron bajas que el gimnasio archivó como no entrenar"
     ),
     "statistics.points.counts.changes": "{count} de ellas fueron cambios de hora",
     "statistics.points.counts.recovered": "{count} no se llenaron, así que recuperaste el base",

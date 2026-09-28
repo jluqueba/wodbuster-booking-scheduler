@@ -1399,7 +1399,7 @@ def test_a_late_removal_the_gym_filed_as_absent_is_not_called_an_absence(
     assert "Did not turn up" not in body
     # And the cost it disputes is named rather than charged silently.
     assert "filed" in body
-    assert "last-minute removals the gym filed as not having trained" in body
+    assert "removals the gym filed as not having trained" in body
 
 
 def test_a_genuine_absence_is_still_reported_as_one(
