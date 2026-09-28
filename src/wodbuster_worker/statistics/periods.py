@@ -17,12 +17,19 @@ from typing import Literal
 
 PeriodKey = Literal["m1", "m3", "m12", "all", "billing"]
 
-DEFAULT_PERIOD: PeriodKey = "m12"
+# Thirty days rather than a year: the question every section answers is
+# "how am I doing lately", and a year of history flattens the month the
+# reader actually came to look at. Widening is one click.
+DEFAULT_PERIOD: PeriodKey = "m1"
 
-# Ordered as the selector renders them. ``billing`` comes first because
-# it is the window the gym itself bills on, and it is offered only when
-# the gym stated its boundaries.
-PERIOD_KEYS: tuple[PeriodKey, ...] = ("billing", "m1", "m3", "m12", "all")
+# Ordered as the selector renders them.
+PERIOD_KEYS: tuple[PeriodKey, ...] = ("m1", "m3", "m12", "all")
+
+# The points section gets one more. A gym bills in periods, so "how
+# many points has this cycle cost me" is a question only that section
+# can ask; offering the same option beside a heatmap would invite a
+# comparison between a billing cycle and a training pattern.
+POINTS_PERIOD_KEYS: tuple[PeriodKey, ...] = ("m1", "m3", "m12", "all", "billing")
 
 _PERIOD_DAYS: dict[PeriodKey, int] = {
     "m1": 30,
@@ -51,11 +58,16 @@ def resolve_period(
     horizon_days: int,
     oldest_captured: date | None,
     billing: tuple[date, date] | None = None,
+    allowed: tuple[PeriodKey, ...] = PERIOD_KEYS,
 ) -> Period:
-    """Return the chart window for ``requested``.
+    """Return the window for ``requested``.
 
     An unknown value falls back to the default rather than raising: a
     crafted query string is not worth a 500.
+
+    ``allowed`` is the set the calling section offers. A key outside it
+    falls back too, so a hand-typed ``billing`` on the attendance
+    section cannot produce a window that section never offered.
 
     ``all`` is bounded by what has actually been captured rather than
     by the horizon, so the label does not promise history the backfill
@@ -66,7 +78,7 @@ def resolve_period(
     page stated it. Asking for it when it is unknown falls back to the
     default instead of erroring, which is FR-031 at this boundary.
     """
-    key: PeriodKey = requested if requested in PERIOD_KEYS else DEFAULT_PERIOD  # type: ignore[assignment]
+    key: PeriodKey = requested if requested in allowed else DEFAULT_PERIOD  # type: ignore[assignment]
     if key == "billing" and billing is None:
         key = DEFAULT_PERIOD
 
@@ -93,6 +105,7 @@ def resolve_period(
 __all__ = [
     "DEFAULT_PERIOD",
     "PERIOD_KEYS",
+    "POINTS_PERIOD_KEYS",
     "Period",
     "PeriodKey",
     "resolve_period",

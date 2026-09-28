@@ -328,18 +328,25 @@ def test_every_number_is_present_without_any_script(
 ) -> None:
     """FR-034: the calendar is a table, so it is its own text equivalent.
 
-    The charts added in slice 5 do use a canvas, and each carries its
-    own table beside it. This test guards the calendar specifically:
-    it must never become a canvas, because it is the one view the
-    reader checks figures against.
+    The charts do use a canvas, and each carries its own table beside
+    it. This test guards the calendar specifically: it must never
+    become a canvas, because it is the one view the reader checks
+    figures against.
+
+    Scoped to the calendar's own section rather than to everything
+    after it. The calendar now sits between the attendance figures and
+    the charts, so "no canvas below this point" would assert the layout
+    rather than the property.
     """
     tc, _, gym_account_id, _ = signed_in
     yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
     _seed_attendance(postgres_engine, gym_account_id=gym_account_id, local_date=yesterday)
 
     body = tc.get("/statistics").text
-    calendar = body[body.index('<table class="wb-calendar">') :]
+    start = body.index('id="wb-section-calendar"')
+    calendar = body[start : body.index("</section>", start)]
 
+    assert '<table class="wb-calendar">' in calendar
     assert f'<time datetime="{yesterday.isoformat()}">' in calendar
     assert "<canvas" not in calendar
 
@@ -414,22 +421,63 @@ def test_every_chart_carries_its_numbers_as_markup(
     assert "wb-rules-table" in body
 
 
-def test_the_period_selector_governs_every_chart(
+def test_one_window_governs_every_chart_in_its_section(
     signed_in: tuple[TestClient, int, int, RecordingClient],
 ) -> None:
-    """CC-027, CC-046: One window for the whole page. Per-chart windows would let the
-    reader cross two figures that do not describe the same thing."""
+    """CC-046: the four charts share one window.
+
+    Crossing them is the point: a slot that fills the heatmap and also
+    tops the drop rate is a finding, and only if both describe the same
+    stretch of time. The other sections answer different questions and
+    carry their own windows, which is CC-053.
+    """
     tc, _, _, _ = signed_in
 
     body = tc.get("/statistics").text
-    assert 'class="wb-periods"' in body
-    assert 'name="period"' in body
-    # The default is marked as current rather than offered again.
-    assert 'class="wb-periods__current"' in body
+    start = body.index('id="wb-section-patterns"')
+    patterns = body[start:]
 
-    narrowed = tc.get("/statistics?period=m1")
+    # One control inside the section, and every canvas under it.
+    assert patterns.count('data-wb-filter="patterns"') == 1
+    assert 'name="patterns"' in patterns
+    # The default is marked as current rather than offered again.
+    assert 'class="wb-periods__current"' in patterns
+
+    narrowed = tc.get("/statistics?patterns=m3")
     assert narrowed.status_code == 200
-    assert "30" in narrowed.text
+
+
+def test_each_section_carries_its_own_window(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """CC-053: three questions, three windows.
+
+    "How often did I drop a class this month" and "which hour do I
+    train at over a year" are both reasonable. One control for both
+    would force the reader to give up one of them.
+    """
+    tc, _, _, _ = signed_in
+
+    body = tc.get("/statistics").text
+
+    for name in ("attendance", "points", "patterns"):
+        assert f'data-wb-section="{name}"' in body
+        assert body.count(f'data-wb-filter="{name}"') == 1
+
+
+def test_changing_one_window_leaves_the_others_alone(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """Each filter form carries its neighbours' windows as hidden
+    inputs, so submitting one never silently resets the other two."""
+    tc, _, _, _ = signed_in
+
+    body = tc.get("/statistics?attendance=m12&patterns=m3").text
+    start = body.index('data-wb-filter="points"')
+    form = body[start : body.index("</form>", start)]
+
+    assert 'name="attendance" value="m12"' in form
+    assert 'name="patterns" value="m3"' in form
 
 
 def test_a_crafted_period_does_not_break_the_page(
@@ -437,22 +485,46 @@ def test_a_crafted_period_does_not_break_the_page(
 ) -> None:
     tc, _, _, _ = signed_in
 
-    for value in ("nonsense", "m99", "", "../../etc"):
-        assert tc.get(f"/statistics?period={value}").status_code == 200
+    for name in ("attendance", "points", "patterns"):
+        for value in ("nonsense", "m99", "", "../../etc"):
+            assert tc.get(f"/statistics?{name}={value}").status_code == 200
 
 
-def test_the_period_survives_a_month_change(
+def test_a_window_a_section_does_not_offer_is_not_honoured(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """The billing period belongs to the points section, because a gym
+    bills in periods. Hand-typing it elsewhere falls back rather than
+    producing a window that section never offered."""
+    tc, _, _, client = signed_in
+    client.points_page = _this_month_page()
+
+    body = tc.get("/statistics?attendance=billing&points=billing").text
+    start = body.index('data-wb-filter="attendance"')
+    attendance_form = body[start : body.index("</form>", start)]
+
+    assert "This billing period" not in attendance_form
+    # Offered, selected and explained where it does belong.
+    assert "This billing period" in body
+    assert "Your gym bills from" in body
+
+
+def test_the_windows_survive_a_month_change(
     signed_in: tuple[TestClient, int, int, RecordingClient],
 ) -> None:
-    """The two controls are independent: changing the month must not
-    silently reset the window the charts describe."""
+    """The controls are independent: changing the month must not
+    silently reset the window any section describes."""
     tc, _, _, _ = signed_in
     today = datetime.now(tz=UTC).date()
 
-    body = tc.get(f"/statistics?period=m3&month={today.strftime('%Y-%m')}").text
+    body = tc.get(f"/statistics?patterns=m3&attendance=m12&month={today.strftime('%Y-%m')}").text
+    start = body.index('class="wb-monthjump"')
+    month_form = body[start : body.index("</form>", start)]
 
-    assert 'name="month"' in body
-    assert 'value="m3"' not in body or "wb-periods__current" in body
+    assert 'name="month"' in month_form
+    assert 'name="patterns" value="m3"' in month_form
+    assert 'name="attendance" value="m12"' in month_form
 
 
 def test_a_day_holding_a_training_and_a_drop_shows_both_lines(
@@ -1180,3 +1252,166 @@ def test_attendance_without_a_published_capacity_still_renders(
 
     assert response.status_code == 200
     assert "did not publish how many places" in response.text
+
+
+# ---------------------------------------------------------------------------
+# Section fragments (CC-054, CC-055)
+# ---------------------------------------------------------------------------
+
+
+def test_a_section_request_returns_that_section_alone(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """CC-054: a filter click replaces one block, so the response is
+    that block and not a page with it somewhere inside."""
+    tc, _, _, _ = signed_in
+
+    response = tc.get("/statistics?section=attendance&attendance=m3")
+
+    assert response.status_code == 200
+    body = response.text
+    assert body.lstrip().startswith("<section")
+    assert 'data-wb-section="attendance"' in body
+    assert "<!doctype html>" not in body.lower()
+    # Nothing from the neighbouring blocks travels with it.
+    assert 'data-wb-section="points"' not in body
+    assert 'id="wb-section-calendar"' not in body
+
+
+def test_every_section_can_be_fetched_on_its_own(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    tc, _, gym_account_id, client = signed_in
+    client.points_page = _this_month_page()
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    _seed_attendance(postgres_engine, gym_account_id=gym_account_id, local_date=yesterday)
+
+    for name in ("attendance", "points", "patterns"):
+        response = tc.get(f"/statistics?section={name}")
+        assert response.status_code == 200, name
+        assert f'data-wb-section="{name}"' in response.text, name
+
+
+def test_a_section_request_does_not_spend_the_budget_on_capture(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """CC-055: a click on "3 months" reads no upstream day.
+
+    Capture exists to fill the ledger, and the ledger does not change
+    because the reader narrowed a window. Re-reading it would make a
+    filter cost thirty five upstream calls.
+    """
+    tc, _, _, client = signed_in
+    tc.get("/statistics")
+    after_page = client.calls
+
+    tc.get("/statistics?section=attendance&attendance=m12")
+
+    assert client.calls == after_page
+
+
+def test_only_the_points_section_reads_the_points_page(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """The balance and the billing period are a network read. The two
+    sections that show neither have no reason to pay for it."""
+    tc, _, _, client = signed_in
+    client.points_page = _this_month_page()
+    tc.get("/statistics")
+    after_page = client.points_calls
+
+    tc.get("/statistics?section=patterns")
+    assert client.points_calls == after_page
+
+    tc.get("/statistics?section=points")
+    assert client.points_calls == after_page + 1
+
+
+def test_a_crafted_section_renders_the_whole_page(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """An unknown fragment name is not worth a 500, and answering with
+    a partial nobody asked for would be worse than answering fully."""
+    tc, _, _, _ = signed_in
+
+    for value in ("nonsense", "", "../../etc", "calendar"):
+        response = tc.get(f"/statistics?section={value}")
+        assert response.status_code == 200, value
+        assert "<!doctype html>" in response.text.lower(), value
+
+
+def test_a_section_fragment_carries_its_own_filter(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """The control is swapped in with the numbers it chose, so the two
+    can never disagree about which window is on screen."""
+    tc, _, _, _ = signed_in
+
+    body = tc.get("/statistics?section=patterns&patterns=m12&attendance=m3").text
+
+    assert 'data-wb-filter="patterns"' in body
+    # And it still carries its neighbours' windows for the no-script path.
+    assert 'name="attendance" value="m3"' in body
+
+
+def test_a_late_removal_the_gym_filed_as_absent_is_not_called_an_absence(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """CC-056: the page must not tell a reader they did not turn up on
+    a day they removed themselves before the class began.
+
+    The contradiction is visible in the record itself: the state
+    instant precedes the start. Real history produced two of these at a
+    gym whose attendance control is disabled, which falsified the
+    reading that said the list could only be a coach's.
+    """
+    tc, _, gym_account_id, client = signed_in
+    client.points_page = _this_month_page()
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    _seed_attendance(
+        postgres_engine,
+        gym_account_id=gym_account_id,
+        local_date=yesterday,
+        state="no_show",
+        class_id=97000,
+        hour=14,
+        # Twenty four minutes before the 14:30 start, as the real one was.
+        changed_at=datetime(yesterday.year, yesterday.month, yesterday.day, 14, 6, tzinfo=UTC),
+        ever_full=True,
+    )
+
+    body = tc.get("/statistics").text
+
+    # Counted as the drop it was, not as an absence.
+    assert "1 of 1 bookings" in body
+    assert "Did not turn up" not in body
+    # And the cost it disputes is named rather than charged silently.
+    assert "filed" in body
+    assert "last-minute removals the gym filed as not having trained" in body
+
+
+def test_a_genuine_absence_is_still_reported_as_one(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """The revision narrows the category; it does not remove it. A row
+    recorded once the class had started still says so."""
+    tc, _, gym_account_id, _ = signed_in
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    _seed_attendance(
+        postgres_engine,
+        gym_account_id=gym_account_id,
+        local_date=yesterday,
+        state="no_show",
+        class_id=97100,
+        hour=14,
+        changed_at=datetime(yesterday.year, yesterday.month, yesterday.day, 14, 45, tzinfo=UTC),
+        ever_full=True,
+    )
+
+    body = tc.get("/statistics").text
+
+    assert "Did not turn up" in body
+    assert "Absences" in body

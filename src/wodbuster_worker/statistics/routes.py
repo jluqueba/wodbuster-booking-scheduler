@@ -25,7 +25,7 @@ import structlog
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from ..auth.csrf import get_csrf_token
 from ..auth.deps import require_session
@@ -62,7 +62,13 @@ from .metrics import (
     weekday_hour_grid,
     weekly_average,
 )
-from .periods import PERIOD_KEYS, Period, resolve_period
+from .periods import (
+    PERIOD_KEYS,
+    POINTS_PERIOD_KEYS,
+    Period,
+    PeriodKey,
+    resolve_period,
+)
 from .points import PointsModel, points_estimate
 
 _log = structlog.get_logger(__name__)
@@ -250,90 +256,52 @@ def _read_points_summary(request: Request, gym_account_id: int) -> PointsSummary
     return read_points_summary(html)
 
 
-def _build_context(
-    request: Request, operator_id: int, month: str | None, period_key: str | None
-) -> dict[str, object]:
-    now = datetime.now(tz=UTC)
-    gym_account_id = active_gym_account_id(request)
-    if gym_account_id is None:
-        return _empty_context(request, has_gym=False)
+@dataclass(frozen=True)
+class History:
+    """One read of everything the page derives from.
 
-    settings = _settings(request)
-    today = local_date_for_slot(now)
-    window = resolve_month(
-        month,
-        today=today,
-        horizon_days=settings.statistics_backfill_days,
-    )
-    start, end = window.start, window.end
+    Every section slices this rather than issuing its own query. Three
+    windows over the same year are three filters in Python, not three
+    round trips, and the settle window and the class-change rule are
+    applied once over whole days instead of once per window, so a day
+    on a window boundary is classified the same way in every section.
+    """
 
-    # The month is resolved first so capture can prioritise it. Opening
-    # January must read January, not the fortnight the reader already
-    # has on the current month's page.
-    capture_status = _run_catch_up(request, gym_account_id, now, (start, min(end, today)))
-    points = _read_points_summary(request, gym_account_id)
+    gym_name: str
+    points_override: object | None
+    data_through: date | None
+    any_record_ever: int
+    oldest_captured: date | None
+    captured: dict[date, int]
+    counted: list[CountedRecord]
+    excluded_weekdays: list[int]
 
+    def window(self, period: Period) -> list[CountedRecord]:
+        return [r for r in self.counted if period.start <= r.local_date <= period.end]
+
+    def ledger(self, start: date, end: date) -> dict[date, int]:
+        return {day: count for day, count in self.captured.items() if start <= day <= end}
+
+
+def _read_history(
+    gym_account_id: int,
+    operator_id: int,
+    *,
+    now: datetime,
+    settle_window_hours: float,
+) -> History | None:
+    """Load the account's whole captured history, or nothing.
+
+    ``None`` means the account is not the acting user's. Treated by the
+    caller as "no gym" rather than as an error, so nothing confirms the
+    account exists (INV-006).
+    """
     with get_session() as session:
         gym = session.get(GymAccount, gym_account_id)
         if gym is None or gym.user_id != operator_id:
-            # Not reachable through the switcher, which only offers the
-            # acting user's own accounts. Treated as "no gym" rather
-            # than as an error, so nothing confirms the account exists.
-            return _empty_context(request, has_gym=False)
-        gym_name = str(gym.display_name)
-        # Read inside the session: the estimate is computed after it
-        # closes, and a detached instance would raise on attribute
-        # access. NULL means "use the application defaults".
-        points_override = gym.points_model
+            return None
 
-        data_through = session.scalar(
-            select(func.max(AttendanceDay.local_date)).where(
-                AttendanceDay.gym_account_id == gym_account_id
-            )
-        )
-        # Whether any activity has ever been read for this account.
-        # Deliberately not used to diagnose why. A gym that hides its
-        # athlete lists and a user who has not booked anything yet
-        # produce the identical signal, and the data minimisation
-        # decision means we store nothing that would tell them apart.
-        # The page therefore states the fact and stops there.
-        any_record_ever = (
-            session.scalar(
-                select(func.count())
-                .select_from(AttendanceRecord)
-                .where(AttendanceRecord.gym_account_id == gym_account_id)
-            )
-            or 0
-        )
         captured: dict[date, int] = {
-            row.local_date: row.class_count
-            for row in session.execute(
-                select(AttendanceDay.local_date, AttendanceDay.class_count).where(
-                    AttendanceDay.gym_account_id == gym_account_id,
-                    AttendanceDay.local_date >= start,
-                    AttendanceDay.local_date <= end,
-                )
-            ).all()
-        }
-        records = list(
-            session.scalars(
-                select(AttendanceRecord)
-                .where(
-                    AttendanceRecord.gym_account_id == gym_account_id,
-                    AttendanceRecord.local_date >= start,
-                    AttendanceRecord.local_date <= end,
-                )
-                .order_by(AttendanceRecord.start_at.asc())
-            ).all()
-        )
-        oldest_captured = session.scalar(
-            select(func.min(AttendanceDay.local_date)).where(
-                AttendanceDay.gym_account_id == gym_account_id
-            )
-        )
-        # The whole ledger and the whole record set, for the streaks.
-        # A run is not bounded by the window on screen.
-        all_captured: dict[date, int] = {
             row.local_date: row.class_count
             for row in session.execute(
                 select(AttendanceDay.local_date, AttendanceDay.class_count).where(
@@ -341,11 +309,19 @@ def _build_context(
                 )
             ).all()
         }
-        all_rows = list(
+        rows = list(
             session.scalars(
-                select(AttendanceRecord).where(AttendanceRecord.gym_account_id == gym_account_id)
+                select(AttendanceRecord)
+                .where(AttendanceRecord.gym_account_id == gym_account_id)
+                .order_by(AttendanceRecord.start_at.asc())
             ).all()
         )
+        # Whether any activity has ever been read for this account.
+        # Deliberately not used to diagnose why. A gym that hides its
+        # athlete lists and a user who has not booked anything yet
+        # produce the identical signal, and the data minimisation
+        # decision means we store nothing that would tell them apart.
+        # The page therefore states the fact and stops there.
         excluded_weekdays = list(
             session.scalar(
                 select(OperatorProfile.statistics_excluded_weekdays).where(
@@ -354,73 +330,180 @@ def _build_context(
             )
             or []
         )
-        period = resolve_period(
-            period_key,
-            today=today,
-            horizon_days=settings.statistics_backfill_days,
-            oldest_captured=oldest_captured,
-            billing=points.period,
-        )
-        # A second read rather than a filter over the first: the charts
-        # cover the selected period, which is usually wider than the
-        # month on screen and never the same set of rows.
-        period_rows = list(
-            session.scalars(
-                select(AttendanceRecord)
-                .where(
-                    AttendanceRecord.gym_account_id == gym_account_id,
-                    AttendanceRecord.local_date >= period.start,
-                    AttendanceRecord.local_date <= period.end,
-                )
-                .order_by(AttendanceRecord.start_at.asc())
-            ).all()
+        return History(
+            gym_name=str(gym.display_name),
+            points_override=gym.points_model,
+            data_through=max(captured, default=None),
+            any_record_ever=len(rows),
+            oldest_captured=min(captured, default=None),
+            captured=captured,
+            counted=counted_records(rows, now=now, settle_window_hours=settle_window_hours),
+            excluded_weekdays=excluded_weekdays,
         )
 
-    counted = counted_records(
-        records,
-        now=now,
-        settle_window_hours=settings.statistics_settle_window_hours,
+
+def _known(value: str | None, allowed: tuple[PeriodKey, ...]) -> str | None:
+    """Return ``value`` only when the section actually offers it."""
+    return value if value in allowed else None
+
+
+def _period_options(keys: tuple[PeriodKey, ...], selected: Period) -> list[dict[str, object]]:
+    return [
+        {"key": key, "label": t(f"statistics.period.{key}"), "current": key == selected.key}
+        for key in keys
+    ]
+
+
+def _attendance_context(
+    history: History,
+    *,
+    requested: str | None,
+    today: date,
+    horizon_days: int,
+    model: PointsModel,
+) -> dict[str, object]:
+    """What the reader did in the selected window.
+
+    Streaks are bounded by the window like everything else here. A run
+    that reaches its edge is reported as a lower bound rather than
+    truncated, which is the same rule that already covers the edge of
+    captured history: the reading is missing, not the training.
+    """
+    period = resolve_period(
+        requested,
+        today=today,
+        horizon_days=horizon_days,
+        oldest_captured=history.oldest_captured,
+        allowed=PERIOD_KEYS,
     )
-    over_period = counted_records(
-        period_rows,
-        now=now,
-        settle_window_hours=settings.statistics_settle_window_hours,
-    )
-    all_counted = counted_records(
-        all_rows,
-        now=now,
-        settle_window_hours=settings.statistics_settle_window_hours,
-    )
-    calendar = day_calendar(counted, captured=captured, start=start, end=end, today=today)
-    dropouts = abandonment(counted)
-    # One model governs every figure that depends on the gym's tiers.
-    # Resolved once, before anything reads a threshold: charging a
-    # cancellation under one boundary while labelling it under another
-    # is the kind of disagreement a reader cannot diagnose.
-    model = PointsModel.resolve(
-        base_cost=settings.statistics_base_point_cost,
-        late_penalty=settings.statistics_late_cancel_penalty,
-        very_late_penalty=settings.statistics_very_late_cancel_penalty,
-        absence_penalty=settings.statistics_absence_penalty,
-        late_hours=settings.statistics_late_cancel_hours,
-        very_late_hours=settings.statistics_very_late_cancel_hours,
-        override=points_override,
-    )
+    records = history.window(period)
+    dropouts = abandonment(records)
     bands = cancellation_bands(
-        counted,
+        records,
         late_hours=model.late_hours,
         very_late_hours=model.very_late_hours,
     )
-    # Streaks read the whole captured history, not the month or the
-    # chart period: a run that started before the window on screen is
-    # still the run the reader is on.
     runs = streaks(
-        all_counted,
-        captured=all_captured,
+        records,
+        captured=history.ledger(period.start, period.end),
         today=today,
-        excluded_weekdays=excluded_weekdays,
+        excluded_weekdays=history.excluded_weekdays,
     )
+    pace = weekly_average(
+        history.counted,
+        captured=history.captured.keys(),
+        start=period.start,
+        end=period.end,
+    )
+    return {
+        "period": period,
+        "period_label": t(f"statistics.period.{period.key}"),
+        "period_options": _period_options(PERIOD_KEYS, period),
+        "abandonment": dropouts,
+        "bands": bands,
+        "band_labels": _band_labels(bands),
+        "streak_cards": _streak_cards(runs),
+        "pace": pace,
+        "excluded_weekday_labels": [
+            t(f"day.{_WEEKDAY_KEYS[day]}") for day in sorted(history.excluded_weekdays)
+        ],
+    }
 
+
+def _points_context(
+    history: History,
+    *,
+    requested: str | None,
+    today: date,
+    horizon_days: int,
+    model: PointsModel,
+    summary: PointsSummary,
+) -> dict[str, object]:
+    """What the reader's behaviour cost, in the gym's own economy."""
+    period = resolve_period(
+        requested,
+        today=today,
+        horizon_days=horizon_days,
+        oldest_captured=history.oldest_captured,
+        billing=summary.period,
+        allowed=POINTS_PERIOD_KEYS,
+    )
+    estimate = points_estimate(history.window(period), model=model)
+    return {
+        "period": period,
+        "period_label": t(f"statistics.period.{period.key}"),
+        "period_options": _period_options(
+            POINTS_PERIOD_KEYS if summary.period else PERIOD_KEYS, period
+        ),
+        "estimate": estimate,
+        "balance": summary.balance,
+        "billing_period": summary.period,
+        "billing_label": (
+            t(
+                "statistics.period.billing.range",
+                start=_date_label(summary.period[0]),
+                end=_date_label(summary.period[1]),
+            )
+            if summary.period
+            else None
+        ),
+        "assumptions": [
+            t(
+                f"statistics.points.assumption.{key}",
+                hours=_hours_label(model.late_hours),
+                count=estimate.filed_as_absent,
+            )
+            for key in estimate.assumptions
+        ],
+    }
+
+
+def _patterns_context(
+    history: History,
+    *,
+    requested: str | None,
+    today: date,
+    horizon_days: int,
+    model: PointsModel,
+) -> dict[str, object]:
+    """When the reader trains and which bookings they keep."""
+    period = resolve_period(
+        requested,
+        today=today,
+        horizon_days=horizon_days,
+        oldest_captured=history.oldest_captured,
+        allowed=PERIOD_KEYS,
+    )
+    records = history.window(period)
+    return {
+        "period": period,
+        "period_label": t(f"statistics.period.{period.key}"),
+        "period_options": _period_options(PERIOD_KEYS, period),
+        **_chart_context(records, period, model),
+    }
+
+
+def _calendar_context(
+    history: History,
+    *,
+    month: str | None,
+    today: date,
+    horizon_days: int,
+) -> dict[str, object]:
+    """The month on screen, governed by its own picker and nothing else.
+
+    Deliberately outside every period filter. A calendar is a month by
+    nature, so a control offering it thirty days or a year would be
+    offering it something it cannot draw.
+    """
+    window = resolve_month(month, today=today, horizon_days=horizon_days)
+    calendar = day_calendar(
+        [r for r in history.counted if window.start <= r.local_date <= window.end],
+        captured=history.ledger(window.start, window.end),
+        start=window.start,
+        end=window.end,
+        today=today,
+    )
     # Days of this month that are over and still unread. The cells say
     # so one by one; this tells the reader it is worth coming back
     # rather than concluding the month was empty.
@@ -429,54 +512,135 @@ def _build_context(
         for cell in (c for week in calendar.weeks for c in week if c is not None)
         if cell.status == "uncaptured"
     )
-
-    # Points and the weekly comparison describe the selected period, not
-    # the month: they answer "how am I doing lately", and the month on
-    # screen is chosen for a different reason.
-    estimate = points_estimate(over_period, model=model)
-    pace = weekly_average(
-        all_counted,
-        captured=all_captured.keys(),
-        start=period.start,
-        end=period.end,
-    )
-
     return {
-        "csrf_token": get_csrf_token(request) or "",
-        "has_gym": True,
-        "gym_name": gym_name,
-        "never_captured": data_through is None,
-        "unread_days": unread,
-        "capture_notice": _capture_notice(capture_status),
-        "cookie_url": lang_url("/cookie"),
-        "no_activity_ever": data_through is not None and any_record_ever == 0,
         "month": window,
         "month_label": _month_label(window),
         "calendar": calendar,
-        "abandonment": dropouts,
-        "streaks": runs,
-        "streak_cards": _streak_cards(runs),
-        "excluded_weekday_labels": [
-            t(f"day.{_WEEKDAY_KEYS[day]}") for day in sorted(excluded_weekdays)
-        ],
-        "bands": bands,
-        "band_labels": _band_labels(bands),
-        "weekday_labels": _weekday_labels(),
         "cell_lines": _cell_lines(calendar),
+        "weekday_labels": _weekday_labels(),
         "legend": _legend(),
-        "points": estimate,
-        "points_balance": points.balance,
-        "points_assumptions": [
-            t(
-                f"statistics.points.assumption.{key}",
-                hours=_hours_label(model.late_hours),
-            )
-            for key in estimate.assumptions
-        ],
-        "billing_period": points.period,
-        "pace": pace,
-        **_chart_context(over_period, period, model, billing=points.period),
+        "unread_days": unread,
     }
+
+
+def _resolve_model(settings: Settings, override: object | None) -> PointsModel:
+    """One model governs every figure that depends on the gym's tiers.
+
+    Resolved before anything reads a threshold: charging a cancellation
+    under one boundary while labelling it under another is the kind of
+    disagreement a reader cannot diagnose.
+    """
+    return PointsModel.resolve(
+        base_cost=settings.statistics_base_point_cost,
+        late_penalty=settings.statistics_late_cancel_penalty,
+        very_late_penalty=settings.statistics_very_late_cancel_penalty,
+        absence_penalty=settings.statistics_absence_penalty,
+        late_hours=settings.statistics_late_cancel_hours,
+        very_late_hours=settings.statistics_very_late_cancel_hours,
+        override=override,
+    )
+
+
+def _build_context(
+    request: Request,
+    operator_id: int,
+    *,
+    month: str | None,
+    attendance: str | None,
+    points: str | None,
+    patterns: str | None,
+    section: str | None = None,
+) -> dict[str, object]:
+    """Assemble the page, or one section of it.
+
+    ``section`` names the fragment a filter click asked for. Capture is
+    skipped for it and so is the points page unless that is the
+    section: a click on "3 months" must not spend a reader's request on
+    thirty five upstream calls to re-read days already in the ledger.
+    """
+    now = datetime.now(tz=UTC)
+    gym_account_id = active_gym_account_id(request)
+    if gym_account_id is None:
+        return _empty_context(request, has_gym=False)
+
+    settings = _settings(request)
+    today = local_date_for_slot(now)
+    horizon = settings.statistics_backfill_days
+    window = resolve_month(month, today=today, horizon_days=horizon)
+
+    capture_status: CaptureStatus = "complete"
+    if section is None:
+        # The month is resolved first so capture can prioritise it.
+        # Opening January must read January, not the fortnight the
+        # reader already has on the current month's page.
+        capture_status = _run_catch_up(
+            request, gym_account_id, now, (window.start, min(window.end, today))
+        )
+
+    history = _read_history(
+        gym_account_id,
+        operator_id,
+        now=now,
+        settle_window_hours=settings.statistics_settle_window_hours,
+    )
+    if history is None:
+        return _empty_context(request, has_gym=False)
+
+    summary = PointsSummary(balance=None, period=None)
+    if section in (None, "points"):
+        summary = _read_points_summary(request, gym_account_id)
+
+    model = _resolve_model(settings, history.points_override)
+    context: dict[str, object] = {
+        "csrf_token": get_csrf_token(request) or "",
+        "has_gym": True,
+        "gym_name": history.gym_name,
+        "never_captured": history.data_through is None,
+        "capture_notice": _capture_notice(capture_status),
+        "cookie_url": lang_url("/cookie"),
+        "no_activity_ever": history.data_through is not None and history.any_record_ever == 0,
+        "section": section,
+        # Echoed into every filter form so submitting one window never
+        # resets the other two. Sanitised rather than passed through:
+        # an unknown value is dropped and the server falls back, which
+        # keeps a crafted query string out of the rendered markup.
+        "filters": {
+            "month": window.key,
+            "attendance": _known(attendance, PERIOD_KEYS),
+            "points": _known(points, POINTS_PERIOD_KEYS),
+            "patterns": _known(patterns, PERIOD_KEYS),
+        },
+    }
+    if section in (None, "attendance"):
+        context["attendance"] = _attendance_context(
+            history,
+            requested=attendance,
+            today=today,
+            horizon_days=horizon,
+            model=model,
+        )
+    if section in (None, "points"):
+        context["points_block"] = _points_context(
+            history,
+            requested=points,
+            today=today,
+            horizon_days=horizon,
+            model=model,
+            summary=summary,
+        )
+    if section in (None, "patterns"):
+        context["patterns"] = _patterns_context(
+            history,
+            requested=patterns,
+            today=today,
+            horizon_days=horizon,
+            model=model,
+        )
+    if section is None:
+        context["calendar_block"] = _calendar_context(
+            history, month=month, today=today, horizon_days=horizon
+        )
+    return context
 
 
 # An hour with one or two bookings produces a rate that swings between
@@ -489,8 +653,6 @@ def _chart_context(
     records: list[CountedRecord],
     period: Period,
     model: PointsModel,
-    *,
-    billing: tuple[date, date] | None = None,
 ) -> dict[str, object]:
     """Everything the chart block needs, for the selected period.
 
@@ -503,15 +665,8 @@ def _chart_context(
     trend = monthly_trend(records)
     lead = booking_lead_bands(records, free_hours=model.late_hours)
     free = _hours_label(model.late_hours)
-    # The gym's own period is offered only when the gym stated it.
-    # Listing it greyed out would advertise a capability the deployment
-    # cannot deliver for this account.
-    options = [key for key in PERIOD_KEYS if key != "billing" or billing is not None]
 
     return {
-        "period": period,
-        "period_options": [(key, t(f"statistics.period.{key}")) for key in options],
-        "period_label": t(f"statistics.period.{period.key}"),
         "occupancy": occupancy(records),
         "charts": [
             {
@@ -800,29 +955,22 @@ def _empty_context(request: Request, *, has_gym: bool) -> dict[str, object]:
         "has_gym": has_gym,
         "gym_name": None,
         "never_captured": False,
-        "unread_days": 0,
         "capture_notice": None,
         "cookie_url": lang_url("/cookie"),
         "no_activity_ever": False,
-        "abandonment": None,
-        "streaks": None,
-        "streak_cards": [],
-        "excluded_weekday_labels": [],
-        "points": None,
-        "points_balance": None,
-        "points_assumptions": [],
-        "billing_period": None,
-        "pace": None,
-        "bands": None,
-        "band_labels": [],
-        "charts": [],
-        "period": None,
-        "period_options": [],
-        "period_label": None,
-        "occupancy": None,
-        "month": None,
-        "month_label": None,
+        "section": None,
+        "filters": {},
     }
+
+
+# Which fragment a filter click may ask for. A value outside this set
+# renders the whole page, so a crafted query string gets a valid
+# response rather than a 500 or a partial nobody asked for.
+_SECTION_TEMPLATES = {
+    "attendance": "statistics/_attendance.html",
+    "points": "statistics/_points.html",
+    "patterns": "statistics/_patterns.html",
+}
 
 
 @router.get("/statistics", name="statistics")
@@ -830,19 +978,39 @@ def statistics(
     request: Request,
     operator_id: int = Depends(require_session),
     month: str | None = None,
-    period: str | None = None,
+    attendance: str | None = None,
+    points: str | None = None,
+    patterns: str | None = None,
+    section: str | None = None,
 ) -> Response:
-    """Render the statistics page for the active gym account.
+    """Render the statistics page, or one section of it.
 
-    ``month`` selects the calendar month as ``YYYY-MM``; ``period``
-    selects the window the charts describe. Neither carries any
-    authority: the gym account still comes from the session, so both
-    can only move the reader within their own history.
+    ``month`` selects the calendar month as ``YYYY-MM``. The other
+    three select the window their own section describes, independently:
+    a reader comparing this month's drop-out rate against a year of
+    training patterns is asking two questions, and one control for both
+    would force them to choose.
+
+    ``section`` asks for a single block, which is how a filter click
+    replaces its own numbers without rebuilding the page around them.
+    Nothing here carries authority: the gym account still comes from
+    the session, so every parameter can only move the reader within
+    their own history.
     """
+    template = _SECTION_TEMPLATES.get(section or "")
+    context = _build_context(
+        request,
+        operator_id,
+        month=month,
+        attendance=attendance,
+        points=points,
+        patterns=patterns,
+        section=section if template else None,
+    )
     return _templates(request).TemplateResponse(
         request=request,
-        name="statistics/page.html",
-        context=_build_context(request, operator_id, month, period),
+        name=template or "statistics/page.html",
+        context=context,
     )
 
 

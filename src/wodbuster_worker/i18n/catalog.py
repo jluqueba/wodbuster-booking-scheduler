@@ -966,6 +966,10 @@ EN: dict[str, str] = {
     "statistics.period.m12": "12 months",
     "statistics.period.all": "Everything",
     "statistics.period.billing": "This billing period",
+    "statistics.period.billing.range": "Your gym bills from {start} to {end}.",
+    "statistics.section.attendance": "Your attendance",
+    "statistics.section.patterns": "Your training patterns",
+    "statistics.section.calendar": "Day by day",
     "statistics.points.title": "Points",
     "statistics.points.balance.tile": "Balance now",
     "statistics.points.balance.hint": "Read from the gym, not calculated",
@@ -992,6 +996,14 @@ EN: dict[str, str] = {
     "statistics.points.assumption.class_changes_charged": (
         "A class change is counted. The gym sees a removal and charges for it, "
         "whether or not you booked another hour the same day."
+    ),
+    "statistics.points.assumption.filed_as_absent": (
+        "The gym filed {count} of these removals as not having trained, although each "
+        "was recorded before its class began. The lower end charges the notice tier, "
+        "the upper end the absence penalty, because the gym does not say which it used."
+    ),
+    "statistics.points.counts.filed_as_absent": (
+        "{count} were last-minute removals the gym filed as not having trained"
     ),
     "statistics.points.counts.changes": "{count} of them were class changes",
     "statistics.points.counts.recovered": "{count} never filled up, so the base cost came back",
@@ -2097,6 +2109,10 @@ ES: dict[str, str] = {
     "statistics.period.m12": "12 meses",
     "statistics.period.all": "Todo",
     "statistics.period.billing": "Periodo actual",
+    "statistics.period.billing.range": "Tu gimnasio factura del {start} al {end}.",
+    "statistics.section.attendance": "Tu asistencia",
+    "statistics.section.patterns": "Tus patrones de entrenamiento",
+    "statistics.section.calendar": "Día a día",
     "statistics.points.title": "Puntos",
     "statistics.points.balance.tile": "Saldo ahora",
     "statistics.points.balance.hint": "Leído del gimnasio, no calculado",
@@ -2123,6 +2139,15 @@ ES: dict[str, str] = {
     "statistics.points.assumption.class_changes_charged": (
         "Un cambio de hora cuenta. El gimnasio ve una baja y la cobra, hayas reservado "
         "o no otra hora el mismo día."
+    ),
+    "statistics.points.assumption.filed_as_absent": (
+        "El gimnasio archivó {count} de estas bajas como no haber entrenado, aunque "
+        "cada una quedó registrada antes de que su clase empezara. El extremo bajo cobra "
+        "el tramo de antelación; el alto, la penalización por ausencia, porque el "
+        "gimnasio no dice cuál aplicó."
+    ),
+    "statistics.points.counts.filed_as_absent": (
+        "{count} fueron bajas de última hora que el gimnasio archivó como no entrenar"
     ),
     "statistics.points.counts.changes": "{count} de ellas fueron cambios de hora",
     "statistics.points.counts.recovered": "{count} no se llenaron, así que recuperaste el base",

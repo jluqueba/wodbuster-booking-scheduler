@@ -89,3 +89,65 @@ def test_the_script_takes_its_sentences_from_the_server() -> None:
     # sentence would have to concatenate its own words.
     assert "gettext" not in script
     assert "innerText" not in script
+
+
+# ---------------------------------------------------------------------------
+# Filter script (CC-027, CC-054)
+# ---------------------------------------------------------------------------
+
+_FILTERS = _ROOT / "src" / "wodbuster_worker" / "static" / "wb-stats-filters.js"
+
+
+def _filters() -> str:
+    return _FILTERS.read_text(encoding="utf-8")
+
+
+def test_rendering_charts_destroys_the_previous_instances_first() -> None:
+    """CC-027: swapping a section detaches its canvases without telling
+    Chart.js. Without the destroy the library keeps instances pointing
+    at nodes no longer in the document, and they accumulate one per
+    filter click."""
+    script = _script()
+    body = script[script.index("function render()") :]
+
+    assert "destroyAll()" in body
+    assert body.index("destroyAll()") < body.index("builder(canvas")
+
+
+def test_the_filter_script_redraws_after_swapping_a_section() -> None:
+    """A swapped-in canvas is a fresh, empty element. Nothing draws on
+    it unless the bootstrap is asked to run again."""
+    script = _filters()
+
+    assert "wbCharts.render" in script
+    assert "innerHTML" in script
+
+
+def test_the_swap_keeps_the_live_region_it_updates() -> None:
+    """A live region announces only when the element carrying the
+    attribute survives the update. Replacing the node itself would
+    change the numbers silently for anyone listening."""
+    script = _filters()
+
+    assert "host.innerHTML" in script
+    assert "replaceWith" not in script
+
+
+def test_a_failed_fetch_falls_back_to_a_real_navigation() -> None:
+    """A filter that silently does nothing is worse than one that costs
+    a page load, and the server can always render what was asked for."""
+    script = _filters()
+
+    assert "catch" in script
+    assert "window.location.assign" in script
+
+
+def test_the_filter_script_builds_no_copy_and_no_colour() -> None:
+    """INV-011 reaches here too: the fragment arrives from the server
+    already translated and already styled."""
+    script = _filters()
+
+    assert not _HEX_COLOUR.search(script)
+    assert not _FUNCTIONAL_COLOUR.search(script)
+    assert "innerText" not in script
+    assert "textContent =" not in script

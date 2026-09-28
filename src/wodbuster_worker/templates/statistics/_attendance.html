@@ -1,0 +1,123 @@
+{# Attendance section: what the reader did in the selected window.
+
+   Every figure here answers "how often did I show up, and how often
+   did I sign up and then not". They share one filter because they
+   share one question; the charts below answer a different one and
+   carry their own.
+
+   The whole block is replaced when the filter changes, so the numbers
+   and the control that chose them can never disagree about which
+   window is on screen.
+#}
+<section class="wb-section" id="wb-section-attendance" data-wb-section="attendance" aria-live="polite">
+  {% set data = attendance %}
+  {% with filter_name = "attendance",
+          filter_data = attendance,
+          filter_title = t("statistics.section.attendance") %}
+    {% include "statistics/_filter.html" %}
+  {% endwith %}
+
+  <div class="wb-stats__tiles">
+    <div class="wb-stat-tile">
+      <span class="wb-stat-tile__value">{{ data.abandonment.attended }}</span>
+      <span class="wb-stat-tile__label">{{ t("statistics.attended.tile") }}</span>
+      <span class="wb-stat-tile__hint">{{ data.period_label }}</span>
+    </div>
+    <div class="wb-stat-tile">
+      {# A rate over nothing is unknown, not zero: reporting perfect
+         behaviour to someone who booked nothing is worse than a
+         dash. #}
+      <span class="wb-stat-tile__value">
+        {%- if data.abandonment.percent is none -%}
+          —
+        {%- else -%}
+          {{ data.abandonment.percent }}%
+        {%- endif -%}
+      </span>
+      <span class="wb-stat-tile__label">{{ t("statistics.abandonment.tile") }}</span>
+      <span class="wb-stat-tile__hint">
+        {%- if data.abandonment.percent is none -%}
+          {{ t("statistics.abandonment.none") }}
+        {%- else -%}
+          {{ t("statistics.abandonment.of",
+                dropped=data.abandonment.cancelled,
+                booked=data.abandonment.booked) }}
+        {%- endif -%}
+      </span>
+    </div>
+    <div class="wb-stat-tile">
+      <span class="wb-stat-tile__value">{{ data.abandonment.swapped }}</span>
+      <span class="wb-stat-tile__label">{{ t("statistics.swapped.tile") }}</span>
+      <span class="wb-stat-tile__hint">{{ t("statistics.swapped.hint") }}</span>
+    </div>
+    <div class="wb-stat-tile">
+      <span class="wb-stat-tile__value">
+        {{- data.abandonment.no_show + data.abandonment.removed_after_start -}}
+      </span>
+      <span class="wb-stat-tile__label">{{ t("statistics.absent.tile") }}</span>
+      <span class="wb-stat-tile__hint">{{ t("statistics.absent.hint") }}</span>
+    </div>
+    {% if data.pace and data.pace.per_week is not none %}
+      <div class="wb-stat-tile">
+        <span class="wb-stat-tile__value">{{ "%.1f" | format(data.pace.per_week) }}</span>
+        <span class="wb-stat-tile__label">{{ t("statistics.pace.tile") }}</span>
+        <span class="wb-stat-tile__hint">
+          {%- if data.pace.previous_per_week is none -%}
+            {{ t("statistics.pace.no_previous") }}
+          {%- else -%}
+            {{ t("statistics.pace.previous",
+                  value="%.1f" | format(data.pace.previous_per_week)) }}
+          {%- endif -%}
+        </span>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if data.streak_cards %}
+    <div class="wb-streaks">
+      <div class="wb-stats__tiles">
+        {% for card in data.streak_cards %}
+          <div class="wb-stat-tile wb-stat-tile--streak">
+            <span class="wb-stat-tile__value">{{ card.value }}</span>
+            <span class="wb-stat-tile__label">{{ card.label }}</span>
+            {% if card.hint %}
+              <span class="wb-stat-tile__hint">{{ card.hint }}</span>
+            {% endif %}
+            {% if card.provisional %}
+              <span class="wb-stat-tile__hint">{{ t("statistics.streak.provisional") }}</span>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+      <p class="wb-muted wb-note">
+        {{ t("statistics.streak.rule") }}
+        {% if data.excluded_weekday_labels %}
+          {{ t("statistics.streak.excluded",
+                days=data.excluded_weekday_labels | join(", ")) }}
+        {% endif %}
+        <a href="{{ lang_url('/profile') }}">{{ t("statistics.streak.excluded_link") }}</a>
+      </p>
+    </div>
+  {% endif %}
+
+  {% if data.bands.total %}
+    {# The bands answer what the rate cannot: a drop three days out
+       and one two hours out cost the user different things. #}
+    <div class="wb-bands">
+      <h3 class="wb-bands__title">{{ t("statistics.bands.title") }}</h3>
+      <ul class="wb-bands__list">
+        {% for band in data.band_labels %}
+          <li class="wb-bands__item wb-bands__item--{{ band.kind }}">
+            <span class="wb-bands__count">{{ band.count }}</span>
+            <span class="wb-bands__label">{{ band.label }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+      {% if data.bands.unknown_lead %}
+        <p class="wb-bands__note">
+          {{ t("statistics.bands.unknown", count=data.bands.unknown_lead) }}
+        </p>
+      {% endif %}
+    </div>
+  {% endif %}
+</section>

@@ -38,6 +38,7 @@
   defer
 ></script>
 <script src="/static/wb-charts.js" defer></script>
+<script src="/static/wb-stats-filters.js" defer></script>
 <style>
   .wb-stats__tiles {
     display: grid;
@@ -152,7 +153,46 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 0.4rem;
-    margin-bottom: 1rem;
+    margin-bottom: 0;
+  }
+  .wb-periods__options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  /* Each block is a unit: its heading, its window control and the
+     numbers that control chose. The border is what makes the third
+     obviously belong to the second. */
+  .wb-section {
+    margin: 0 0 2.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--wb-border);
+  }
+  .wb-section:first-of-type {
+    border-top: 0;
+    padding-top: 0;
+  }
+  .wb-section[aria-busy="true"] {
+    opacity: 0.55;
+    transition: opacity 120ms ease-in;
+  }
+  /* Pico paints a spinner on anything marked busy. The section already
+     dims, and a glyph injected at the top of a block would shift every
+     figure under it while the replacement is in flight. */
+  .wb-section[aria-busy="true"]::before {
+    display: none;
+  }
+  .wb-section__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.6rem 1.5rem;
+    margin-bottom: 1.1rem;
+  }
+  .wb-section__title {
+    margin: 0;
+    font-size: 1.15rem;
   }
   .wb-periods__label {
     font-size: 0.85rem;
