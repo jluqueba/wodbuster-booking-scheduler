@@ -960,7 +960,7 @@ EN: dict[str, str] = {
     "statistics.bands.unknown": (
         "{count} more could not be placed: the gym did not say when they happened."
     ),
-    "statistics.period.label": "Charts cover",
+    "statistics.period.label": "Showing",
     "statistics.period.m1": "30 days",
     "statistics.period.m3": "3 months",
     "statistics.period.m12": "12 months",
@@ -2103,7 +2103,7 @@ ES: dict[str, str] = {
     "statistics.bands.unknown": (
         "{count} más sin clasificar: el gimnasio no dijo cuándo ocurrieron."
     ),
-    "statistics.period.label": "Los gráficos cubren",
+    "statistics.period.label": "Mostrando",
     "statistics.period.m1": "30 días",
     "statistics.period.m3": "3 meses",
     "statistics.period.m12": "12 meses",

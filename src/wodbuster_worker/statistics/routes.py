@@ -963,14 +963,31 @@ def _empty_context(request: Request, *, has_gym: bool) -> dict[str, object]:
     }
 
 
-# Which fragment a filter click may ask for. A value outside this set
+# Which fragment a filter click may ask for, and the context key that
+# has to be present for it to mean anything. A value outside this set
 # renders the whole page, so a crafted query string gets a valid
 # response rather than a 500 or a partial nobody asked for.
 _SECTION_TEMPLATES = {
-    "attendance": "statistics/_attendance.html",
-    "points": "statistics/_points.html",
-    "patterns": "statistics/_patterns.html",
+    "attendance": ("statistics/_attendance.html", "attendance"),
+    "points": ("statistics/_points.html", "points_block"),
+    "patterns": ("statistics/_patterns.html", "patterns"),
 }
+
+
+def _fragment_renders(context: dict[str, object], key: str) -> bool:
+    """True when the page would show this block, so replacing it means something.
+
+    An account with no gym, or one whose ledger has never been read,
+    renders an empty state and no blocks at all. A bookmarked or
+    hand-typed fragment URL for such an account has nothing to swap in,
+    and answering with a template whose context was never built is a
+    500 where the page itself would have rendered fine.
+    """
+    return (
+        bool(context.get("has_gym"))
+        and not context.get("never_captured")
+        and context.get(key) is not None
+    )
 
 
 @router.get("/statistics", name="statistics")
@@ -993,24 +1010,42 @@ def statistics(
 
     ``section`` asks for a single block, which is how a filter click
     replaces its own numbers without rebuilding the page around them.
+    It is honoured only when the page would show that block; otherwise
+    the page is rendered, which also restores the capture the fragment
+    path deliberately skips.
+
     Nothing here carries authority: the gym account still comes from
     the session, so every parameter can only move the reader within
     their own history.
     """
-    template = _SECTION_TEMPLATES.get(section or "")
-    context = _build_context(
-        request,
-        operator_id,
-        month=month,
-        attendance=attendance,
-        points=points,
-        patterns=patterns,
-        section=section if template else None,
-    )
+    chosen = _SECTION_TEMPLATES.get(section or "")
+    if chosen is not None:
+        template, key = chosen
+        context = _build_context(
+            request,
+            operator_id,
+            month=month,
+            attendance=attendance,
+            points=points,
+            patterns=patterns,
+            section=section,
+        )
+        if _fragment_renders(context, key):
+            return _templates(request).TemplateResponse(
+                request=request, name=template, context=context
+            )
+
     return _templates(request).TemplateResponse(
         request=request,
-        name=template or "statistics/page.html",
-        context=context,
+        name="statistics/page.html",
+        context=_build_context(
+            request,
+            operator_id,
+            month=month,
+            attendance=attendance,
+            points=points,
+            patterns=patterns,
+        ),
     )
 
 

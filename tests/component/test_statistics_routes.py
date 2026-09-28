@@ -1263,8 +1263,13 @@ def test_a_section_request_returns_that_section_alone(
     signed_in: tuple[TestClient, int, int, RecordingClient],
 ) -> None:
     """CC-054: a filter click replaces one block, so the response is
-    that block and not a page with it somewhere inside."""
+    that block and not a page with it somewhere inside.
+
+    The page is loaded first, as a filter click always is: a fragment
+    only means something once there is a block on screen to replace.
+    """
     tc, _, _, _ = signed_in
+    tc.get("/statistics")
 
     response = tc.get("/statistics?section=attendance&attendance=m3")
 
@@ -1415,3 +1420,28 @@ def test_a_genuine_absence_is_still_reported_as_one(
 
     assert "Did not turn up" in body
     assert "Absences" in body
+
+
+def test_a_section_request_before_anything_is_read_renders_the_page(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A fragment is only meaningful once there is a block to replace.
+
+    On an account with nothing captured the page shows an empty state
+    and no sections at all, so a hand-typed or bookmarked fragment URL
+    has nothing to render. It answers with the page rather than with a
+    template whose context was never built.
+    """
+    _, subject = seed_operator(display_name="Empty")
+    app = app_factory()
+    app.state.wodbuster_client = None
+    app.state.booking_client_factory = None
+    tc = _sign_in(app, subject, "Empty", monkeypatch)
+
+    for name in ("attendance", "points", "patterns"):
+        response = tc.get(f"/statistics?section={name}")
+        assert response.status_code == 200, name
+        assert "<!doctype html>" in response.text.lower(), name
+        assert "Nothing has been read" in response.text, name

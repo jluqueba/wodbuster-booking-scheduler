@@ -21,13 +21,18 @@
     return host ? host.getAttribute(SECTION_ATTR) : null;
   }
 
-  /* The URL the form would have navigated to, plus the marker that
-     asks for one block instead of the page. Built from the form itself
-     so the hidden inputs carrying the other sections' windows travel
-     too: a fragment must be rendered against the same state the page
-     is in, or swapping it would silently reset its neighbours. */
+  /* The address bar is the canonical state, not the form.
+   *
+   * Only one section is replaced per click, so the hidden inputs in
+   * the other two still carry the window that section had when the
+   * page was rendered. Building the next URL from a form would then
+   * undo a change made a moment earlier, and the page would look right
+   * until a reload lost it. Reading the current URL and applying only
+   * the submitted change keeps every window, whatever order the
+   * clicks arrive in.
+   */
   function urlFor(form, button) {
-    var params = new URLSearchParams(new FormData(form));
+    var params = new URLSearchParams(window.location.search);
     if (button && button.name) {
       params.set(button.name, button.value);
     }
@@ -35,8 +40,23 @@
     fragment.set("section", sectionOf(form));
     return {
       page: form.action + "?" + params.toString(),
-      fragment: form.action + "?" + fragment.toString()
+      fragment: form.action + "?" + fragment.toString(),
+      params: params
     };
+  }
+
+  /* Bring the hidden inputs of every other section back in step with
+     the URL, so the no-script fallback and a later click both submit
+     the state actually on screen. */
+  function syncForms(params) {
+    var forms = document.querySelectorAll("form[data-wb-filter], form.wb-monthjump");
+    Array.prototype.forEach.call(forms, function (form) {
+      Array.prototype.forEach.call(form.querySelectorAll("input[type=hidden]"), function (input) {
+        if (params.has(input.name)) {
+          input.value = params.get(input.name);
+        }
+      });
+    });
   }
 
   /* Replaces the contents rather than the node. The section is a live
@@ -96,6 +116,7 @@
         /* The address bar follows the page, not the fragment, so a
            reload or a shared link lands on what is on screen. */
         window.history.replaceState({}, "", urls.page);
+        syncForms(urls.params);
         redrawCharts();
       })
       .catch(function () {

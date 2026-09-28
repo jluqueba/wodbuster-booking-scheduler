@@ -151,3 +151,24 @@ def test_the_filter_script_builds_no_copy_and_no_colour() -> None:
     assert not _FUNCTIONAL_COLOUR.search(script)
     assert "innerText" not in script
     assert "textContent =" not in script
+
+
+def test_the_next_url_is_built_from_the_address_bar_not_the_form() -> None:
+    """Only one section is replaced per click, so the hidden inputs in
+    the other two still carry the window they had when the page was
+    rendered. Building the next URL from a form would undo a change
+    made a moment earlier, and the page would look right until a
+    reload lost it."""
+    script = _filters()
+
+    assert "new URLSearchParams(window.location.search)" in script
+    assert "new FormData(form)" not in script
+
+
+def test_the_forms_are_brought_back_in_step_after_a_swap() -> None:
+    """The no-script fallback and the next click both submit whatever
+    the hidden inputs say, so they have to match what is on screen."""
+    script = _filters()
+
+    assert "syncForms" in script
+    assert script.index("function syncForms") < script.index("syncForms(urls.params)")
