@@ -204,3 +204,15 @@ def test_the_sync_leaves_a_visible_control_alone() -> None:
     body = script[script.index("function syncForms") :]
 
     assert 'existing.type === "hidden"' in body
+
+
+def test_only_a_section_holding_canvases_asks_for_a_redraw() -> None:
+    """The rebuild is global, so running it after an attendance click
+    would destroy and recreate charts that did not change, throwing
+    away any zoom the reader had applied to them."""
+    script = _filters()
+    body = script[script.index("function redrawCharts") :]
+
+    assert 'host.querySelector("canvas[data-wb-chart]")' in body
+    assert body.index("canvas[data-wb-chart]") < body.index("wbCharts.render")
+    assert "redrawCharts(host)" in script

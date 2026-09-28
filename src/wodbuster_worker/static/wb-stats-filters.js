@@ -101,8 +101,16 @@
   /* Chart.js keeps its instances keyed by canvas. Replacing the markup
      detaches the old canvases without telling it, so the instances are
      destroyed and rebuilt rather than left pointing at nodes that are
-     no longer in the document. */
-  function redrawCharts() {
+     no longer in the document.
+
+     Only the section that actually holds canvases asks for this. The
+     rebuild is global, so running it after an attendance click would
+     throw away a zoom the reader had applied to a chart that did not
+     change. */
+  function redrawCharts(host) {
+    if (!host.querySelector("canvas[data-wb-chart]")) {
+      return;
+    }
     if (window.wbCharts && typeof window.wbCharts.render === "function") {
       window.wbCharts.render();
     }
@@ -144,7 +152,7 @@
         var params = stateWith(urls.change);
         window.history.replaceState({}, "", urls.action + "?" + params.toString());
         syncForms(params);
-        redrawCharts();
+        redrawCharts(host);
       })
       .catch(function () {
         /* Whatever went wrong, the server can still render this. A
