@@ -228,3 +228,34 @@ def test_a_section_that_loses_its_charts_still_destroys_them() -> None:
     assert "redrawCharts(host, hadCharts)" in script
     body = script[script.index("function redrawCharts") :]
     assert "!hadCharts &&" in body
+
+
+def test_a_second_click_replaces_the_first_instead_of_being_dropped() -> None:
+    """Ignoring it left the reader looking at a window they did not
+    choose, with nothing on screen to say why."""
+    script = _filters()
+
+    assert "AbortController" in script
+    assert "pending[name].abort()" in script
+    # An abort is this handler replacing its own request, not a failure.
+    assert 'error.name === "AbortError"' in script
+
+
+def test_only_the_current_request_clears_the_busy_state() -> None:
+    """An aborted one clearing it would take the dimming off a block
+    whose replacement is still on its way."""
+    script = _filters()
+
+    assert "pending[name] === controller" in script
+
+
+def test_focus_returns_to_the_block_that_was_replaced() -> None:
+    """Replacing the markup destroys the control that was clicked, so a
+    keyboard user is otherwise left on the document body."""
+    script = _filters()
+
+    assert "restoreFocus(host, hadFocus)" in script
+    body = script[script.index("function restoreFocus") :]
+    assert "host.focus" in body
+    # Not taken from a reader who has tabbed on in the meantime.
+    assert "if (!wasInside)" in body

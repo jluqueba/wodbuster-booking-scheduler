@@ -14,7 +14,7 @@
   "use strict";
 
   var SECTION_ATTR = "data-wb-section";
-  var inFlight = {};
+  var pending = {};
 
   function sectionOf(node) {
     var host = node.closest("[" + SECTION_ATTR + "]");
@@ -119,6 +119,22 @@
     }
   }
 
+  /* Replacing the markup destroys the control that was clicked, so a
+     keyboard user is left on the document body with no way back to
+     where they were. Focus is moved to the block itself, which is
+     where the heading and the window control both sit.
+
+     Only when focus was inside the block to begin with: a reader who
+     has tabbed on while a request was in flight should not have it
+     taken from them. */
+  function restoreFocus(host, wasInside) {
+    if (!wasInside) {
+      return;
+    }
+    host.setAttribute("tabindex", "-1");
+    host.focus({ preventScroll: true });
+  }
+
   function onSubmit(event) {
     var form = event.target;
     if (!form.matches || !form.matches("form[data-wb-filter]")) {
@@ -126,19 +142,29 @@
     }
     var name = sectionOf(form);
     var host = document.querySelector("[" + SECTION_ATTR + "='" + name + "']");
-    if (!name || !host || inFlight[name]) {
+    if (!name || !host) {
       return;
     }
 
     event.preventDefault();
     var urls = urlFor(form, event.submitter);
     var hadCharts = !!host.querySelector("canvas[data-wb-chart]");
-    inFlight[name] = true;
+    var hadFocus = host.contains(document.activeElement);
+
+    /* A second click on the same block replaces the first rather than
+       being dropped. Dropping it left the reader looking at a window
+       they did not choose, with nothing on screen to say why. */
+    if (pending[name]) {
+      pending[name].abort();
+    }
+    var controller = new AbortController();
+    pending[name] = controller;
     host.setAttribute("aria-busy", "true");
 
     fetch(urls.fragment, {
       headers: { "X-Requested-With": "fetch" },
-      credentials: "same-origin"
+      credentials: "same-origin",
+      signal: controller.signal
     })
       .then(function (response) {
         if (!response.ok) {
@@ -157,16 +183,28 @@
         window.history.replaceState({}, "", urls.action + "?" + params.toString());
         syncForms(params);
         redrawCharts(host, hadCharts);
+        restoreFocus(host, hadFocus);
       })
-      .catch(function () {
-        /* Whatever went wrong, the server can still render this. A
-           filter that silently does nothing is worse than one that
+      .catch(function (error) {
+        /* An abort is this handler replacing its own request, not a
+           failure: navigating away would undo the click that caused
+           it. */
+        if (error && error.name === "AbortError") {
+          return;
+        }
+        /* Whatever else went wrong, the server can still render this.
+           A filter that silently does nothing is worse than one that
            costs a page load. */
         window.location.assign(urls.action + "?" + stateWith(urls.change).toString());
       })
       .then(function () {
-        delete inFlight[name];
-        host.removeAttribute("aria-busy");
+        /* Only the request still current cleans up. An aborted one
+           clearing the flag would take the busy state off a block
+           whose replacement is still on its way. */
+        if (pending[name] === controller) {
+          delete pending[name];
+          host.removeAttribute("aria-busy");
+        }
       });
   }
 

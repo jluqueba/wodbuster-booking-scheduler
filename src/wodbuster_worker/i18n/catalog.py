@@ -1002,8 +1002,9 @@ EN: dict[str, str] = {
     ),
     "statistics.points.assumption.filed_as_absent": (
         "The gym filed {count} of these removals as not having trained, although each "
-        "was recorded before its class began. The lower end charges the notice tier, "
-        "the upper end the absence penalty, because the gym does not say which it used."
+        "was recorded before its class began. Each is priced twice, at its notice tier "
+        "and at the absence penalty, and the range spans both because the gym does not "
+        "say which it used."
     ),
     "statistics.points.counts.filed_as_absent": (
         "{count} were removals the gym filed as not having trained"
@@ -2147,9 +2148,9 @@ ES: dict[str, str] = {
     ),
     "statistics.points.assumption.filed_as_absent": (
         "El gimnasio archivó {count} de estas bajas como no haber entrenado, aunque "
-        "cada una quedó registrada antes de que su clase empezara. El extremo bajo cobra "
-        "el tramo de antelación; el alto, la penalización por ausencia, porque el "
-        "gimnasio no dice cuál aplicó."
+        "cada una quedó registrada antes de que su clase empezara. Cada una se tarifa "
+        "dos veces, por su tramo de antelación y por la penalización de ausencia, y el "
+        "rango abarca ambas porque el gimnasio no dice cuál aplicó."
     ),
     "statistics.points.counts.filed_as_absent": (
         "{count} fueron bajas que el gimnasio archivó como no entrenar"
