@@ -271,16 +271,21 @@ def test_the_drop_out_rate_shows_the_counts_behind_it(
     assert "1 of 4 bookings" in body
 
 
-def test_a_month_with_no_bookings_shows_a_dash_not_a_zero(
+def test_a_window_with_no_bookings_shows_a_dash_not_a_zero(
     signed_in: tuple[TestClient, int, int, RecordingClient],
 ) -> None:
     """Reporting a perfect rate to someone who booked nothing is worse
-    than admitting there is nothing to report."""
+    than admitting there is nothing to report.
+
+    The copy names the window rather than a month: the block sits
+    under a control the reader sets, so "this month" would be wrong at
+    every setting but one.
+    """
     tc, _, _, _ = signed_in
 
     body = tc.get("/statistics").text
 
-    assert "Nothing booked in this month" in body
+    assert "Nothing booked in this window" in body
     assert 'class="wb-stat-tile__value">0%<' not in body
 
 
@@ -1569,3 +1574,45 @@ def test_the_notice_reaches_a_section_fragment_too(
 
     assert 'data-wb-section="patterns"' in body
     assert "have never been read" in body
+
+
+def test_the_pace_tile_states_which_way_it_moved(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """The direction is what the comparison is for. A figure beside an
+    older figure leaves the reader to do the subtraction."""
+    tc, _, gym_account_id, client = signed_in
+    client.error = WodBusterTransportError("timeout")
+    today = datetime.now(tz=UTC).date()
+    with postgres_engine.begin() as conn:
+        for offset in range(1, 61):
+            conn.execute(
+                text(
+                    "INSERT INTO attendance_day "
+                    "(gym_account_id, local_date, class_count, is_final) "
+                    "VALUES (:ga, :d, 20, TRUE) ON CONFLICT DO NOTHING"
+                ),
+                {"ga": gym_account_id, "d": today - timedelta(days=offset)},
+            )
+    # Trained often inside the window, rarely before it.
+    for offset in range(1, 21):
+        _seed_attendance(
+            postgres_engine,
+            gym_account_id=gym_account_id,
+            local_date=today - timedelta(days=offset),
+            class_id=98000 + offset,
+        )
+    _seed_attendance(
+        postgres_engine,
+        gym_account_id=gym_account_id,
+        local_date=today - timedelta(days=45),
+        class_id=98900,
+    )
+
+    body = tc.get("/statistics?attendance=m1").text
+    start = body.index('data-wb-section="attendance"')
+    attendance = body[start : body.index("</section>", start)]
+
+    assert "up " in attendance
+    assert "in the period before" in attendance

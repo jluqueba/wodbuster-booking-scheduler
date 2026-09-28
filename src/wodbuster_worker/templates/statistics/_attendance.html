@@ -78,6 +78,20 @@
                   value="%.1f" | format(data.pace.previous_per_week)) }}
           {%- endif -%}
         </span>
+        {% if data.pace.change is not none %}
+          {# The direction is what the comparison is for. Rounded to
+             the same tenth as the figures above it, so a difference
+             too small to show does not read as "up 0.0". #}
+          <span class="wb-stat-tile__hint">
+            {%- if data.pace.change >= 0.05 -%}
+              {{ t("statistics.pace.up", value="%.1f" | format(data.pace.change)) }}
+            {%- elif data.pace.change <= -0.05 -%}
+              {{ t("statistics.pace.down", value="%.1f" | format(-data.pace.change)) }}
+            {%- else -%}
+              {{ t("statistics.pace.flat") }}
+            {%- endif -%}
+          </span>
+        {% endif %}
       </div>
     {% endif %}
   </div>
