@@ -53,16 +53,33 @@
     };
   }
 
-  /* Bring the hidden inputs of every other section back in step with
-     the URL, so the no-script fallback and a later click both submit
-     the state actually on screen. */
+  /* Bring every form back in step with the URL, so the no-script
+     fallback and a later click both submit the state actually on
+     screen.
+
+     Creates the input when it is missing rather than only updating
+     what the server happened to render. A visible control owns its
+     own value, which is how the calendar keeps its month field. */
   function syncForms(params) {
     var forms = document.querySelectorAll("form[data-wb-filter], form.wb-monthjump");
     Array.prototype.forEach.call(forms, function (form) {
-      Array.prototype.forEach.call(form.querySelectorAll("input[type=hidden]"), function (input) {
-        if (params.has(input.name)) {
-          input.value = params.get(input.name);
+      var own = form.getAttribute("data-wb-filter");
+      params.forEach(function (value, key) {
+        if (key === "section" || key === own) {
+          return;
         }
+        var existing = form.querySelector("[name='" + key + "']");
+        if (existing) {
+          if (existing.type === "hidden") {
+            existing.value = value;
+          }
+          return;
+        }
+        var input = document.createElement("input");
+        input.type = "hidden";
+        input.name = key;
+        input.value = value;
+        form.appendChild(input);
       });
     });
   }

@@ -1445,3 +1445,65 @@ def test_a_section_request_before_anything_is_read_renders_the_page(
         assert response.status_code == 200, name
         assert "<!doctype html>" in response.text.lower(), name
         assert "Nothing has been read" in response.text, name
+
+
+def test_every_form_carries_every_window_including_the_defaults(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """A default omitted from the markup is a window with no input to
+    carry it. A later month change would then submit without it and
+    silently reset a section the reader had moved."""
+    tc, _, _, _ = signed_in
+
+    body = tc.get("/statistics").text
+    start = body.index('class="wb-monthjump"')
+    month_form = body[start : body.index("</form>", start)]
+
+    for name in ("attendance", "points", "patterns"):
+        assert f'name="{name}" value="m1"' in month_form, name
+
+
+def test_a_billing_window_the_gym_did_not_state_is_not_echoed_back(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """The points block falls back to thirty days when the gym states
+    no period. A form still claiming the billing window would put the
+    URL at odds with the figures, and a later render could honour it
+    once the upstream page came back."""
+    tc, _, _, client = signed_in
+    client.points_error = WodBusterTransportError("timeout")
+
+    body = tc.get("/statistics?points=billing").text
+    start = body.index('data-wb-filter="attendance"')
+    form = body[start : body.index("</form>", start)]
+
+    assert 'name="points" value="billing"' not in form
+    assert 'name="points" value="m1"' in form
+
+
+def test_a_billing_window_the_gym_did_state_survives(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    tc, _, _, client = signed_in
+    client.points_page = _this_month_page()
+
+    body = tc.get("/statistics?points=billing").text
+    start = body.index('data-wb-filter="attendance"')
+    form = body[start : body.index("</form>", start)]
+
+    assert 'name="points" value="billing"' in form
+
+
+def test_a_fragment_does_not_discard_a_window_it_cannot_verify(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+) -> None:
+    """An attendance fragment deliberately never reads the points page,
+    so it has no evidence about a billing window. Dropping it on no
+    evidence would discard the reader's own choice."""
+    tc, _, _, client = signed_in
+    client.points_page = _this_month_page()
+    tc.get("/statistics")
+
+    body = tc.get("/statistics?section=attendance&points=billing").text
+
+    assert 'name="points" value="billing"' in body

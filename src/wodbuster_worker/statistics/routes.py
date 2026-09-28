@@ -63,6 +63,7 @@ from .metrics import (
     weekly_average,
 )
 from .periods import (
+    DEFAULT_PERIOD,
     PERIOD_KEYS,
     POINTS_PERIOD_KEYS,
     Period,
@@ -342,9 +343,30 @@ def _read_history(
         )
 
 
-def _known(value: str | None, allowed: tuple[PeriodKey, ...]) -> str | None:
+def _known(value: str | None, allowed: tuple[PeriodKey, ...]) -> str:
     """Return ``value`` only when the section actually offers it."""
-    return value if value in allowed else None
+    return value if value in allowed else DEFAULT_PERIOD
+
+
+def _settled(built: object, requested: str | None, allowed: tuple[PeriodKey, ...]) -> str:
+    """The window a section ended up on, for the other forms to carry.
+
+    Where this request built the section, its resolved period is the
+    answer: resolution is what absorbs a crafted key and a billing
+    period the gym did not state, so echoing the raw request instead
+    would let a form claim a window the page is not showing.
+
+    Where it did not, the raw value is sanitised and passed through.
+    A fragment for one section deliberately does not read the points
+    page, so it has no evidence about whether a billing window is
+    valid, and dropping it on no evidence would discard the reader's
+    own choice.
+    """
+    if isinstance(built, dict):
+        period = built.get("period")
+        if isinstance(period, Period):
+            return str(period.key)
+    return _known(requested, allowed)
 
 
 def _period_options(keys: tuple[PeriodKey, ...], selected: Period) -> list[dict[str, object]]:
@@ -600,16 +622,6 @@ def _build_context(
         "cookie_url": lang_url("/cookie"),
         "no_activity_ever": history.data_through is not None and history.any_record_ever == 0,
         "section": section,
-        # Echoed into every filter form so submitting one window never
-        # resets the other two. Sanitised rather than passed through:
-        # an unknown value is dropped and the server falls back, which
-        # keeps a crafted query string out of the rendered markup.
-        "filters": {
-            "month": window.key,
-            "attendance": _known(attendance, PERIOD_KEYS),
-            "points": _known(points, POINTS_PERIOD_KEYS),
-            "patterns": _known(patterns, PERIOD_KEYS),
-        },
     }
     if section in (None, "attendance"):
         context["attendance"] = _attendance_context(
@@ -640,6 +652,20 @@ def _build_context(
         context["calendar_block"] = _calendar_context(
             history, month=month, today=today, horizon_days=horizon
         )
+
+    # Echoed into every form so submitting one window never resets the
+    # others. Always present and always a window the section actually
+    # honoured: a value is taken from the resolved period where this
+    # request built one, because that is what already absorbed a
+    # crafted key and a billing period the gym did not state. Omitting
+    # a default would leave a form with no input to carry it, and the
+    # next month change would submit without it.
+    context["filters"] = {
+        "month": window.key,
+        "attendance": _settled(context.get("attendance"), attendance, PERIOD_KEYS),
+        "points": _settled(context.get("points_block"), points, POINTS_PERIOD_KEYS),
+        "patterns": _settled(context.get("patterns"), patterns, PERIOD_KEYS),
+    }
     return context
 
 

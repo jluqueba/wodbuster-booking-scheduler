@@ -184,3 +184,23 @@ def test_the_forms_are_brought_back_in_step_after_a_swap() -> None:
     script = _filters()
 
     assert script.index("function syncForms") < script.index("syncForms(params)")
+
+
+def test_the_sync_creates_a_missing_hidden_input() -> None:
+    """Only updating what the server rendered is not enough: a window
+    left at its default has no input to update, so a month change
+    afterwards would submit without it and reset the section."""
+    script = _filters()
+    body = script[script.index("function syncForms") :]
+
+    assert "createElement" in body
+    assert "appendChild" in body
+
+
+def test_the_sync_leaves_a_visible_control_alone() -> None:
+    """The calendar owns its month field. Mirroring the URL into it
+    would fight the date picker for the same value."""
+    script = _filters()
+    body = script[script.index("function syncForms") :]
+
+    assert 'existing.type === "hidden"' in body
