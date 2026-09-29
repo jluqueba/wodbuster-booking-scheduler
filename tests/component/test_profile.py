@@ -139,10 +139,21 @@ def test_profile_save_persists_email_and_preferences(
     assert row.email_preferences == {"bookings": True, "session_alerts": False}
 
 
+@pytest.mark.parametrize(
+    "email",
+    [
+        "not-an-email",
+        "alice@@example.com",
+        "alice@example",
+        "alice@.com",
+        "alice @example.com",
+    ],
+)
 def test_profile_save_rejects_bad_email(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],
     monkeypatch: pytest.MonkeyPatch,
+    email: str,
 ) -> None:
     _, subject = seed_operator(provider="microsoft", display_name="Alice")
     app = app_factory()
@@ -153,7 +164,7 @@ def test_profile_save_rejects_bad_email(
                 "display_name": "Alice",
                 "short_name": "",
                 "communication_language": "en",
-                "email": "not-an-email",
+                "email": email,
                 "_csrf": _csrf(client),
             },
         )

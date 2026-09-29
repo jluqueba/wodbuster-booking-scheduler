@@ -19,7 +19,6 @@ URL-prefix language like the rest of the app.
 
 from __future__ import annotations
 
-import re
 from typing import Annotated, Any
 from urllib.parse import urlencode
 
@@ -45,9 +44,6 @@ _DISPLAY_NAME_MAX = 200
 _SHORT_NAME_MAX = 100
 _EMAIL_MAX = 320
 _LANGUAGES = frozenset({"es", "en"})
-# Deliberately lenient: reject the obvious (no @, no dot) without pretending to
-# fully validate RFC 5322. Real deliverability is proven by an actual send.
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 # Monday first, matching ``date.weekday()`` and the calendar's columns.
 _WEEKDAY_KEYS = (
@@ -72,6 +68,22 @@ def _templates(request: Request) -> Jinja2Templates:
 def _redirect_with_flash(message: str, *, kind: str = "info") -> RedirectResponse:
     query = urlencode({"flash": message, "flash_kind": kind})
     return RedirectResponse(url=f"{lang_url('/profile')}?{query}", status_code=303)
+
+
+def _is_plausible_email(value: str) -> bool:
+    """Reject obvious malformed addresses without claiming RFC validation."""
+    if any(character.isspace() for character in value):
+        return False
+    local_part, separator, domain = value.partition("@")
+    domain_name, dot, suffix = domain.rpartition(".")
+    return bool(
+        local_part
+        and separator
+        and domain_name
+        and dot
+        and suffix
+        and "@" not in domain
+    )
 
 
 def _active_avatar_url(request: Request) -> str | None:
@@ -173,7 +185,7 @@ def profile_save(
         return _redirect_with_flash(t("profile.flash.too_long"), kind="error")
     if communication_language not in _LANGUAGES:
         return _redirect_with_flash(t("profile.flash.bad_language"), kind="error")
-    if email_clean and not _EMAIL_RE.match(email_clean):
+    if email_clean and not _is_plausible_email(email_clean):
         return _redirect_with_flash(t("profile.flash.bad_email"), kind="error")
     # A weekday outside 0..6 can only come from a crafted form, and
     # storing it would make the streak rule consult an index that can

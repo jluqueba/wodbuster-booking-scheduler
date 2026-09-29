@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlencode
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
@@ -64,6 +65,7 @@ from .service import (
 )
 
 router = APIRouter(prefix="/rules", tags=["rules"])
+_log = structlog.get_logger(__name__)
 
 _DAY_LABEL_KEYS = (
     "day.monday",
@@ -343,11 +345,17 @@ def rules_api_classes_debug(
         WodBusterTransportError,
         WodBusterProtocolError,
     ) as exc:
+        _log.warning(
+            "rules.debug.upstream_error",
+            operator_id=operator_id,
+            gym_account_id=gym_account_id,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
         return JSONResponse(
             {
                 "stage": "upstream_error",
                 "error_type": type(exc).__name__,
-                "error": str(exc),
                 "sources": {},
                 "result": None,
             }

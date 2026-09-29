@@ -8,6 +8,8 @@ nav switcher, which sets the gym the web session is acting on.
 
 from __future__ import annotations
 
+from urllib.parse import unquote, urlsplit
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
@@ -20,6 +22,43 @@ from ..persistence.models import GymAccount
 from .context import SESSION_KEY
 
 router = APIRouter(prefix="/gyms", tags=["gyms"])
+
+_RETURN_TARGETS = {
+    "/": "/",
+    "/cookie": "/cookie",
+    "/faq": "/faq",
+    "/history": "/history",
+    "/profile": "/profile",
+    "/rules": "/rules",
+    "/statistics": "/statistics",
+    "/telegram": "/telegram",
+    "/vacation": "/vacation",
+}
+
+
+def _safe_return_target(value: str) -> str | None:
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        return None
+
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return None
+    decoded_path = unquote(parsed.path)
+    if (
+        parsed.scheme
+        or parsed.netloc
+        or not parsed.path.startswith("/")
+        or decoded_path.startswith("//")
+        or "\\" in decoded_path
+    ):
+        return None
+
+    path = decoded_path
+    if path == "/es" or path.startswith("/es/"):
+        path = path[3:] or "/"
+    section = "/" if path == "/" else f"/{path.lstrip('/').split('/', 1)[0]}"
+    return _RETURN_TARGETS.get(section)
 
 
 @router.post("/select", name="gyms_select", dependencies=[Depends(verify_csrf)])
@@ -46,10 +85,7 @@ def gyms_select(
     if owned is None:
         raise HTTPException(status_code=404, detail="gym account not found")
     request.session[SESSION_KEY] = gym_account_id
-    # Only same-origin relative paths may be used as the return target.
-    target = (
-        next_path if next_path.startswith("/") and not next_path.startswith("//") else lang_url("/")
-    )
+    target = lang_url(_safe_return_target(next_path) or "/")
     return RedirectResponse(url=target, status_code=303)
 
 

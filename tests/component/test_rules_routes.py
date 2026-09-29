@@ -8,6 +8,7 @@ a rule delete and the latent deactivation hook (T-BDO-017, T-BDO-018).
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Any
@@ -18,8 +19,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
+from wodbuster_worker.persistence.cookie_store import CookieStore
 from wodbuster_worker.persistence.models import BookingDayOverride, SchedulerRule
 from wodbuster_worker.rules.service import deactivate_rule
+from wodbuster_worker.security.cipher import Cipher
+from wodbuster_worker.wodbuster_client.client import WodBusterProtocolError
 
 from .conftest import confirm_messages, gym_account_id_for
 
@@ -527,6 +531,44 @@ def test_api_classes_returns_unavailable_when_stack_not_wired(
     assert response.status_code == 200
     body = response.json()
     assert body == {"class_types": [], "time_slots": [], "available": False}
+
+
+def test_api_classes_debug_does_not_expose_upstream_error_details(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingClient:
+        def load_class(self, cookie_value: str, ticks: int) -> None:
+            _ = cookie_value, ticks
+            raise WodBusterProtocolError("sensitive upstream detail")
+
+    operator_id, subject = seed_operator(provider="microsoft", display_name="Alice")
+    app = app_factory()
+    app.state.wodbuster_client = FailingClient()
+    app.state.booking_client_factory = None
+
+    cipher = Cipher(os.urandom(32))
+    store = CookieStore(cipher)
+    app.state.cipher = cipher
+    app.state.cookie_store = store
+    with sessionmaker(bind=postgres_engine)() as session:
+        gym_account_id = gym_account_id_for(session, operator_id)
+        store.save(session, gym_account_id, ".WBAuth-tok", validated_at=datetime.now(tz=UTC))
+        session.commit()
+
+    with _sign_in(app, subject, "Alice", monkeypatch) as client:
+        response = client.get("/rules/api/classes/debug")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "stage": "upstream_error",
+        "error_type": "WodBusterProtocolError",
+        "sources": {},
+        "result": None,
+    }
+    assert "sensitive upstream detail" not in response.text
 
 
 def test_new_form_disables_selects_when_picker_unavailable(

@@ -10,10 +10,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions: {}
+
 jobs:
   changes:
     name: detect changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
@@ -40,6 +45,8 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
 
     services:
       # Postgres 16 service container: matches the local docker-compose
@@ -106,6 +113,7 @@ jobs:
     needs: [changes, check]
     if: always()
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Evaluate the check job result
         env:
