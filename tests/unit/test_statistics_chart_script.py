@@ -293,3 +293,27 @@ def test_only_the_windows_this_page_owns_are_copied_into_forms() -> None:
     assert 'var CARRIED = ["month", "attendance", "points", "patterns"]' in script
     body = script[script.index("function syncForms") :]
     assert "CARRIED.forEach" in body
+
+
+def test_a_superseded_response_never_lands() -> None:
+    """Aborting does not guarantee a rejection once the body has been
+    read, so identity is checked before the swap rather than only in
+    the cleanup. Without it a slow first response could overwrite the
+    fragment a later click already swapped in."""
+    script = _filters()
+    handler = script[script.index("function onSubmit") :]
+    swap_call = handler.index("if (!swap(host, markup))")
+    guard = handler.index("if (pending[name] !== controller)")
+
+    assert guard < swap_call
+
+
+def test_a_superseded_failure_does_not_navigate() -> None:
+    """Its window is no longer the one wanted, so navigating would
+    discard a newer choice."""
+    script = _filters()
+    handler = script[script.index("function onSubmit") :]
+
+    assert handler.count("if (pending[name] !== controller)") == 2
+    fallback = handler.index("window.location.assign")
+    assert handler.rindex("if (pending[name] !== controller)") < fallback

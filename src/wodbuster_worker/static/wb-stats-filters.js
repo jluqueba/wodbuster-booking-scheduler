@@ -188,6 +188,15 @@
         return response.text();
       })
       .then(function (markup) {
+        /* A superseded request must not land. Aborting does not
+           guarantee a rejection once the body has been read, so
+           identity is checked here rather than only in the cleanup
+           below: without it a slow first response could overwrite the
+           fragment a later click already swapped in, and put the
+           address bar back on the older window. */
+        if (pending[name] !== controller) {
+          return;
+        }
         if (!swap(host, markup)) {
           throw new Error("no section in fragment");
         }
@@ -203,8 +212,12 @@
       .catch(function (error) {
         /* An abort is this handler replacing its own request, not a
            failure: navigating away would undo the click that caused
-           it. */
+           it. Same for any other failure of a request already
+           superseded, whose window is no longer the one wanted. */
         if (error && error.name === "AbortError") {
+          return;
+        }
+        if (pending[name] !== controller) {
           return;
         }
         /* Whatever else went wrong, the server can still render this.
