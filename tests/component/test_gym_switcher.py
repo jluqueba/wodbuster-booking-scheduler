@@ -163,6 +163,7 @@ def test_select_gym_scopes_pages_and_clears_prompt(
         "/%5C%5Cevil.example",
         "/%2F%2Fevil.example",
         "/rules\n//evil.example",
+        "http://[",
     ],
 )
 def test_select_gym_rejects_unsafe_return_target(

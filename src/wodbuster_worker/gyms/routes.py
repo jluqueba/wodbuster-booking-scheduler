@@ -40,7 +40,10 @@ def _safe_return_target(value: str) -> str | None:
     if any(ord(character) < 32 or ord(character) == 127 for character in value):
         return None
 
-    parsed = urlsplit(value)
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return None
     decoded_path = unquote(parsed.path)
     if (
         parsed.scheme
