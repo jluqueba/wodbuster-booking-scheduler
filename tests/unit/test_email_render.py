@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
+import html5lib
+
 from wodbuster_worker.notifications import email_render
 
 _BOOKING = {
@@ -36,7 +40,16 @@ def test_html_body_drops_bracketed_gym_but_chip_keeps_it() -> None:
 def test_html_includes_hero_image() -> None:
     content = email_render.render_email(_BOOKING, lang="en", gym_name="Antwork")
     assert content is not None
-    assert "images.unsplash.com" in content.html
+    document = html5lib.parse(content.html, treebuilder="etree", namespaceHTMLElements=False)
+    background_urls = [
+        element.attrib["background"]
+        for element in document.iter("td")
+        if "background" in element.attrib
+    ]
+    assert len(background_urls) == 1
+    hero_url = urlsplit(background_urls[0])
+    assert hero_url.scheme == "https"
+    assert hero_url.hostname == "images.unsplash.com"
 
 
 def test_render_includes_unsubscribe_link_when_url_given() -> None:

@@ -154,6 +154,62 @@ def test_select_gym_scopes_pages_and_clears_prompt(
     assert "Choose a gym from the selector above" not in response.text
 
 
+@pytest.mark.parametrize(
+    "next_path",
+    [
+        "//evil.example",
+        "https://evil.example/path",
+        r"/\evil.example",
+        "/%5C%5Cevil.example",
+        "/%2F%2Fevil.example",
+        "/rules\n//evil.example",
+    ],
+)
+def test_select_gym_rejects_unsafe_return_target(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    next_path: str,
+) -> None:
+    op_id, subject = seed_operator(display_name="Multi Op")
+    gym_id = _sole_gym_id(postgres_engine, op_id)
+    app = app_factory()
+
+    with _sign_in(app, subject, "Multi Op", monkeypatch) as client:
+        csrf = client.cookies["wodbuster_csrf"]
+        response = client.post(
+            "/gyms/select",
+            data={"_csrf": csrf, "gym_account_id": str(gym_id), "next": next_path},
+            headers={"X-CSRF-Token": csrf},
+        )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+
+
+def test_select_gym_preserves_spanish_language_prefix(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    op_id, subject = seed_operator(display_name="Multi Op")
+    gym_id = _sole_gym_id(postgres_engine, op_id)
+    app = app_factory()
+
+    with _sign_in(app, subject, "Multi Op", monkeypatch) as client:
+        csrf = client.cookies["wodbuster_csrf"]
+        response = client.post(
+            "/es/gyms/select",
+            data={"_csrf": csrf, "gym_account_id": str(gym_id), "next": "/es/rules"},
+            headers={"X-CSRF-Token": csrf},
+        )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/es/rules"
+
+
 def test_selection_persists_across_pages(
     app_factory: Callable[..., FastAPI],
     seed_operator: Callable[..., tuple[int, str]],
