@@ -89,3 +89,231 @@ def test_the_script_takes_its_sentences_from_the_server() -> None:
     # sentence would have to concatenate its own words.
     assert "gettext" not in script
     assert "innerText" not in script
+
+
+# ---------------------------------------------------------------------------
+# Filter script (CC-027, CC-054)
+# ---------------------------------------------------------------------------
+
+_FILTERS = _ROOT / "src" / "wodbuster_worker" / "static" / "wb-stats-filters.js"
+
+
+def _filters() -> str:
+    return _FILTERS.read_text(encoding="utf-8")
+
+
+def test_rendering_charts_destroys_the_previous_instances_first() -> None:
+    """CC-027: swapping a section detaches its canvases without telling
+    Chart.js. Without the destroy the library keeps instances pointing
+    at nodes no longer in the document, and they accumulate one per
+    filter click."""
+    script = _script()
+    body = script[script.index("function render()") :]
+
+    assert "destroyAll()" in body
+    assert body.index("destroyAll()") < body.index("builder(canvas")
+
+
+def test_the_filter_script_redraws_after_swapping_a_section() -> None:
+    """A swapped-in canvas is a fresh, empty element. Nothing draws on
+    it unless the bootstrap is asked to run again."""
+    script = _filters()
+
+    assert "wbCharts.render" in script
+    assert "innerHTML" in script
+
+
+def test_the_swap_keeps_the_live_region_it_updates() -> None:
+    """A live region announces only when the element carrying the
+    attribute survives the update. Replacing the node itself would
+    change the numbers silently for anyone listening."""
+    script = _filters()
+
+    assert "host.innerHTML" in script
+    assert "replaceWith" not in script
+
+
+def test_a_failed_fetch_falls_back_to_a_real_navigation() -> None:
+    """A filter that silently does nothing is worse than one that costs
+    a page load, and the server can always render what was asked for."""
+    script = _filters()
+
+    assert "catch" in script
+    assert "window.location.assign" in script
+
+
+def test_the_filter_script_builds_no_copy_and_no_colour() -> None:
+    """INV-011 reaches here too: the fragment arrives from the server
+    already translated and already styled."""
+    script = _filters()
+
+    assert not _HEX_COLOUR.search(script)
+    assert not _FUNCTIONAL_COLOUR.search(script)
+    assert "innerText" not in script
+    assert "textContent =" not in script
+
+
+def test_the_next_url_is_built_from_the_address_bar_not_the_form() -> None:
+    """Only one section is replaced per click, so the hidden inputs in
+    the other two still carry the window they had when the page was
+    rendered. Building the next URL from a form would undo a change
+    made a moment earlier, and the page would look right until a
+    reload lost it."""
+    script = _filters()
+
+    assert "new URLSearchParams(window.location.search)" in script
+    assert "new FormData(form)" not in script
+
+
+def test_the_address_bar_is_read_when_the_response_lands_not_when_clicked() -> None:
+    """Two requests can be in flight at once. A snapshot taken at click
+    time would be written back by whichever resolves second, dropping
+    the window the first had just set."""
+    script = _filters()
+    handler = script[script.index("function onSubmit") :]
+
+    # The write-back recomputes rather than replaying a captured value.
+    assert "stateWith(urls.change)" in handler
+    assert "urls.page" not in handler
+    assert "urls.params" not in handler
+
+
+def test_the_forms_are_brought_back_in_step_after_a_swap() -> None:
+    """The no-script fallback and the next click both submit whatever
+    the hidden inputs say, so they have to match what is on screen."""
+    script = _filters()
+
+    assert script.index("function syncForms") < script.index("syncForms(params)")
+
+
+def test_the_sync_creates_a_missing_hidden_input() -> None:
+    """Only updating what the server rendered is not enough: a window
+    left at its default has no input to update, so a month change
+    afterwards would submit without it and reset the section."""
+    script = _filters()
+    body = script[script.index("function syncForms") :]
+
+    assert "createElement" in body
+    assert "appendChild" in body
+
+
+def test_the_sync_leaves_a_visible_control_alone() -> None:
+    """The calendar owns its month field. Mirroring the URL into it
+    would fight the date picker for the same value."""
+    script = _filters()
+    body = script[script.index("function syncForms") :]
+
+    assert 'existing.type === "hidden"' in body
+
+
+def test_only_a_section_holding_canvases_asks_for_a_redraw() -> None:
+    """The rebuild is global, so running it after an attendance click
+    would destroy and recreate charts that did not change, throwing
+    away any zoom the reader had applied to them."""
+    script = _filters()
+    body = script[script.index("function redrawCharts") :]
+
+    assert 'host.querySelector("canvas[data-wb-chart]")' in body
+    assert body.index("canvas[data-wb-chart]") < body.index("wbCharts.render")
+    assert "redrawCharts(host, hadCharts)" in script
+
+
+def test_a_section_that_loses_its_charts_still_destroys_them() -> None:
+    """A period with no data renders no canvas at all. Testing only the
+    new markup would skip the rebuild there, leaving every old instance
+    registered against a node no longer in the document."""
+    script = _filters()
+
+    assert "var hadCharts" in script
+    assert "redrawCharts(host, hadCharts)" in script
+    body = script[script.index("function redrawCharts") :]
+    assert "!hadCharts &&" in body
+
+
+def test_a_second_click_replaces_the_first_instead_of_being_dropped() -> None:
+    """Ignoring it left the reader looking at a window they did not
+    choose, with nothing on screen to say why."""
+    script = _filters()
+
+    assert "AbortController" in script
+    assert "pending[name].abort()" in script
+    # An abort is this handler replacing its own request, not a failure.
+    assert 'error.name === "AbortError"' in script
+
+
+def test_only_the_current_request_clears_the_busy_state() -> None:
+    """An aborted one clearing it would take the dimming off a block
+    whose replacement is still on its way."""
+    script = _filters()
+
+    assert "pending[name] === controller" in script
+
+
+def test_focus_returns_to_the_block_that_was_replaced() -> None:
+    """Replacing the markup destroys the control that was clicked, so a
+    keyboard user is otherwise left on the document body."""
+    script = _filters()
+
+    assert "restoreFocus(host, hadFocus)" in script
+    body = script[script.index("function restoreFocus") :]
+    assert "host.focus" in body
+    # Not taken from a reader who has tabbed on in the meantime.
+    assert "if (!wasInside)" in body
+
+
+def test_the_fragment_marker_never_reaches_the_address_bar() -> None:
+    """It is transport, not state. It lands in the URL whenever the
+    route answers a fragment request with the whole page, and from
+    there it would be copied into every form and survive a reload,
+    which would serve a bare block with no page around it."""
+    script = _filters()
+    body = script[script.index("function stateWith") :]
+
+    assert 'params.delete("section")' in body
+    # Deleted before the click's own change is applied.
+    assert body.index('params.delete("section")') < body.index("params.set(change.name")
+
+
+def test_a_form_field_is_found_by_name_not_by_a_built_selector() -> None:
+    """A parameter name is data. Interpolating one into CSS turns a
+    crafted query string into a parse error rather than a no-op, and
+    the thrown selector would take the whole sync with it."""
+    script = _filters()
+    body = script[script.index("function syncForms") :]
+
+    assert "form.elements.namedItem(key)" in body
+    assert 'querySelector("[name=' not in script
+
+
+def test_only_the_windows_this_page_owns_are_copied_into_forms() -> None:
+    """Copying an arbitrary query parameter into a form would submit it
+    back as though the page had meant it."""
+    script = _filters()
+
+    assert 'var CARRIED = ["month", "attendance", "points", "patterns"]' in script
+    body = script[script.index("function syncForms") :]
+    assert "CARRIED.forEach" in body
+
+
+def test_a_superseded_response_never_lands() -> None:
+    """Aborting does not guarantee a rejection once the body has been
+    read, so identity is checked before the swap rather than only in
+    the cleanup. Without it a slow first response could overwrite the
+    fragment a later click already swapped in."""
+    script = _filters()
+    handler = script[script.index("function onSubmit") :]
+    swap_call = handler.index("if (!swap(host, markup))")
+    guard = handler.index("if (pending[name] !== controller)")
+
+    assert guard < swap_call
+
+
+def test_a_superseded_failure_does_not_navigate() -> None:
+    """Its window is no longer the one wanted, so navigating would
+    discard a newer choice."""
+    script = _filters()
+    handler = script[script.index("function onSubmit") :]
+
+    assert handler.count("if (pending[name] !== controller)") == 2
+    fallback = handler.index("window.location.assign")
+    assert handler.rindex("if (pending[name] !== controller)") < fallback

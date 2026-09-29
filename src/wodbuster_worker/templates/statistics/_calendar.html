@@ -1,0 +1,99 @@
+{# The calendar month, governed by its own picker and nothing else.
+
+   Deliberately outside every period filter: a calendar is a month by
+   nature, so a control offering it thirty days or a year would be
+   offering it something it cannot draw. It sits here, under the
+   attendance figures, because it is where those figures are checked.
+   A reader who doubts a drop-out rate counts the red cells.
+
+   It is a real table, so it is also the accessible representation of
+   its own numbers (FR-034): no canvas, no parallel text version, and
+   nothing that disappears if a script fails to load. Every cell states
+   its outcome in words as well as in colour, so the grid is readable
+   without colour perception.
+#}
+<section class="wb-section" id="wb-section-calendar">
+  {% set data = calendar_block %}
+  <header class="wb-section__head">
+    <h2 class="wb-section__title">{{ t("statistics.section.calendar") }}</h2>
+    {# A plain GET form: picking a date and submitting works with the
+       date picker, with a typed value, and with no JavaScript. The
+       picker carries its own month and year navigation, so a pair of
+       step arrows beside it would be two mechanisms for one job. #}
+    <form class="wb-monthjump" method="get" action="{{ lang_url('/statistics') }}">
+      {% for key, value in filters.items() %}
+        {% if key != "month" and value %}
+          <input type="hidden" name="{{ key }}" value="{{ value }}">
+        {% endif %}
+      {% endfor %}
+      <label class="wb-monthjump__label" for="statistics-month">
+        {{ t("statistics.month.jump_label") }}
+      </label>
+      <input type="text"
+             id="statistics-month"
+             name="month"
+             class="wb-date-flatpickr wb-monthjump__input"
+             value="{{ data.month.start.isoformat() }}"
+             data-fp-min="{{ data.month.oldest.isoformat() }}"
+             data-fp-max="{{ data.month.newest.isoformat() }}"
+             data-fp-submit="1"
+             inputmode="numeric"
+             autocomplete="off">
+      {# Only rendered when scripting is off. With the picker loaded the
+         form submits on selection, so a confirm button would be a
+         second click for nothing; without it, a lone text field can
+         only be submitted by pressing Enter, which nobody guesses. #}
+      <noscript>
+        <button type="submit" class="wb-btn wb-btn--primary wb-monthjump__go">
+          {{- t("statistics.month.jump") -}}
+        </button>
+      </noscript>
+    </form>
+  </header>
+
+  <div class="wb-table-wrap">
+    <table class="wb-calendar">
+      <caption class="wb-calendar__caption">{{ data.month_label }}</caption>
+      <thead>
+        <tr>
+          {% for label in data.weekday_labels %}
+            <th scope="col"><abbr title="{{ label.long }}">{{ label.short }}</abbr></th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for week in data.calendar.weeks %}
+          <tr>
+            {% for cell in week %}
+              {% if cell is none %}
+                <td class="wb-calendar__pad"></td>
+              {% else %}
+                <td class="wb-calendar__day wb-calendar__day--{{ cell.status }}">
+                  <time datetime="{{ cell.day.isoformat() }}">{{ cell.day.day }}</time>
+                  {% for line in data.cell_lines[cell.day.isoformat()] %}
+                    <span class="wb-calendar__line wb-calendar__line--{{ line.kind }}">
+                      {{- line.text -}}
+                    </span>
+                  {% endfor %}
+                </td>
+              {% endif %}
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <ul class="wb-legend">
+    {% for key, label in data.legend %}
+      <li class="wb-legend__item">
+        <span class="wb-legend__swatch wb-legend__swatch--{{ key }}" aria-hidden="true"></span>
+        {{ label }}
+      </li>
+    {% endfor %}
+  </ul>
+
+  {% if data.unread_days %}
+    <p class="wb-stats__recency">{{ t("statistics.still_reading", days=data.unread_days) }}</p>
+  {% endif %}
+</section>

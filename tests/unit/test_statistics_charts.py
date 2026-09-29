@@ -18,7 +18,12 @@ from wodbuster_worker.statistics.metrics import (
     occupancy,
     weekday_hour_grid,
 )
-from wodbuster_worker.statistics.periods import DEFAULT_PERIOD, resolve_period
+from wodbuster_worker.statistics.periods import (
+    DEFAULT_PERIOD,
+    PERIOD_KEYS,
+    POINTS_PERIOD_KEYS,
+    resolve_period,
+)
 
 NOW = datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
 SETTLE = 3.0
@@ -329,14 +334,23 @@ def test_no_period_reaches_past_the_horizon() -> None:
     assert window.start == TODAY - timedelta(days=30)
 
 
-def test_the_billing_period_is_offered_when_the_gym_stated_it() -> None:
-    window = resolve_period(
-        "billing",
+BILLING = (date(2026, 9, 7), date(2026, 10, 6))
+
+
+def _billing_period(requested: str = "billing", **kwargs: object):
+    return resolve_period(
+        requested,
         today=TODAY,
         horizon_days=HORIZON,
         oldest_captured=None,
-        billing=(date(2026, 9, 7), date(2026, 10, 6)),
+        billing=BILLING,
+        allowed=POINTS_PERIOD_KEYS,
+        **kwargs,  # type: ignore[arg-type]
     )
+
+
+def test_the_billing_period_is_offered_when_the_gym_stated_it() -> None:
+    window = _billing_period()
 
     assert window.key == "billing"
     assert window.start == date(2026, 9, 7)
@@ -346,15 +360,7 @@ def test_an_open_billing_period_stops_at_today() -> None:
     """Charts describe what happened. Running the window to the end of
     a period still in progress would average real days against days
     that have not occurred."""
-    window = resolve_period(
-        "billing",
-        today=TODAY,
-        horizon_days=HORIZON,
-        oldest_captured=None,
-        billing=(date(2026, 9, 7), date(2026, 10, 6)),
-    )
-
-    assert window.end == TODAY
+    assert _billing_period().end == TODAY
 
 
 def test_asking_for_a_billing_period_the_gym_did_not_state_falls_back() -> None:
@@ -365,9 +371,38 @@ def test_asking_for_a_billing_period_the_gym_did_not_state_falls_back() -> None:
         horizon_days=HORIZON,
         oldest_captured=None,
         billing=None,
+        allowed=POINTS_PERIOD_KEYS,
     )
 
     assert window.key == DEFAULT_PERIOD
+
+
+def test_a_section_that_does_not_offer_billing_does_not_honour_it() -> None:
+    """A gym bills in periods, so the option belongs to the points
+    section. Hand-typing it on a section that never offered it falls
+    back rather than producing a window its own control cannot show."""
+    window = resolve_period(
+        "billing",
+        today=TODAY,
+        horizon_days=HORIZON,
+        oldest_captured=None,
+        billing=BILLING,
+        allowed=PERIOD_KEYS,
+    )
+
+    assert window.key == DEFAULT_PERIOD
+
+
+def test_the_default_window_is_thirty_days() -> None:
+    """The question every section answers is "how am I doing lately",
+    and a year of history flattens the month the reader came for."""
+    assert DEFAULT_PERIOD == "m1"
+    assert _period(None).days == 30
+
+
+def test_billing_is_absent_from_the_generic_option_list() -> None:
+    assert "billing" not in PERIOD_KEYS
+    assert "billing" in POINTS_PERIOD_KEYS
 
 
 def test_a_trend_with_no_months_is_empty_rather_than_two_empty_series() -> None:

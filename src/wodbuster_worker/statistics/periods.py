@@ -1,12 +1,28 @@
-"""The period the charts describe (FR-030, slice 5).
+"""The window a block of figures describes (FR-064, FR-031).
 
-One selector governs every chart on the page. Per-chart windows were
-considered and rejected: a heatmap over a year beside a rate over a
-month invites the reader to cross two figures that do not describe the
-same thing, and it multiplies the interface by the number of charts.
+One window per question, not one per page and not one per chart.
 
-The calendar is deliberately not governed by this. A calendar is a
-month by nature, and it carries its own navigation.
+Per-chart windows were considered and rejected: a heatmap over a year
+beside a rate over a month invites the reader to cross two figures that
+do not describe the same thing, and it multiplies the interface by the
+number of charts. The four charts therefore share one window.
+
+A single page-wide window was rejected in turn, because the page asks
+more than one question. "How often did I drop a class this month" and
+"which hour do I train at over a year" are both reasonable, and one
+control for both means giving one of them up. Attendance, points and
+training patterns each carry their own.
+
+``PERIOD_KEYS`` is what a section offers by default. ``POINTS_PERIOD_KEYS``
+adds the gym's own billing cycle, which only the points section can
+ask about: a gym bills in periods, and offering that option beside a
+heatmap would invite a comparison between a billing cycle and a
+training pattern. :func:`resolve_period` takes the set the calling
+section offers, so a key typed into a URL cannot produce a window that
+section's own control never showed.
+
+The calendar is governed by none of them. A calendar is a month by
+nature, and it carries its own navigation.
 """
 
 from __future__ import annotations
@@ -17,12 +33,19 @@ from typing import Literal
 
 PeriodKey = Literal["m1", "m3", "m12", "all", "billing"]
 
-DEFAULT_PERIOD: PeriodKey = "m12"
+# Thirty days rather than a year: the question every section answers is
+# "how am I doing lately", and a year of history flattens the month the
+# reader actually came to look at. Widening is one click.
+DEFAULT_PERIOD: PeriodKey = "m1"
 
-# Ordered as the selector renders them. ``billing`` comes first because
-# it is the window the gym itself bills on, and it is offered only when
-# the gym stated its boundaries.
-PERIOD_KEYS: tuple[PeriodKey, ...] = ("billing", "m1", "m3", "m12", "all")
+# Ordered as the selector renders them.
+PERIOD_KEYS: tuple[PeriodKey, ...] = ("m1", "m3", "m12", "all")
+
+# The points section gets one more. A gym bills in periods, so "how
+# many points has this cycle cost me" is a question only that section
+# can ask; offering the same option beside a heatmap would invite a
+# comparison between a billing cycle and a training pattern.
+POINTS_PERIOD_KEYS: tuple[PeriodKey, ...] = ("m1", "m3", "m12", "all", "billing")
 
 _PERIOD_DAYS: dict[PeriodKey, int] = {
     "m1": 30,
@@ -51,11 +74,16 @@ def resolve_period(
     horizon_days: int,
     oldest_captured: date | None,
     billing: tuple[date, date] | None = None,
+    allowed: tuple[PeriodKey, ...] = PERIOD_KEYS,
 ) -> Period:
-    """Return the chart window for ``requested``.
+    """Return the window for ``requested``.
 
     An unknown value falls back to the default rather than raising: a
     crafted query string is not worth a 500.
+
+    ``allowed`` is the set the calling section offers. A key outside it
+    falls back too, so a hand-typed ``billing`` on the attendance
+    section cannot produce a window that section never offered.
 
     ``all`` is bounded by what has actually been captured rather than
     by the horizon, so the label does not promise history the backfill
@@ -66,7 +94,7 @@ def resolve_period(
     page stated it. Asking for it when it is unknown falls back to the
     default instead of erroring, which is FR-031 at this boundary.
     """
-    key: PeriodKey = requested if requested in PERIOD_KEYS else DEFAULT_PERIOD  # type: ignore[assignment]
+    key: PeriodKey = requested if requested in allowed else DEFAULT_PERIOD  # type: ignore[assignment]
     if key == "billing" and billing is None:
         key = DEFAULT_PERIOD
 
@@ -93,6 +121,7 @@ def resolve_period(
 __all__ = [
     "DEFAULT_PERIOD",
     "PERIOD_KEYS",
+    "POINTS_PERIOD_KEYS",
     "Period",
     "PeriodKey",
     "resolve_period",

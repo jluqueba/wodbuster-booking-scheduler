@@ -85,15 +85,21 @@ def test_a_very_late_cancellation_costs_the_higher_penalty() -> None:
 def test_an_absence_costs_the_absence_penalty_by_either_path() -> None:
     """At a gym with the attendance control disabled, an absence arrives
     as a post-start removal instead of as a no-show. Both cost the same
-    and both stay visible, so an implausible figure is traceable."""
+    and both stay visible, so an implausible figure is traceable.
+
+    Both instants fall at or after the class start. A "did not train"
+    row recorded before it is a removal, however the gym filed it, and
+    is charged as one.
+    """
     result = _estimate(
-        _record(day=date(2026, 9, 1), state="no_show", class_id=1),
+        _record(day=date(2026, 9, 1), state="no_show", hours_before=-0.1, class_id=1),
         _record(day=date(2026, 9, 2), state="cancelled", hours_before=-0.5, class_id=2),
     )
 
     assert result.no_shows == 1
     assert result.removed_after_start == 1
     assert result.penalties == MODEL.absence_penalty * 2
+    assert result.disputed_penalties == 0
 
 
 def test_the_base_cost_is_a_range_and_never_one_number() -> None:
@@ -343,3 +349,98 @@ def test_equal_boundaries_are_accepted() -> None:
     model = PointsModel.resolve(**DEFAULTS, override={"late_hours": 2, "very_late_hours": 2})
 
     assert (model.late_hours, model.very_late_hours) == (2.0, 2.0)
+
+
+# ---------------------------------------------------------------------------
+# Removals the gym filed as "did not train" (ADR-0015 Decision 5, revised)
+# ---------------------------------------------------------------------------
+
+
+def _filed_absent(day: date, *, minutes_before: float = 24.0) -> AttendanceRecord:
+    """A row WodBuster put in its "did not train" list."""
+    return _record(
+        day=day,
+        state="no_show",
+        hours_before=minutes_before / 60,
+        hour=14,
+    )
+
+
+def test_a_removal_the_gym_filed_as_absent_costs_a_range_not_a_number() -> None:
+    """The instant says it was a removal under an hour, worth the very
+    late tier. The gym's filing says it may have charged the absence
+    penalty. Neither is knowable from the payload, so both travel."""
+    result = _estimate(_filed_absent(date(2026, 9, 1)))
+
+    assert result.filed_as_absent == 1
+    assert result.penalties == MODEL.very_late_penalty
+    assert result.disputed_penalties == MODEL.absence_penalty - MODEL.very_late_penalty
+    assert result.total_low == 2
+    assert result.total_high == 2 + 4 + MODEL.base_cost
+
+
+def test_the_disputed_half_never_double_charges_the_tier() -> None:
+    """The upper end is the absence penalty, not the absence penalty on
+    top of the tier already charged."""
+    result = _estimate(_filed_absent(date(2026, 9, 1)))
+
+    assert result.penalties + result.disputed_penalties == MODEL.absence_penalty
+
+
+def test_such_a_removal_carries_its_own_assumption() -> None:
+    """INV-004: the reader cannot reach the range without reaching why
+    it is a range."""
+    result = _estimate(_filed_absent(date(2026, 9, 1)))
+
+    assert "filed_as_absent" in result.assumptions
+
+
+def test_a_real_absence_is_charged_outright_with_nothing_disputed() -> None:
+    """Recorded once the class had started, so nothing contradicts the
+    gym and there is nothing to hedge."""
+    result = _estimate(_record(day=date(2026, 9, 1), state="no_show", hours_before=-0.5))
+
+    assert result.disputed_penalties == 0
+    assert result.penalties == MODEL.absence_penalty
+    assert "filed_as_absent" not in result.assumptions
+
+
+def test_an_ordinary_estimate_disputes_nothing() -> None:
+    result = _estimate(_record(day=date(2026, 9, 1), state="cancelled", hours_before=2.0))
+
+    assert result.disputed_penalties == 0
+    assert result.filed_as_absent == 0
+
+
+def test_the_range_contains_both_readings_whatever_their_order() -> None:
+    """Nothing stops a gym charging less for an absence than for a very
+    late removal. Taking the notice tier as the floor would then print
+    a range that excludes the cheaper of the two readings, which is the
+    one thing a range exists to prevent."""
+    cheap_absence = PointsModel.resolve(
+        base_cost=1,
+        late_penalty=1,
+        very_late_penalty=5,
+        absence_penalty=2,
+        late_hours=4.0,
+        very_late_hours=1.0,
+    )
+    counted = counted_records(
+        [_filed_absent(date(2026, 9, 1))], now=NOW, settle_window_hours=SETTLE
+    )
+
+    result = points_estimate(counted, model=cheap_absence)
+
+    assert result.penalties == 2
+    assert result.disputed_penalties == 3
+    assert result.total_low == 2
+    assert result.total_high == 5 + cheap_absence.base_cost
+
+
+def test_the_usual_ordering_still_puts_the_tier_at_the_floor() -> None:
+    """With the gym's published values the cheaper reading is the tier,
+    so the floor is what the instant supports."""
+    result = _estimate(_filed_absent(date(2026, 9, 1)))
+
+    assert result.penalties == MODEL.very_late_penalty
+    assert result.penalties + result.disputed_penalties == MODEL.absence_penalty

@@ -932,10 +932,9 @@ EN: dict[str, str] = {
     "statistics.title": "Statistics",
     "statistics.subtitle": "How you actually train at {gym}.",
     "statistics.attended.tile": "Classes attended",
-    "statistics.attended.window": "Last {days} days",
     "statistics.abandonment.tile": "Drop-out rate",
     "statistics.abandonment.of": "{dropped} of {booked} bookings",
-    "statistics.abandonment.none": "Nothing booked in this month",
+    "statistics.abandonment.none": "Nothing booked in this window",
     "statistics.absent.tile": "Absences",
     "statistics.absent.hint": "Booked and did not turn up",
     "statistics.streak.current.tile": "Current streak",
@@ -960,12 +959,20 @@ EN: dict[str, str] = {
     "statistics.bands.unknown": (
         "{count} more could not be placed: the gym did not say when they happened."
     ),
-    "statistics.period.label": "Charts cover",
+    "statistics.period.label": "Showing",
     "statistics.period.m1": "30 days",
     "statistics.period.m3": "3 months",
     "statistics.period.m12": "12 months",
     "statistics.period.all": "Everything",
     "statistics.period.billing": "This billing period",
+    "statistics.period.billing.range": "Your gym bills from {start} to {end}.",
+    "statistics.window.partial": (
+        "{days} days of this window have never been read, so these figures cover "
+        "less than the period says."
+    ),
+    "statistics.section.attendance": "Your attendance",
+    "statistics.section.patterns": "Your training patterns",
+    "statistics.section.calendar": "Day by day",
     "statistics.points.title": "Points",
     "statistics.points.balance.tile": "Balance now",
     "statistics.points.balance.hint": "Read from the gym, not calculated",
@@ -992,6 +999,15 @@ EN: dict[str, str] = {
     "statistics.points.assumption.class_changes_charged": (
         "A class change is counted. The gym sees a removal and charges for it, "
         "whether or not you booked another hour the same day."
+    ),
+    "statistics.points.assumption.filed_as_absent": (
+        "The gym filed {count} of these removals as not having trained, although each "
+        "was recorded before its class began. Each is priced twice, at its notice tier "
+        "and at the absence penalty, and the range spans both because the gym does not "
+        "say which it used."
+    ),
+    "statistics.points.counts.filed_as_absent": (
+        "{count} were removals the gym filed as not having trained"
     ),
     "statistics.points.counts.changes": "{count} of them were class changes",
     "statistics.points.counts.recovered": "{count} never filled up, so the base cost came back",
@@ -1041,7 +1057,6 @@ EN: dict[str, str] = {
     "statistics.chart.lead.band": "Booked",
     "statistics.chart.lead.unit": "classes",
     "statistics.cancelled.tile": "Dropped",
-    "statistics.cancelled.hint": "Classes you booked and then left. A day can hold more than one",
     "statistics.swapped.tile": "Class changes",
     "statistics.swapped.hint": "Moved to another time the same day, not counted as dropped",
     "statistics.calendar.caption": "Every day between {start} and {end}.",
@@ -2063,10 +2078,9 @@ ES: dict[str, str] = {
     "statistics.title": "Estadísticas",
     "statistics.subtitle": "Cómo entrenas de verdad en {gym}.",
     "statistics.attended.tile": "Clases asistidas",
-    "statistics.attended.window": "Últimos {days} días",
     "statistics.abandonment.tile": "Te borras",
     "statistics.abandonment.of": "{dropped} de {booked} reservas",
-    "statistics.abandonment.none": "No reservaste nada este mes",
+    "statistics.abandonment.none": "No reservaste nada en esta ventana",
     "statistics.absent.tile": "Ausencias",
     "statistics.absent.hint": "Reservaste y no apareciste",
     "statistics.streak.current.tile": "Racha actual",
@@ -2091,12 +2105,20 @@ ES: dict[str, str] = {
     "statistics.bands.unknown": (
         "{count} más sin clasificar: el gimnasio no dijo cuándo ocurrieron."
     ),
-    "statistics.period.label": "Los gráficos cubren",
+    "statistics.period.label": "Mostrando",
     "statistics.period.m1": "30 días",
     "statistics.period.m3": "3 meses",
     "statistics.period.m12": "12 meses",
     "statistics.period.all": "Todo",
     "statistics.period.billing": "Periodo actual",
+    "statistics.period.billing.range": "Tu gimnasio factura del {start} al {end}.",
+    "statistics.window.partial": (
+        "Hay {days} días de esta ventana que nunca se han leído, así que estas "
+        "cifras cubren menos de lo que dice el periodo."
+    ),
+    "statistics.section.attendance": "Tu asistencia",
+    "statistics.section.patterns": "Tus patrones de entrenamiento",
+    "statistics.section.calendar": "Día a día",
     "statistics.points.title": "Puntos",
     "statistics.points.balance.tile": "Saldo ahora",
     "statistics.points.balance.hint": "Leído del gimnasio, no calculado",
@@ -2123,6 +2145,15 @@ ES: dict[str, str] = {
     "statistics.points.assumption.class_changes_charged": (
         "Un cambio de hora cuenta. El gimnasio ve una baja y la cobra, hayas reservado "
         "o no otra hora el mismo día."
+    ),
+    "statistics.points.assumption.filed_as_absent": (
+        "El gimnasio archivó {count} de estas bajas como no haber entrenado, aunque "
+        "cada una quedó registrada antes de que su clase empezara. Cada una se tarifa "
+        "dos veces, por su tramo de antelación y por la penalización de ausencia, y el "
+        "rango abarca ambas porque el gimnasio no dice cuál aplicó."
+    ),
+    "statistics.points.counts.filed_as_absent": (
+        "{count} fueron bajas que el gimnasio archivó como no entrenar"
     ),
     "statistics.points.counts.changes": "{count} de ellas fueron cambios de hora",
     "statistics.points.counts.recovered": "{count} no se llenaron, así que recuperaste el base",
@@ -2172,7 +2203,6 @@ ES: dict[str, str] = {
     "statistics.chart.lead.band": "Reservaste",
     "statistics.chart.lead.unit": "clases",
     "statistics.cancelled.tile": "Te borraste",
-    "statistics.cancelled.hint": "Clases que reservaste y dejaste. Un día puede tener más de una",
     "statistics.swapped.tile": "Cambios de clase",
     "statistics.swapped.hint": "Te moviste a otra hora el mismo día, no cuenta como baja",
     "statistics.calendar.caption": "Todos los días entre el {start} y el {end}.",

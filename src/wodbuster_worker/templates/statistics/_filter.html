@@ -1,0 +1,40 @@
+{# One section's heading and its window control.
+
+   Shared by every filterable section so the three read identically and
+   a reader learns the control once. The caller sets ``filter_name``,
+   ``filter_data`` and ``filter_title``.
+
+   A real GET form with real submit buttons: with scripting off it
+   navigates and the page renders the chosen window (FR-032). With
+   scripting on, ``wb-stats-filters.js`` intercepts the click and
+   replaces this section alone.
+
+   The hidden inputs carry every other section's window, so submitting
+   one filter never resets the other two.
+#}
+<header class="wb-section__head">
+  <h2 class="wb-section__title">{{ filter_title }}</h2>
+  <form class="wb-periods"
+        method="get"
+        action="{{ lang_url('/statistics') }}"
+        data-wb-filter="{{ filter_name }}">
+    {% for key, value in filters.items() %}
+      {% if key != filter_name and value %}
+        <input type="hidden" name="{{ key }}" value="{{ value }}">
+      {% endif %}
+    {% endfor %}
+    <span class="wb-periods__label">{{ t("statistics.period.label") }}</span>
+    <span class="wb-periods__options" role="group" aria-label="{{ filter_title }}">
+      {% for option in filter_data.period_options %}
+        {% if option.current %}
+          <span class="wb-periods__current" aria-current="true">{{ option.label }}</span>
+        {% else %}
+          <button type="submit"
+                  name="{{ filter_name }}"
+                  value="{{ option.key }}"
+                  class="wb-periods__option">{{- option.label -}}</button>
+        {% endif %}
+      {% endfor %}
+    </span>
+  </form>
+</header>

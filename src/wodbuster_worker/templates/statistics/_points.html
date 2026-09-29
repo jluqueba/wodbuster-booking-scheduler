@@ -1,0 +1,104 @@
+{# Points section: what the reader's behaviour cost at this gym.
+
+   Three kinds of number live here and none is allowed to look like
+   another. The balance is read from the gym. The penalties are derived
+   from instants the gym recorded. The base cost is neither, so it
+   travels as a range with its reasons attached: INV-004 is enforced by
+   keeping the estimate label and the assumptions inside this block,
+   which is also the unit the filter replaces.
+#}
+<section class="wb-section" id="wb-section-points" data-wb-section="points" aria-live="polite">
+  {% set data = points_block %}
+  {% with filter_name = "points",
+          filter_data = points_block,
+          filter_title = t("statistics.points.title") %}
+    {% include "statistics/_filter.html" %}
+  {% endwith %}
+
+  {% if data.billing_label %}
+    <p class="wb-muted wb-note">{{ data.billing_label }}</p>
+  {% endif %}
+
+  {% if data.unread_in_window %}
+    {# Widening a window does not widen the ledger. Figures under a
+       label the history cannot fill are the failure INV-005 exists to
+       prevent, so the gap is named rather than left to be inferred. #}
+    <p class="wb-stats__recency">
+      {{ t("statistics.window.partial", days=data.unread_in_window) }}
+    </p>
+  {% endif %}
+
+  <div class="wb-stats__tiles">
+    {% if data.balance is not none %}
+      <div class="wb-stat-tile">
+        <span class="wb-stat-tile__value">{{ data.balance }}</span>
+        <span class="wb-stat-tile__label">{{ t("statistics.points.balance.tile") }}</span>
+        <span class="wb-stat-tile__hint">{{ t("statistics.points.balance.hint") }}</span>
+      </div>
+    {% endif %}
+    <div class="wb-stat-tile">
+      <span class="wb-stat-tile__value">{{ data.estimate.penalties }}</span>
+      <span class="wb-stat-tile__label">{{ t("statistics.points.penalties.tile") }}</span>
+      <span class="wb-stat-tile__hint">{{ t("statistics.points.penalties.hint") }}</span>
+    </div>
+    <div class="wb-stat-tile wb-stat-tile--streak">
+      <span class="wb-stat-tile__value">
+        {%- if data.estimate.is_range -%}
+          {{ t("statistics.points.estimate.range",
+                low=data.estimate.total_low, high=data.estimate.total_high) }}
+        {%- else -%}
+          {{ t("statistics.points.estimate.exact", low=data.estimate.total_low) }}
+        {%- endif -%}
+      </span>
+      <span class="wb-stat-tile__label">
+        {{ t("statistics.points.estimate.tile") }}
+        <span class="wb-tag">{{ t("statistics.points.estimate.label") }}</span>
+      </span>
+      <span class="wb-stat-tile__hint">{{ data.period_label }}</span>
+    </div>
+  </div>
+
+  {# Every item is conditional, so the list itself has to be. A clean
+     record in the window renders no counts at all, and an empty list
+     is markup that says nothing while still taking its own margin. #}
+  {% if data.estimate.class_changes or data.estimate.filed_as_absent
+        or data.estimate.recovered_bookings or data.estimate.absences
+        or data.estimate.unknown_lead %}
+  <ul class="wb-points__counts">
+    {% if data.estimate.class_changes %}
+      <li>{{ t("statistics.points.counts.changes", count=data.estimate.class_changes) }}</li>
+    {% endif %}
+    {% if data.estimate.filed_as_absent %}
+      <li>
+        {{ t("statistics.points.counts.filed_as_absent",
+              count=data.estimate.filed_as_absent) }}
+      </li>
+    {% endif %}
+    {% if data.estimate.recovered_bookings %}
+      <li>
+        {{ t("statistics.points.counts.recovered",
+              count=data.estimate.recovered_bookings) }}
+      </li>
+    {% endif %}
+    {% if data.estimate.absences %}
+      <li>
+        {{ t("statistics.points.counts.absences",
+              no_shows=data.estimate.no_shows,
+              removed=data.estimate.removed_after_start) }}
+      </li>
+    {% endif %}
+    {% if data.estimate.unknown_lead %}
+      <li>{{ t("statistics.points.counts.unknown", count=data.estimate.unknown_lead) }}</li>
+    {% endif %}
+  </ul>
+  {% endif %}
+
+  {% if data.assumptions %}
+    <h3 class="wb-points__subtitle">{{ t("statistics.points.assumptions.title") }}</h3>
+    <ul class="wb-points__assumptions">
+      {% for assumption in data.assumptions %}
+        <li>{{ assumption }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>

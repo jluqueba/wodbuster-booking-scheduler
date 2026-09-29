@@ -1,0 +1,87 @@
+{# Patterns section: when the reader trains and which bookings they keep.
+
+   The four charts share one window because crossing them is the point:
+   a slot that fills the heatmap and also tops the drop rate is a
+   finding, and it is only a finding if both describe the same stretch
+   of time.
+
+   Every canvas is accompanied by its own numbers as markup (FR-034). A
+   canvas is opaque to assistive technology and vanishes if the library
+   fails to load; the table beside it does neither.
+#}
+<section class="wb-section" id="wb-section-patterns" data-wb-section="patterns" aria-live="polite">
+  {% set data = patterns %}
+  {% with filter_name = "patterns",
+          filter_data = patterns,
+          filter_title = t("statistics.section.patterns") %}
+    {% include "statistics/_filter.html" %}
+  {% endwith %}
+
+  {% if data.unread_in_window %}
+    {# Widening a window does not widen the ledger. Figures under a
+       label the history cannot fill are the failure INV-005 exists to
+       prevent, so the gap is named rather than left to be inferred. #}
+    <p class="wb-stats__recency">
+      {{ t("statistics.window.partial", days=data.unread_in_window) }}
+    </p>
+  {% endif %}
+
+  {# A session count without a usable capacity gives no percentage.
+     Guarding on the average rather than on the count keeps the
+     sentence out instead of multiplying None by 100, which would
+     take the whole render down for one missing upstream field. #}
+  {% if data.occupancy.sessions and data.occupancy.average_fill is not none %}
+    <p class="wb-charts__headline">
+      {{ t("statistics.occupancy.summary",
+            pct=(data.occupancy.average_fill * 100) | round | int,
+            full=data.occupancy.ever_full,
+            sessions=data.occupancy.sessions) }}
+    </p>
+  {% elif data.occupancy.sessions %}
+    <p class="wb-charts__headline">
+      {{ t("statistics.occupancy.no_capacity", sessions=data.occupancy.sessions) }}
+    </p>
+  {% endif %}
+
+  {% for chart in data.charts %}
+    <figure class="wb-chart">
+      <figcaption class="wb-chart__head">
+        <span class="wb-chart__title">{{ chart.title }}</span>
+        <span class="wb-chart__hint">{{ chart.hint }} {{ data.period_label }}</span>
+      </figcaption>
+      {% if chart.payload.is_empty %}
+        <p class="wb-chart__empty">{{ t("statistics.chart.empty") }}</p>
+      {% else %}
+        <div class="wb-chart__canvas wb-chart__canvas--{{ chart.size }}">
+          <canvas id="{{ chart.id }}"
+                  role="img"
+                  aria-label="{{ chart.title }}. {{ chart.hint }}"
+                  data-wb-chart="{{ chart.id }}-data"></canvas>
+        </div>
+        <details class="wb-chart__data">
+          <summary>{{ t("statistics.chart.show_data") }}</summary>
+          <div class="wb-table-wrap">
+            <table class="wb-rules-table">
+              <thead>
+                <tr>
+                  {% for column in chart.columns %}<th scope="col">{{ column }}</th>{% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for label, value in chart.rows %}
+                  <tr>
+                    <th scope="row">{{ label }}</th>
+                    <td>{{ value }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </details>
+        <script type="application/json" id="{{ chart.id }}-data">
+          {{ chart.payload.as_dict() | tojson }}
+        </script>
+      {% endif %}
+    </figure>
+  {% endfor %}
+</section>

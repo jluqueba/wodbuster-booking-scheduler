@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from string import Formatter
 
 import pytest
@@ -274,3 +275,48 @@ def _letters(template: str) -> str:
     """The prose of a template, with placeholders and digits removed."""
     without_fields = "".join(literal for literal, _, _, _ in Formatter().parse(template) if literal)
     return "".join(ch for ch in without_fields if ch.isalpha())
+
+
+def test_no_statistics_string_names_a_calendar_period_it_cannot_promise() -> None:
+    """Every filterable block sits under a window the reader chooses,
+    so copy naming a month reads as a lie at eleven of the twelve
+    settings. The calendar keeps its own month wording, which is the
+    one place a month is guaranteed."""
+    month_bound = ("this month", "este mes", "this week", "esta semana")
+    calendar_owned = {"statistics.still_reading"}
+
+    offenders = sorted(
+        key
+        for key in _statistics_keys(EN)
+        if key not in calendar_owned
+        and any(
+            phrase in EN[key].lower() or phrase in ES.get(key, "").lower() for phrase in month_bound
+        )
+    )
+    assert offenders == [], f"copy bound to a calendar period: {offenders}"
+
+
+def test_every_statistics_string_is_reachable_from_the_code() -> None:
+    """A key nobody renders is copy that drifts unchecked: it survives
+    rewordings of the screen it used to belong to and misleads whoever
+    reads the catalogue next."""
+    root = Path(__file__).resolve().parents[2] / "src" / "wodbuster_worker"
+    rendered = "".join(
+        path.read_text(encoding="utf-8")
+        for path in list(root.rglob("*.html")) + list(root.rglob("*.py"))
+        if path.name != "catalog.py"
+    )
+
+    # Keys built by interpolation are reached by their prefix.
+    prefixes = ("day.short.", "month.", "statistics.legend.", "statistics.period.")
+    dynamic = ("statistics.points.assumption.", "statistics.calendar.", "statistics.capture.")
+    # Built as ``statistics.streak.{key}.tile`` from the two run names.
+    interpolated = {"statistics.streak.current.tile", "statistics.streak.longest.tile"}
+    orphans = sorted(
+        key
+        for key in _statistics_keys(EN)
+        if key not in rendered
+        and key not in interpolated
+        and not key.startswith(prefixes + dynamic)
+    )
+    assert orphans == [], f"catalogue keys nothing renders: {orphans}"
