@@ -58,6 +58,12 @@
     </div>
   </div>
 
+  {# Every item is conditional, so the list itself has to be. A clean
+     record in the window renders no counts at all, and an empty list
+     is markup that says nothing while still taking its own margin. #}
+  {% if data.estimate.class_changes or data.estimate.filed_as_absent
+        or data.estimate.recovered_bookings or data.estimate.absences
+        or data.estimate.unknown_lead %}
   <ul class="wb-points__counts">
     {% if data.estimate.class_changes %}
       <li>{{ t("statistics.points.counts.changes", count=data.estimate.class_changes) }}</li>
@@ -85,6 +91,7 @@
       <li>{{ t("statistics.points.counts.unknown", count=data.estimate.unknown_lead) }}</li>
     {% endif %}
   </ul>
+  {% endif %}
 
   {% if data.assumptions %}
     <h3 class="wb-points__subtitle">{{ t("statistics.points.assumptions.title") }}</h3>

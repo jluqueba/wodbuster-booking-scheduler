@@ -1616,3 +1616,47 @@ def test_the_pace_tile_states_which_way_it_moved(
 
     assert "up " in attendance
     assert "in the period before" in attendance
+
+
+def test_a_clean_record_renders_no_empty_list(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """Every count beside the estimate is conditional, so the list has
+    to be too. With the thirty-day default a reader who dropped nothing
+    is the common case, not the edge one, and an empty list is markup
+    that says nothing while still taking its own margin."""
+    tc, _, gym_account_id, client = signed_in
+    client.points_page = _this_month_page()
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    _seed_attendance(postgres_engine, gym_account_id=gym_account_id, local_date=yesterday)
+
+    body = tc.get("/statistics").text
+
+    assert '<ul class="wb-points__counts">' not in body
+    # The block itself is still there, with the figures that do apply.
+    assert 'data-wb-section="points"' in body
+
+
+def test_a_record_with_counts_still_lists_them(
+    signed_in: tuple[TestClient, int, int, RecordingClient],
+    postgres_engine: Engine,
+) -> None:
+    """The guard must not swallow the counts when there are some."""
+    tc, _, gym_account_id, client = signed_in
+    client.points_page = _this_month_page()
+    yesterday = datetime.now(tz=UTC).date() - timedelta(days=1)
+    _seed_attendance(
+        postgres_engine,
+        gym_account_id=gym_account_id,
+        local_date=yesterday,
+        state="cancelled",
+        class_id=99100,
+        changed_at=datetime(yesterday.year, yesterday.month, yesterday.day, 16, 0, tzinfo=UTC),
+        ever_full=False,
+    )
+
+    body = tc.get("/statistics").text
+
+    assert '<ul class="wb-points__counts">' in body
+    assert "never filled up" in body
