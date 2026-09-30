@@ -45,8 +45,8 @@ dependencies = [
 # Bumping: raise the pin in its own commit, run the full suite, and fix the
 # new findings there. Never as a side effect of a feature branch.
 dev = [
-    "pytest==8.4.2",
-    "pytest-asyncio==0.26.0",
+    "pytest==9.0.3",
+    "pytest-asyncio==1.4.0",
     "ruff==0.16.8",
     "mypy==1.20.2",
     # 1.46.1 rather than the newest patch: 1.46.2 ships no wheel for the
