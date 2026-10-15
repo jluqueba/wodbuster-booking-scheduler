@@ -81,6 +81,13 @@ Copilot code review runs on every push to an open pull request (`review_on_push`
 2. the most recent Copilot review examined the current head commit;
 3. that review, including its "Previously missed" section, contains no unresolved correctness or security finding.
 
+The `Protect main` ruleset enforces part of this condition. It requires two status checks, `ci-gate` and `copilot-review-gate`, requires every review conversation to be resolved, requires the branch to be up to date with `main`, and allows squash merges only.
+
+- `copilot-review-gate` runs on every push and every submitted review, and passes only once a completed Copilot review of the current head commit exists. It fails closed on any answer it cannot read, fails at once for drafts, and passes without a review for Dependabot pull requests. Its logic is `scripts/copilot_review_gate.py`.
+- It checks that the review happened, not what it found. Findings in the review body still have to be read and triaged by hand.
+- If Copilot never reviews a push, for example after an empty commit, the check fails after 30 minutes. Request a review from Copilot, and rerun the check if the submitted review does not start it.
+- Because the branch must be up to date, merging one pull request makes the others behind `main`. Updating their branch is a push: it starts CI and a new review, which are triaged before merging.
+
 A fixing push starts a new review, which can surface new findings, including ones the fix introduced. Wait for it and triage it the same way. Do not widen the scope of a pull request while it is under review.
 
 Allow at most **three review cycles** per pull request. If blocking findings remain after the third, stop, explain why the change is not converging, and propose splitting or narrowing it.
