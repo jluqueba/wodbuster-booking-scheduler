@@ -33,6 +33,7 @@ from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from ..gyms.discovery import GymSelectorError
 from ..gyms.service import add_discovered_gym_accounts
@@ -215,7 +216,7 @@ async def callback(provider: str, request: Request) -> Response:
         # A rejected user can re-request simply by signing in again: re-open
         # the request as pending and re-notify the admin (ADR-0010). This makes
         # a mistaken rejection recoverable instead of locking the user out.
-        _reopen_rejected_request(operator_id)
+        _reopen_rejected_request(operator_id, display_name)
         _store_login_email(operator_id, email)
         log.info("auth.signup.reopened", provider=provider, operator_id=operator_id)
         _notify_admins_new_request(request, display_name)
@@ -417,50 +418,58 @@ def _create_pending_signup(
             )
         )
         # Confirm receipt of the request by email (transactional; ADR-0011).
+        now = datetime.now(tz=UTC)
         enqueue_email_row(
             session,
             operator=profile,
             gym_account_id=None,
             payload={"kind": "account_received"},
-            now=datetime.now(tz=UTC),
+            now=now,
         )
+        _enqueue_admin_request_emails(session, display_name, now)
         session.commit()
         return int(profile.id)
 
 
-def _notify_admins_new_request(request: Request, display_name: str) -> None:
-    """Notify admins about a new signup by email and Telegram (ADR-0010, ADR-0011).
+def _enqueue_admin_request_emails(session: Session, display_name: str, now: datetime) -> None:
+    """Enqueue the new-request email for every admin with an address (ADR-0011).
 
-    Email: enqueues one transactional outbox row per admin with an email
-    address; the dispatcher renders it in that admin's language.
-    Telegram: best-effort ping to every admin who has bound Telegram, rendered
-    in that admin's language. Any send failure is logged and swallowed so
-    signup never fails.
+    Called inside the transaction that creates or reopens the request so the
+    request and its admin notification commit together.
     """
-    with db_session() as session:
-        admins = session.scalars(
-            select(OperatorProfile).where(OperatorProfile.is_admin.is_(True))
-        ).all()
-        now = datetime.now(tz=UTC)
-        for admin in admins:
-            enqueue_email_row(
-                session,
-                operator=admin,
-                gym_account_id=None,
-                payload={"kind": "account_admin_new_request", "name": display_name},
-                now=now,
-            )
-        session.commit()
-        telegram_admins = [
-            (admin.telegram_chat_id, admin.communication_language)
-            for admin in admins
-            if admin.telegram_chat_id
-        ]
+    admins = session.scalars(select(OperatorProfile).where(OperatorProfile.is_admin.is_(True)))
+    for admin in admins:
+        enqueue_email_row(
+            session,
+            operator=admin,
+            gym_account_id=None,
+            payload={"kind": "account_admin_new_request", "name": display_name},
+            now=now,
+        )
 
+
+def _notify_admins_new_request(request: Request, display_name: str) -> None:
+    """Best-effort Telegram ping to bound admins about a new signup (ADR-0010).
+
+    Sends to every admin who has bound Telegram, rendered in that admin's
+    language. Any send failure is logged and swallowed so signup never fails.
+    The email counterpart is enqueued transactionally with the request itself
+    (see :func:`_enqueue_admin_request_emails`).
+    """
     bot_token = getattr(request.app.state, "telegram_bot_token", None)
     if not bot_token:
         return
-    for chat_id, lang in telegram_admins:
+    with db_session() as session:
+        admins = session.execute(
+            select(
+                OperatorProfile.telegram_chat_id,
+                OperatorProfile.communication_language,
+            ).where(
+                OperatorProfile.is_admin.is_(True),
+                OperatorProfile.telegram_chat_id.is_not(None),
+            )
+        ).all()
+    for chat_id, lang in admins:
         message = t_lang(lang, "admin.notify.new_request", name=display_name)
         try:
             send_message(bot_token=bot_token, chat_id=str(chat_id), text=message)
@@ -468,12 +477,16 @@ def _notify_admins_new_request(request: Request, display_name: str) -> None:
             log.warning("admin.notify.telegram_failed")
 
 
-def _reopen_rejected_request(operator_id: int) -> None:
-    """Flip a rejected profile back to pending so the user can re-request."""
+def _reopen_rejected_request(operator_id: int, display_name: str) -> None:
+    """Flip a rejected profile back to pending so the user can re-request.
+
+    The admin new-request email is enqueued in the same transaction.
+    """
     with db_session() as session:
         profile = session.get(OperatorProfile, operator_id)
         if profile is not None and profile.status == "rejected":
             profile.status = "pending"
+            _enqueue_admin_request_emails(session, display_name, datetime.now(tz=UTC))
             session.commit()
 
 
