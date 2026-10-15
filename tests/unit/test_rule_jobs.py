@@ -20,12 +20,15 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from apscheduler.events import EVENT_JOB_ERROR
+from apscheduler.executors.base import run_job
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 
 from wodbuster_worker.booking.overrides import DEFAULT_EDIT_MARGIN_S, OverridePlan
 from wodbuster_worker.persistence.models import BookingDayOverride, GymAccount, SchedulerRule
 from wodbuster_worker.scheduler.rule_jobs import (
+    BOOKING_EXECUTOR,
     BOOKING_JOB_ID_PREFIX,
     DEFAULT_PREWARM_LEAD_S,
     book_rule,
@@ -236,6 +239,79 @@ def test_register_rule_job_applies_prewarm_lead() -> None:
     job = scheduler.get_job(f"{BOOKING_JOB_ID_PREFIX}42")
     assert job is not None
     assert job.trigger.run_date == datetime(2026, 7, 13, 21, 29, 30, tzinfo=UTC)
+
+
+def test_register_rule_job_runs_on_the_booking_pool_and_never_misfires() -> None:
+    """A booking job must not share the periodic pool, and a late start
+    must still run instead of being dropped (issue #143)."""
+    scheduler = _fresh_scheduler()
+    rule = _rule(day_of_week=2, booking_opens_days_before=2, booking_opens_at="21:30")
+
+    register_rule_job(
+        scheduler,
+        rule,
+        executor_provider=MagicMock(),
+        session_factory=_null_session_factory,
+        now=datetime(2026, 7, 13, 12, 0, tzinfo=UTC),
+    )
+
+    job = scheduler.get_job(f"{BOOKING_JOB_ID_PREFIX}42")
+    assert job is not None
+    assert job.executor == BOOKING_EXECUTOR
+    assert job.misfire_grace_time is None
+    assert job.kwargs["window_open"] == datetime(2026, 7, 13, 21, 30, tzinfo=UTC)
+
+
+def test_registered_booking_job_runs_when_started_an_hour_late() -> None:
+    """APScheduler's own run path executes the job rather than reporting
+    it missed when it reaches a worker long after its run time."""
+    scheduler = _fresh_scheduler()
+    rule = _rule(day_of_week=2, booking_opens_days_before=2, booking_opens_at="21:30")
+    calls: list[str] = []
+
+    def _recording_factory() -> Any:
+        calls.append("session")
+        raise RuntimeError("stop after proving the job body ran")
+
+    register_rule_job(
+        scheduler,
+        rule,
+        executor_provider=MagicMock(),
+        session_factory=_recording_factory,
+        now=datetime(2026, 7, 13, 12, 0, tzinfo=UTC),
+    )
+    job = scheduler.get_job(f"{BOOKING_JOB_ID_PREFIX}42")
+    assert job is not None
+
+    late_run_time = datetime.now(tz=UTC) - timedelta(hours=1)
+    events = run_job(job, "default", [late_run_time], "test")
+
+    assert [event.code for event in events] == [EVENT_JOB_ERROR]
+    assert calls == ["session"]
+
+
+def test_book_rule_late_start_books_the_registered_window() -> None:
+    """A job that starts after its window opened must book that window's
+    class, not roll forward to the following week."""
+    rule = _rule()
+    factory = _session_factory_returning(rule)
+    executor = MagicMock()
+    executor.for_gym_account.return_value = executor
+    # A window that opened ten minutes ago: deriving it from the current
+    # time would yield next week's window instead.
+    window_open = datetime.now(tz=UTC).replace(microsecond=0) - timedelta(minutes=10)
+
+    book_rule(
+        rule.id,
+        executor_provider=executor,
+        session_factory=factory,
+        scheduler=None,
+        window_open=window_open,
+    )
+
+    assert executor.book.call_args.kwargs["target_slot"] == target_slot_for_window(
+        rule, window_open
+    )
 
 
 def test_register_rule_job_replaces_existing() -> None:

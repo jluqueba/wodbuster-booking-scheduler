@@ -47,6 +47,9 @@ from .clock import DEFAULT_PREWARM_LEAD_S, operator_timezone
 _log = structlog.get_logger(__name__)
 
 BOOKING_JOB_ID_PREFIX = "booking_rule_"
+# Name of the dedicated APScheduler executor booking jobs run on; built
+# by :func:`scheduler.scheduler.build_scheduler`.
+BOOKING_EXECUTOR = "booking"
 
 
 @dataclass
@@ -165,12 +168,19 @@ def book_rule(
     executor_provider: BookingExecutorProvider,
     session_factory: SessionFactory,
     scheduler: BackgroundScheduler | None = None,
+    window_open: datetime | None = None,
 ) -> None:
     """Fire one booking attempt for ``rule_id`` and re-schedule.
 
     Runs on APScheduler's thread pool. Every branch that returns
     without exceptions is a valid completion — we log and move on so
     a single bad rule cannot block the whole scheduler.
+
+    ``window_open`` is the window the job was registered for. A job
+    that starts late (busy pool, restart inside the pre-warm lead)
+    still targets that window; deriving it from the current time would
+    roll forward to the following week once the window has opened.
+    ``None`` derives it from the current time.
 
     Rescheduling: after the executor returns (or raises), we compute
     the following week's window and register a fresh job. That keeps
@@ -206,8 +216,9 @@ def book_rule(
             return
         gym_ref = _GymRef(gym_slug=gym_account.gym_slug, idu=gym_account.idu)
 
-        now = datetime.now(tz=UTC)
-        window_open = next_window_open_for_rule(rule, now=now - timedelta(seconds=1))
+        if window_open is None:
+            now = datetime.now(tz=UTC)
+            window_open = next_window_open_for_rule(rule, now=now - timedelta(seconds=1))
         target_slot = target_slot_for_window(rule, window_open)
 
         # ADR-0012 Decision 3: the override is read here, in the session
@@ -281,6 +292,11 @@ def register_rule_job(
     Returns the APScheduler job id. Idempotent: an existing job with
     the same id is removed before the new one is added.
 
+    The job runs on the dedicated :data:`BOOKING_EXECUTOR` pool and has
+    no misfire grace limit: a job that starts late still books the
+    window it was registered for and reschedules itself, instead of
+    being dropped as missed with no outcome and no next run.
+
     ``prewarm_lead_s`` shifts the trigger earlier than the operator's
     declared window so the executor can warm up and align on
     ``SegundosHastaPublicacion`` (US1.4 + US1.5). Tests that want to
@@ -302,10 +318,13 @@ def register_rule_job(
             "executor_provider": executor_provider,
             "session_factory": session_factory,
             "scheduler": scheduler,
+            "window_open": window_open,
         },
         id=job_id,
+        executor=BOOKING_EXECUTOR,
         max_instances=1,
         coalesce=True,
+        misfire_grace_time=None,
     )
     _log.info(
         "scheduler.booking.registered",
@@ -355,6 +374,7 @@ def _job_id(rule_id: int) -> str:
 
 
 __all__ = [
+    "BOOKING_EXECUTOR",
     "BOOKING_JOB_ID_PREFIX",
     "DEFAULT_PREWARM_LEAD_S",
     "SessionFactory",
