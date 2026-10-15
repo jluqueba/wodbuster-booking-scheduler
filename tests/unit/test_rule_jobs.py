@@ -297,9 +297,10 @@ def test_book_rule_late_start_books_the_registered_window() -> None:
     factory = _session_factory_returning(rule)
     executor = MagicMock()
     executor.for_gym_account.return_value = executor
-    # A window that opened ten minutes ago: deriving it from the current
-    # time would yield next week's window instead.
-    window_open = datetime.now(tz=UTC).replace(microsecond=0) - timedelta(minutes=10)
+    # The window that opened most recently for this rule: deriving it
+    # from the current time would yield next week's window instead.
+    next_window = next_window_open_for_rule(rule, now=datetime.now(tz=UTC))
+    window_open = next_window - timedelta(days=7)
 
     book_rule(
         rule.id,
@@ -312,6 +313,28 @@ def test_book_rule_late_start_books_the_registered_window() -> None:
     assert executor.book.call_args.kwargs["target_slot"] == target_slot_for_window(
         rule, window_open
     )
+
+
+def test_book_rule_ignores_a_window_the_edited_rule_no_longer_describes() -> None:
+    """A rule edited after its job was dispatched must not pair the new
+    rule with the old window; the window is derived afresh."""
+    rule = _rule()
+    factory = _session_factory_returning(rule)
+    executor = MagicMock()
+    executor.for_gym_account.return_value = executor
+    stale_window = next_window_open_for_rule(rule, now=datetime.now(tz=UTC)) - timedelta(
+        days=7, hours=3
+    )
+
+    book_rule(
+        rule.id,
+        executor_provider=executor,
+        session_factory=factory,
+        scheduler=None,
+        window_open=stale_window,
+    )
+
+    assert executor.book.call_args.kwargs["target_slot"] == _rule_derived_slot(rule)
 
 
 def test_register_rule_job_replaces_existing() -> None:

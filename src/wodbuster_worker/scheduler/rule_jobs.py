@@ -216,7 +216,11 @@ def book_rule(
             return
         gym_ref = _GymRef(gym_slug=gym_account.gym_slug, idu=gym_account.idu)
 
-        if window_open is None:
+        # An edit that lands between dispatch and this read leaves a window
+        # the current rule no longer describes; derive it afresh then.
+        if window_open is None or (
+            next_window_open_for_rule(rule, now=window_open - timedelta(seconds=1)) != window_open
+        ):
             now = datetime.now(tz=UTC)
             window_open = next_window_open_for_rule(rule, now=now - timedelta(seconds=1))
         target_slot = target_slot_for_window(rule, window_open)
