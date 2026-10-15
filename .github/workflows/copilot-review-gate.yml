@@ -1,0 +1,53 @@
+# Copilot review gate.
+#
+# Copilot code review runs on every push, but its check run is not part of the pull
+# request's status rollup, so the ruleset cannot require it directly. This workflow reports
+# a required status check, `copilot-review-gate`, that passes only once Copilot has reviewed
+# the head commit. The logic lives in scripts/copilot_review_gate.py, where it is tested.
+#
+# * It runs on every push, and again whenever a review is submitted, so the review that
+#   completes the gate also reruns it.
+# * Concurrency is per pull request, and a newer event cancels an older run that is still
+#   polling. A push therefore never leaves a stale run deciding an old commit.
+# * Permissions start empty. The job reads the repository and the pull request's reviews.
+
+name: Copilot review gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  copilot-review-gate:
+    name: copilot-review-gate
+    runs-on: ubuntu-latest
+    # A backstop above the script's 30-minute polling deadline. A job stopped by it fails,
+    # so the check can never pass by timing out.
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Wait for a Copilot review of the head commit
+        # Event values reach the script as environment variables, never interpolated into
+        # the shell command.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: python3 scripts/copilot_review_gate.py
