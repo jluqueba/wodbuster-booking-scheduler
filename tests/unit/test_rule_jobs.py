@@ -496,6 +496,47 @@ def test_book_rule_swallows_executor_exception_and_still_reschedules() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_book_rule_hands_the_resolved_protection_to_the_executor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Admin booking priority: the classes resolved at fire time reach the
+    executor, read inside the job's single session."""
+    rule = _rule()
+    factory = _session_factory_returning(rule)
+    executor = MagicMock()
+    executor.for_gym_account.return_value = executor
+    protected = frozenset({("wod", "21:30")})
+    monkeypatch.setattr(
+        "wodbuster_worker.scheduler.rule_jobs.resolve_protected_classes",
+        lambda session, *, gym_account, target_date: protected,
+    )
+
+    book_rule(rule.id, executor_provider=executor, session_factory=factory, scheduler=None)
+
+    assert executor.book.call_args.kwargs["protected"] is protected
+    assert len(factory.sessions) == 1
+
+
+def test_book_rule_still_books_when_protection_cannot_be_resolved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """INV-006: a failing lookup books without a hold."""
+    rule = _rule()
+    factory = _session_factory_returning(rule)
+    executor = MagicMock()
+    executor.for_gym_account.return_value = executor
+
+    def _boom(session: Any, *, gym_account: Any, target_date: Any) -> Any:
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr("wodbuster_worker.scheduler.rule_jobs.resolve_protected_classes", _boom)
+
+    book_rule(rule.id, executor_provider=executor, session_factory=factory, scheduler=None)
+
+    assert executor.book.call_count == 1
+    assert executor.book.call_args.kwargs["protected"] == frozenset()
+
+
 def test_book_rule_without_override_takes_the_pre_feature_path() -> None:
     """FR-010 regression guard: a day with no override derives exactly the
     slot it derived before the feature existed and hands the executor

@@ -26,14 +26,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 import structlog
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 
-from ..booking.executor import BookingExecutorProvider
+from ..booking.executor import NO_PROTECTION, BookingExecutorProvider, ProtectedClasses
 from ..booking.overrides import (
     DEFAULT_EDIT_MARGIN_S,
     OverridePlan,
@@ -41,6 +41,7 @@ from ..booking.overrides import (
     load_override,
     local_date_for_slot,
 )
+from ..booking.priority import resolve_protected_classes
 from ..persistence.models import GymAccount, SchedulerRule
 from .clock import DEFAULT_PREWARM_LEAD_S, operator_timezone
 
@@ -223,6 +224,9 @@ def book_rule(
         # variables before we close the session — the executor uses
         # its own session factory for the outcome write.
         rule_snapshot = _detach_rule(rule)
+        protected = _protected_classes_for(
+            session, rule_id=rule_id, gym_account=gym_account, target_date=target_date
+        )
 
     executor = executor_provider.for_gym_account(gym_ref)
     _log.info(
@@ -230,9 +234,12 @@ def book_rule(
         rule_id=rule_id,
         target_slot=target_slot.isoformat(),
         override_id=override.override_id if override is not None else None,
+        protected_classes=len(protected),
     )
     try:
-        executor.book(rule=rule_snapshot, target_slot=target_slot, override=override)
+        executor.book(
+            rule=rule_snapshot, target_slot=target_slot, override=override, protected=protected
+        )
     except Exception:  # pragma: no cover - logged and swallowed
         _log.exception("scheduler.booking.executor_raised", rule_id=rule_id)
     finally:
@@ -243,6 +250,31 @@ def book_rule(
                 executor_provider=executor_provider,
                 session_factory=session_factory,
             )
+
+
+def _protected_classes_for(
+    session: Any,
+    *,
+    rule_id: int,
+    gym_account: GymAccount,
+    target_date: date,
+) -> ProtectedClasses:
+    """Admin booking priority: classes this run must hold back on.
+
+    Read in the session the job already opened (ADR-0012 Decision 3),
+    inside a savepoint so a failing query rolls back alone and the
+    session still commits cleanly. Any failure books without a hold
+    (INV-006): a lookup that only orders requests must never cost a
+    booking.
+    """
+    try:
+        with session.begin_nested():
+            return resolve_protected_classes(
+                session, gym_account=gym_account, target_date=target_date
+            )
+    except Exception:
+        _log.exception("scheduler.booking.priority_failed", rule_id=rule_id)
+        return NO_PROTECTION
 
 
 def _detach_rule(rule: SchedulerRule) -> SchedulerRule:

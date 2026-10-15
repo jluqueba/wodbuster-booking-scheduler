@@ -26,7 +26,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from wodbuster_worker.booking.executor import BookingExecutor, BookingExecutorProvider
+from wodbuster_worker.booking.executor import (
+    BookingExecutor,
+    BookingExecutorProvider,
+    protection_key,
+)
 from wodbuster_worker.booking.overrides import OverridePlan, effective_slot_for
 from wodbuster_worker.persistence.models import SchedulerRule
 from wodbuster_worker.scheduler.clock import midnight_utc_ticks
@@ -1572,3 +1576,217 @@ def test_vacation_guard_wins_over_a_skip_override(
     call = writer.calls[0]
     assert call["outcome_source"] == "rule"
     assert call["response_payload"] == "vacation window #77"
+
+
+# ---------------------------------------------------------------------------
+# Admin booking priority (spec admin-booking-priority)
+# ---------------------------------------------------------------------------
+
+_SLOT = datetime(2026, 7, 15, 21, 30, tzinfo=UTC)
+_PUBLISHED_AT = 100.0
+_DELAY_S = 0.75
+
+
+class _Clock:
+    """Monotonic clock that only moves when the executor sleeps.
+
+    The fake client stamps each ``inscribir`` with the clock reading, so a
+    test asserts *when* a request left rather than that a sleep happened.
+    """
+
+    def __init__(self, start: float) -> None:
+        self.now = start
+        self.sleeps: list[float] = []
+
+    def time(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def _priority_executor(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    clock: _Clock,
+    published_at: float | None = _PUBLISHED_AT,
+    delay_s: float = _DELAY_S,
+    load_class_responses: list[Any] | None = None,
+    inscribir_responses: list[Any] | None = None,
+) -> tuple[BookingExecutor, list[float]]:
+    ex, client, _writer = _executor(
+        load_class_responses=load_class_responses or [_load_class_payload()],
+        inscribir_responses=inscribir_responses or [_inscribir_ok()],
+        monkeypatch=monkeypatch,
+    )
+    ex._priority_delay_s = delay_s
+    ex._sleep = clock.sleep  # type: ignore[method-assign]
+    ex._time_source = clock.time  # type: ignore[method-assign]
+    ex._align_to_publication = lambda **_kw: published_at  # type: ignore[method-assign]
+    sent_at: list[float] = []
+    real_inscribir = client.inscribir
+
+    def _stamped(cookie_value: str, *, class_id: str | int, ticks: int) -> BookingActionResponse:
+        sent_at.append(clock.now)
+        return real_inscribir(cookie_value, class_id=class_id, ticks=ticks)
+
+    client.inscribir = _stamped  # type: ignore[method-assign]
+    return ex, sent_at
+
+
+def _second_shot_schedule() -> list[LoadClassResponse]:
+    return [
+        _load_class_payload(),
+        _load_class_payload(
+            slots=[{"Id": 88888, "Nombre": "Halterofilia", "HoraComienzo": "20:30:00"}]
+        ),
+    ]
+
+
+def test_protected_primary_is_not_sent_before_publication_plus_delay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """INV-001: the request leaves no earlier than publication + delay."""
+    clock = _Clock(start=100.2)
+    ex, sent_at = _priority_executor(monkeypatch, clock=clock)
+
+    result = ex.book(rule=_rule(), target_slot=_SLOT, protected=frozenset({("wod", "21:30")}))
+
+    assert result.terminal_status == "granted"
+    assert sent_at == [pytest.approx(_PUBLISHED_AT + _DELAY_S)]
+
+
+def test_protection_matches_the_class_type_case_insensitively(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Protection keys match the way the schedule does: the admin's rule may
+    spell the class differently from the user's."""
+    clock = _Clock(start=100.2)
+    ex, sent_at = _priority_executor(monkeypatch, clock=clock)
+
+    ex.book(
+        rule=_rule(class_type=" Wod "),
+        target_slot=_SLOT,
+        protected=frozenset({protection_key("WOD", "21:30")}),
+    )
+
+    assert sent_at == [pytest.approx(_PUBLISHED_AT + _DELAY_S)]
+
+
+def test_unprotected_class_is_sent_without_waiting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """INV-002: a class no admin targets keeps its timing."""
+    clock = _Clock(start=100.2)
+    ex, sent_at = _priority_executor(monkeypatch, clock=clock)
+
+    ex.book(rule=_rule(), target_slot=_SLOT, protected=frozenset({("wod", "20:30")}))
+
+    assert sent_at == [100.2]
+    assert clock.sleeps == []
+
+
+def test_only_the_protected_second_shot_is_held(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """INV-001 and INV-002 on one walk: the unprotected primary leaves at
+    once, the protected second shot waits for publication + delay."""
+    clock = _Clock(start=100.2)
+    ex, sent_at = _priority_executor(
+        monkeypatch,
+        clock=clock,
+        load_class_responses=_second_shot_schedule(),
+        inscribir_responses=[_inscribir_full(), _inscribir_ok()],
+    )
+
+    result = ex.book(
+        rule=_rule(second_shot_class_type="Halterofilia", second_shot_class_time="20:30"),
+        target_slot=_SLOT,
+        protected=frozenset({("halterofilia", "20:30")}),
+    )
+
+    assert result.fallback_index == 1
+    assert sent_at == [100.2, pytest.approx(_PUBLISHED_AT + _DELAY_S)]
+
+
+def test_protected_request_after_the_release_instant_is_sent_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A request that reaches the class after publication + delay (a slow
+    walk, a late job) does not wait again."""
+    clock = _Clock(start=_PUBLISHED_AT + 2.0)
+    ex, sent_at = _priority_executor(monkeypatch, clock=clock)
+
+    ex.book(rule=_rule(), target_slot=_SLOT, protected=frozenset({("wod", "21:30")}))
+
+    assert sent_at == [_PUBLISHED_AT + 2.0]
+    assert clock.sleeps == []
+
+
+def test_hold_never_exceeds_the_delay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """INV-007: a publication estimate far in the future (a stuck
+    countdown) stalls a protected request by the delay at most."""
+    clock = _Clock(start=100.0)
+    ex, sent_at = _priority_executor(monkeypatch, clock=clock, published_at=10_000.0)
+
+    ex.book(rule=_rule(), target_slot=_SLOT, protected=frozenset({("wod", "21:30")}))
+
+    assert clock.sleeps == [_DELAY_S]
+    assert sent_at == [100.0 + _DELAY_S]
+
+
+def test_without_a_countdown_the_hold_anchors_on_the_first_protected_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-005: when alignment read no countdown, the delay still applies,
+    counted from the moment the walk reaches the protected class."""
+    clock = _Clock(start=100.2)
+    ex, sent_at = _priority_executor(monkeypatch, clock=clock, published_at=None)
+
+    ex.book(rule=_rule(), target_slot=_SLOT, protected=frozenset({("wod", "21:30")}))
+
+    assert sent_at == [pytest.approx(100.2 + _DELAY_S)]
+
+
+def test_zero_delay_disables_the_hold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-007: a delay of zero turns the feature off."""
+    clock = _Clock(start=100.2)
+    ex, sent_at = _priority_executor(monkeypatch, clock=clock, delay_s=0.0)
+
+    ex.book(rule=_rule(), target_slot=_SLOT, protected=frozenset({("wod", "21:30")}))
+
+    assert sent_at == [100.2]
+
+
+def test_alignment_returns_the_estimated_publication_instant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FR-005: the estimate is the arrival time of the aligned poll plus the
+    countdown it reported, on the executor's own clock."""
+    ex, _client, _writer = _executor(
+        load_class_responses=[_aligned_payload(0.1)],
+        monkeypatch=monkeypatch,
+    )
+    ex._time_source = lambda: 50.0  # type: ignore[method-assign]
+
+    published_at = _REAL_ALIGN_TO_PUBLICATION(ex, cookie="c", ticks=1, rule_id=42)
+
+    assert published_at == pytest.approx(50.1)
+
+
+def test_provider_hands_the_priority_delay_to_every_executor() -> None:
+    """FR-007: the configured delay reaches the executors the scheduler uses."""
+    provider = BookingExecutorProvider(
+        client_factory=MagicMock(),
+        session_factory=_session_ctx,
+        cookie_store=_FakeCookieStore("c"),  # type: ignore[arg-type]
+        priority_delay_s=0.5,
+    )
+    gym_account = MagicMock(gym_slug="gym", idu="idu")
+
+    assert provider.for_gym_account(gym_account)._priority_delay_s == 0.5

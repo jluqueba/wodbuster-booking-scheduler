@@ -170,7 +170,7 @@ Configuration is driven by `pydantic-settings` (`src/wodbuster_worker/config.py`
 - `local`: values come from environment variables, optionally seeded by a `.env` file at the repo root. Copy `.env.example` to `.env` to start.
 - `prod`: values are wired by Container Apps; secrets resolve through Key Vault references.
 
-Notable settings include `POSTGRES_*` connection coordinates, OAuth client IDs, session lifetime knobs, `WORKER_TIMEZONE` (default `Europe/Madrid`), the ACS endpoint and sender identity, and the public app origin used for email assets and unsubscribe links. WodBuster gym coordinates are discovered per user from the submitted `.WBAuth` cookie; the legacy `WODBUSTER_GYM` and `WODBUSTER_IDU` values remain optional deployment inputs.
+Notable settings include `POSTGRES_*` connection coordinates, OAuth client IDs, session lifetime knobs, `WORKER_TIMEZONE` (default `Europe/Madrid`), `ADMIN_PRIORITY_DELAY_S` (default `0.75`, the seconds after publication a regular user's request waits on a class an admin also targets; `0` disables it), the ACS endpoint and sender identity, and the public app origin used for email assets and unsubscribe links. WodBuster gym coordinates are discovered per user from the submitted `.WBAuth` cookie; the legacy `WODBUSTER_GYM` and `WODBUSTER_IDU` values remain optional deployment inputs.
 
 ### 2.4 Apply database migrations
 

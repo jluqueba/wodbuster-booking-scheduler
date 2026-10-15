@@ -320,6 +320,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     client_factory=client_factory,
                     session_factory=get_session,
                     cookie_store=app.state.cookie_store,
+                    priority_delay_s=settings.admin_priority_delay_s,
                 )
                 app.state.booking_executor_provider = executor_provider
                 app.state.booking_scheduler = scheduler
