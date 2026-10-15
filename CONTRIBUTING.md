@@ -73,7 +73,7 @@ Do not include secrets, session cookies, or personal data in an issue. For anyth
 - Formatting and linting: `ruff` (see `ruff.toml`).
 - Static typing: `mypy` (see `mypy.ini`); the package ships type hints and a `py.typed` marker.
 - Tests: `pytest`, organized into unit, component, and contract suites under `tests/`.
-- Engineering principles and style are described in [coding-guidelines.md](.github/docs/coding-guidelines.md). In short: prefer simplicity and clarity over cleverness, keep abstractions minimal, and track technical debt as work items rather than TODO comments.
+- Engineering principles and style are described in [coding-guidelines.md](https://github.com/jluqueba/wodbuster-booking-scheduler/blob/main/.github/docs/coding-guidelines.md). In short: prefer simplicity and clarity over cleverness, keep abstractions minimal, and track technical debt as work items rather than TODO comments.
 
 ## Code of Conduct
 

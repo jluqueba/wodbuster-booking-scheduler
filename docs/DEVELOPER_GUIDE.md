@@ -299,7 +299,7 @@ Jekyll publishes everything it is not told to exclude, so `tests/unit/test_publi
 - A new entry under `docs/` goes either in the test's list of published `docs/` entries or in the `exclude` list.
 - A published Markdown file named like a community file, such as `CONTRIBUTING.md`, is served as raw text unless it is listed under `include` or starts with front matter.
 
-The same test fails on Liquid template delimiters in published Markdown (two opening braces, or an opening brace followed by a percent sign), because Jekyll evaluates them; describe such syntax in words or link to the file instead.
+The same test fails on Liquid template delimiters in published Markdown (two opening braces, or an opening brace followed by a percent sign), because Jekyll evaluates them; describe such syntax in words or link to the file instead. It also fails when a relative link in published Markdown points to a path the site does not publish, such as anything under `.github/`; link to that file on GitHub with an absolute URL instead.
 
 ### 4.2 Diagrams
 

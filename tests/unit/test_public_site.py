@@ -11,6 +11,7 @@ injected case that must fail, so a check that silently stopped working would be 
 
 from __future__ import annotations
 
+import posixpath
 import re
 import shutil
 import subprocess
@@ -159,6 +160,41 @@ def liquid_markers(markdown: str) -> list[int]:
     return [number for number, line in enumerate(markdown.splitlines(), 1) if _LIQUID.search(line)]
 
 
+#: Inline links and images, and reference definitions: the forms the public docs use.
+_LINK_TARGET = re.compile(
+    r"!?\[[^\]]*\]\((?P<inline>[^)\s]+)|^\s{0,3}\[[^\]]+\]:\s*(?P<reference>\S+)", re.MULTILINE
+)
+
+
+def unpublished_links(
+    document: str, markdown: str, paths: Iterable[str], config: Mapping[str, list[str]]
+) -> list[str]:
+    """Return relative link targets in a published document that the site does not publish.
+
+    A link into a path Jekyll skips or excludes, such as `.github/`, works on GitHub but is
+    a 404 on the site; link to the file on GitHub instead.
+    """
+    tracked = list(paths)
+    broken: list[str] = []
+    for match in _LINK_TARGET.finditer(markdown):
+        target = match["inline"] or match["reference"]
+        if "://" in target or target.startswith(("#", "mailto:")):
+            continue
+        resolved = posixpath.normpath(
+            posixpath.join(posixpath.dirname(document), target.split("#", 1)[0])
+        )
+        exists = any(path == resolved or path.startswith(f"{resolved}/") for path in tracked)
+        published = (
+            exists
+            and not resolved.startswith("../")
+            and all(is_visible(part, config["include"]) for part in resolved.split("/"))
+            and not is_excluded(resolved, config["exclude"])
+        )
+        if not published:
+            broken.append(target)
+    return broken
+
+
 def served_as_raw_text(
     documents: Iterable[str], includes: Iterable[str], has_front_matter: Callable[[str], bool]
 ) -> list[str]:
@@ -293,6 +329,40 @@ def test_liquid_delimiters_are_reported() -> None:
     markdown = "Plain text.\nThe gate reads ${{ toJSON(needs) }}.\n{% raw %}\n"
 
     assert liquid_markers(markdown) == [2, 3]
+
+
+# Invariant 5b: every relative link in published Markdown leads to a published page or file.
+
+
+def test_published_markdown_links_only_to_published_paths() -> None:
+    config = load_config()
+    paths = tracked_paths()
+    documents = published_markdown(paths, config)
+    found = {
+        path: unpublished_links(path, (REPOSITORY_ROOT / path).read_text("utf-8"), paths, config)
+        for path in documents
+    }
+
+    assert "CONTRIBUTING.md" in found
+    assert found == {path: [] for path in documents}
+
+
+def test_links_into_skipped_excluded_or_missing_paths_are_reported() -> None:
+    markdown = (
+        "[Guidelines](.github/docs/coding-guidelines.md)\n"
+        "[Code](../src/wodbuster_worker/app.py)\n"
+        "[Gone](missing.md#top)\n"
+        "[Guide](DEVELOPER_GUIDE.md#1-project-architecture)\n"
+        "![Diagram](assets/booking-flow.svg)\n"
+        "[Contributing][c]\n\n[c]: ../CONTRIBUTING.md\n"
+        "[Site](https://example.invalid/x) [Top](#top)\n"
+    )
+
+    assert unpublished_links("docs/page.md", markdown, tracked_paths(), load_config()) == [
+        ".github/docs/coding-guidelines.md",
+        "../src/wodbuster_worker/app.py",
+        "missing.md#top",
+    ]
 
 
 # Invariant 6: every published Markdown page is rendered, none is served as raw text.
