@@ -1,9 +1,9 @@
-<!-- devsquad-template: .github/instructions/documentation-style.instructions.md vunknown sha=81e65bebb8cc -->
 ---
 name: 'Documentation Style'
 description: 'Formatting and style rules for markdown documentation'
 applyTo: 'docs/**/*.md'
 ---
+<!-- devsquad-template: .github/instructions/documentation-style.instructions.md vunknown sha=81e65bebb8cc -->
 
 When editing markdown documentation, follow these formatting rules:
 

@@ -1,9 +1,9 @@
-<!-- devsquad-template: .github/instructions/migration-tasks.instructions.md vunknown sha=76536689f3ac -->
 ---
 name: 'Migration Task Lists'
 description: 'Guidelines for creating and editing migration task decomposition files'
 applyTo: 'docs/migrations/**/tasks.md'
 ---
+<!-- devsquad-template: .github/instructions/migration-tasks.instructions.md vunknown sha=76536689f3ac -->
 
 When editing migration task lists, follow these rules:
 
