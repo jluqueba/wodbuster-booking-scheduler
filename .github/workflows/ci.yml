@@ -25,19 +25,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Detect non-documentation changes
+      - name: Detect changes
         uses: dorny/paths-filter@v3
         id: filter
         with:
-          # `code` is true when the change set touches anything that is
-          # not a Markdown file. Documentation-only changes (README or
-          # docs/*.md edits) leave it false so the lint+type+test job
-          # below is skipped. The ci-gate job still reports a result so
-          # the branch ruleset's required check is satisfied.
+          # Every change runs the lint+type+test job, Markdown included:
+          # tests/unit/test_public_site.py and test_public_docs.py check the
+          # published documentation (links, diagrams, site configuration).
+          # Do not add a Markdown exclusion here. With the default predicate
+          # quantifier a negated pattern excludes nothing, which is why the
+          # previous `!**/*.md` entry never skipped a run.
           filters: |
             code:
               - '**'
-              - '!**/*.md'
 
   check:
     name: ruff, mypy, djlint, pytest
@@ -105,10 +105,9 @@ jobs:
 
   ci-gate:
     # Single required status check for the `main` branch ruleset. It
-    # always runs (even when `check` is skipped for docs-only changes),
-    # so the required check is never left pending. It passes when the
-    # heavy job succeeded or was intentionally skipped, and fails only
-    # when the heavy job actually failed or was cancelled.
+    # always runs, so the required check is never left pending. It passes
+    # when the heavy job succeeded or was skipped, and fails only when the
+    # heavy job actually failed or was cancelled.
     name: ci-gate
     needs: [changes, check]
     if: always()

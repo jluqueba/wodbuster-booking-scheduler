@@ -65,7 +65,7 @@ Do not include secrets, session cookies, or personal data in an issue. For anyth
 - Link the PR to the related issue when one exists.
 - Keep PRs focused and reasonably sized.
 - The description should answer two questions: what changed, and why.
-- The CI check (`ci-gate`) must pass. It runs `ruff`, `mypy`, and `pytest`, and is skipped automatically for documentation-only changes.
+- The CI check (`ci-gate`) must pass. It runs `ruff`, `mypy`, and `pytest` on every pull request, documentation included, because tests also check the published site.
 - Copilot reviews each pull request automatically. The maintainer reviews and merges.
 
 ## Code Standards

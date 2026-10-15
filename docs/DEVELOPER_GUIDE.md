@@ -101,13 +101,13 @@ Key tables (`src/wodbuster_worker/persistence/models.py`):
 
 ### 1.7 Deployment and CI/CD
 
-![Deployment and CI/CD diagram. A developer opens a pull request. ci.yml runs ruff, mypy, and pytest when code changed, and infra-preview.yml posts an azd provision preview with a what-if comment. After the merge to main, infra.yml runs azd provision when infra or azure.yaml changed, and deploy.yml builds the image, pushes it to ACR, and runs azd deploy when src or the Dockerfile changed. Both reach Azure.](assets/deployment.svg)
+![Deployment and CI/CD diagram. A developer opens a pull request. ci.yml runs ruff, mypy, and pytest, and infra-preview.yml posts an azd provision preview with a what-if comment. After the merge to main, infra.yml runs azd provision when infra or azure.yaml changed, and deploy.yml builds the image, pushes it to ACR, and runs azd deploy when src or the Dockerfile changed. Both reach Azure.](assets/deployment.svg)
 
 Both provisioning and application deploys run from GitHub Actions using OIDC federation against a dedicated deploy user-assigned managed identity, separate from the runtime identity (ADR-0005, ADR-0007). After a one-time bootstrap, laptop `azd provision` is forbidden by convention so ARM state and IaC stay in sync.
 
 | Workflow | Trigger | Action |
 |----------|---------|--------|
-| `.github/workflows/ci.yml` | Every pull request | Runs `ruff`, `mypy`, and `pytest` against Postgres 16 when non-Markdown files changed. The lightweight `ci-gate` still reports success for documentation-only PRs and is the required check for `main`. |
+| `.github/workflows/ci.yml` | Every pull request | Runs `ruff`, `mypy`, and `pytest` against Postgres 16 on every change, Markdown included, because tests also check the published documentation. The lightweight `ci-gate` job is the required check for `main`. |
 | `.github/workflows/infra-preview.yml` | Pull request touching `infra/**` or `azure.yaml` | `azd provision --preview`; posts a what-if diff as a sticky PR comment. Read-only. |
 | `.github/workflows/infra.yml` | Push to `main` touching `infra/**` or `azure.yaml`; manual dispatch | `azd provision`. |
 | `.github/workflows/deploy.yml` | Push to `main` touching `src/**` or `Dockerfile`; manual dispatch | Build image, push to ACR, `azd deploy`. |
