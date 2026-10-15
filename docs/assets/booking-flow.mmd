@@ -1,0 +1,23 @@
+sequenceDiagram
+    participant S as APScheduler job
+    participant DB as Postgres
+    participant CS as Cookie store (AES-256-GCM)
+    participant WB as WodBuster API
+    participant OB as Notification outbox
+    participant CH as Notification channels
+
+    S->>DB: load active rule + next window
+    S->>CS: decrypt .WBAuth cookie
+    Note over S,WB: pre-warm connection ~30s before window
+    S->>WB: GET Calendario_Inscribir.ashx (primary slot)
+    alt granted
+        WB-->>S: reservation confirmed
+        S->>DB: BookingOutcome(status=granted)
+    else slot full
+        WB-->>S: full
+        S->>WB: GET Calendario_Inscribir.ashx (second shot)
+        WB-->>S: granted or full
+        S->>DB: BookingOutcome(status=granted|full)
+    end
+    S->>OB: enqueue notification (same transaction)
+    OB->>CH: dispatcher sends Telegram and email rows independently

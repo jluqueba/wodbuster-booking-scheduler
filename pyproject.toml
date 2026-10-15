@@ -56,6 +56,9 @@ dev = [
     # Accessibility audits parse the rendered response with the WHATWG
     # algorithm, so the tree under test is the one a browser builds.
     "html5lib==1.1",
+    # The public-site test reads `_config.yml`. Pinned here rather than
+    # relying on the copy uvicorn[standard] happens to pull in.
+    "pyyaml==6.0.3",
     # Stub packages move independently of mypy and break it the same way.
     "types-requests==2.33.0.20260906",
 ]
