@@ -32,7 +32,6 @@ It runs as a single always-on service on Microsoft Azure, using PostgreSQL for d
 - [Contributing](CONTRIBUTING.md): how to propose changes and the workflow to follow.
 - [Security policy](SECURITY.md): how to report a security issue.
 - [Code of Conduct](CODE_OF_CONDUCT.md): the standards expected in this community.
-- [License](LICENSE): the terms this project is released under.
 
 ## For developers
 
@@ -41,3 +40,7 @@ Want to run the project locally, deploy it, or understand how it is built? Head 
 ## Status
 
 Personal project supporting several approved users and multiple gyms per user. It is built for reliable, low-latency bookings with deliberately small operational overhead.
+
+## License
+
+WodBuster Booking Scheduler is released under the [MIT License](LICENSE).

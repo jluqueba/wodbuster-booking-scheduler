@@ -9,6 +9,7 @@ This guide is public. Internal specs, ADRs, envisioning notes, and migration rec
 1. [Project architecture](#1-project-architecture)
 2. [Getting started](#2-getting-started)
 3. [Features and pages](#3-features-and-pages)
+4. [Documentation site and diagrams](#4-documentation-site-and-diagrams)
 
 ---
 
@@ -52,54 +53,7 @@ The scheduler registers five job families at startup (`src/wodbuster_worker/app.
 
 ### 1.3 System context and communication
 
-```mermaid
-flowchart TB
-    operator([Operator / Athlete])
-
-    subgraph azure[Azure]
-        subgraph aca[Container App: wodbuster-worker]
-            api[FastAPI HTTP surface]
-            sched[APScheduler runtime]
-            hb[Heartbeat probe]
-            disp[Notification dispatcher]
-        end
-        pg[(PostgreSQL Flexible Server)]
-        kv[Key Vault]
-        acr[Container Registry]
-        appi[Application Insights + Log Analytics]
-        uami[Runtime managed identity]
-    end
-
-    wb[[WodBuster API]]
-    tg[[Telegram Bot API]]
-    email[[Azure Communication Services Email]]
-    oauth[[OAuth providers: Microsoft / GitHub / Google]]
-    hc[[Healthchecks.io]]
-
-    operator -->|HTTPS web UI| api
-    operator -->|OAuth sign-in| oauth
-    oauth --> api
-    operator -->|Telegram commands| tg
-    tg -->|webhook POST| api
-    api -->|sendMessage| tg
-    disp -->|sendMessage| tg
-    disp -->|managed identity send| email
-
-    api --> pg
-    sched --> pg
-    hb --> pg
-    sched -->|booking GET| wb
-    hb -->|cookie probe| wb
-    api -->|cookie validate| wb
-
-    api -.->|Entra token| uami
-    uami -.-> pg
-    api -->|read secrets| kv
-    api --> appi
-    hb --> hc
-
-    acr -.->|image pull| aca
-```
+![System context diagram. The operator uses the web UI over HTTPS, signs in through the Microsoft, GitHub, or Google OAuth providers, and sends Telegram commands. Inside Azure, the Container App wodbuster-worker runs the FastAPI HTTP surface, the APScheduler runtime, the heartbeat probe, and the notification dispatcher. They read and write PostgreSQL Flexible Server, authenticating with an Entra token from the runtime managed identity. The HTTP surface reads secrets from Key Vault and sends telemetry to Application Insights and Log Analytics, and the image is pulled from Container Registry. Outbound, the scheduler books and the heartbeat probes against the WodBuster API, the dispatcher sends through the Telegram Bot API and Azure Communication Services Email, Telegram calls back through a webhook, and the heartbeat pings Healthchecks.io.](assets/system-context.svg)
 
 Communication summary:
 
@@ -123,31 +77,7 @@ Infrastructure is composed at resource-group scope in `infra/resources.bicep`, o
 
 ### 1.5 Booking flow
 
-```mermaid
-sequenceDiagram
-    participant S as APScheduler job
-    participant DB as Postgres
-    participant CS as Cookie store (AES-256-GCM)
-    participant WB as WodBuster API
-    participant OB as Notification outbox
-    participant CH as Notification channels
-
-    S->>DB: load active rule + next window
-    S->>CS: decrypt .WBAuth cookie
-    Note over S,WB: pre-warm connection ~30s before window
-    S->>WB: GET Calendario_Inscribir.ashx (primary slot)
-    alt granted
-        WB-->>S: reservation confirmed
-        S->>DB: BookingOutcome(status=granted)
-    else slot full
-        WB-->>S: full
-        S->>WB: GET Calendario_Inscribir.ashx (second shot)
-        WB-->>S: granted or full
-        S->>DB: BookingOutcome(status=granted|full)
-    end
-    S->>OB: enqueue notification (same transaction)
-    OB->>CH: dispatcher sends Telegram and email rows independently
-```
+![Booking flow sequence diagram. The APScheduler job loads the active rule and next window from Postgres, decrypts the .WBAuth cookie from the AES-256-GCM cookie store, and pre-warms the connection about 30 seconds before the window. It then requests the primary slot from the WodBuster API. If granted, it records a granted BookingOutcome. If the slot is full, it tries the second shot and records granted or full. Finally it enqueues a notification in the same transaction, and the dispatcher sends the Telegram and email rows independently.](assets/booking-flow.svg)
 
 Every state-mutating write that produces an operator-visible signal writes a `notification_outbox` row in the same transaction. A dispatcher job drains the outbox, so a delivery failure never loses the underlying record.
 
@@ -155,20 +85,7 @@ For a multi-gym user, the scheduler resolves each rule's gym account first and b
 
 ### 1.6 Data model
 
-```mermaid
-erDiagram
-    operator_profile ||--o{ federated_identity : "OAuth logins"
-    operator_profile ||--o{ gym_account : "one per WodBuster gym"
-    operator_profile ||--o{ notification_outbox : "pending signals"
-    gym_account ||--|| cookie_credential : "active .WBAuth"
-    gym_account ||--o{ scheduler_rule : "weekly intents"
-    gym_account ||--o{ booking_outcome : "attempts"
-    gym_account ||--o{ vacation_window : "skip ranges"
-    gym_account ||--o{ heartbeat_reading : "probes"
-    gym_account ||--o{ alert : "conditions"
-    scheduler_rule ||--o{ booking_outcome : "produced by"
-    heartbeat_reading }o--o| alert : "raised"
-```
+![Entity relationship diagram. operator_profile has many federated_identity rows, many gym_account rows, and many notification_outbox rows. Each gym_account has exactly one cookie_credential and many scheduler_rule, booking_outcome, vacation_window, heartbeat_reading, and alert rows. A scheduler_rule produces many booking_outcome rows, and a heartbeat_reading may raise an alert.](assets/data-model.svg)
 
 Key tables (`src/wodbuster_worker/persistence/models.py`):
 
@@ -184,18 +101,7 @@ Key tables (`src/wodbuster_worker/persistence/models.py`):
 
 ### 1.7 Deployment and CI/CD
 
-```mermaid
-flowchart LR
-    dev[Developer] -->|open PR| pr{Pull request}
-    pr -->|ci.yml when code changed| ci[ruff + mypy + pytest]
-    pr -->|infra-preview.yml| preview[azd provision --preview<br/>what-if comment]
-    ci --> merge[Merge to main]
-    preview --> merge
-    merge -->|infra.yml: infra/** or azure.yaml| infra[azd provision]
-    merge -->|deploy.yml: src/** or Dockerfile| deploy[build image -> ACR -> azd deploy]
-    infra --> azure[(Azure)]
-    deploy --> azure
-```
+![Deployment and CI/CD diagram. A developer opens a pull request. ci.yml runs ruff, mypy, and pytest when code changed, and infra-preview.yml posts an azd provision preview with a what-if comment. After the merge to main, infra.yml runs azd provision when infra or azure.yaml changed, and deploy.yml builds the image, pushes it to ACR, and runs azd deploy when src or the Dockerfile changed. Both reach Azure.](assets/deployment.svg)
 
 Both provisioning and application deploys run from GitHub Actions using OIDC federation against a dedicated deploy user-assigned managed identity, separate from the runtime identity (ADR-0005, ADR-0007). After a one-time bootstrap, laptop `azd provision` is forbidden by convention so ARM state and IaC stay in sync.
 
@@ -377,3 +283,32 @@ Gym-scoped pages (rules, history, cookie, vacation) act on the operator's curren
 | `/health` | (JSON) | Liveness probe used by the Container App and the Healthchecks.io dead-man target. |
 
 Shared templates (`_nav.html`, `_banners.html`, `_confirm_modal.html`, `_datetime.html`, `_time_picker.html`) provide the navigation shell, banner pool rendering, and reusable form widgets, all extending `base.html`.
+
+---
+
+## 4. Documentation site and diagrams
+
+### 4.1 Public site
+
+The README and this guide are published with GitHub Pages straight from `main`. GitHub builds the site with Jekyll on every merge, configured by `_config.yml`; no workflow in this repository is involved.
+
+Jekyll publishes everything it is not told to exclude, so `tests/unit/test_public_site.py` fails when a tracked top-level path, or an entry under `docs/`, is neither published on purpose nor excluded:
+
+- A new top-level code or tooling directory goes in the `exclude` list in `_config.yml`.
+- A new top-level entry whose name starts with a dot or an underscore is skipped by Jekyll, so it is classified rather than excluded: add it to the test's list of known hidden entries or, if it must be published, to the `include` list and the test's list of required includes.
+- A new entry under `docs/` goes either in the test's list of published `docs/` entries or in the `exclude` list.
+- A published Markdown file named like a community file, such as `CONTRIBUTING.md`, is served as raw text unless it is listed under `include` or starts with front matter.
+
+The same test fails on Liquid template delimiters in published Markdown (two opening braces, or an opening brace followed by a percent sign), because Jekyll evaluates them; describe such syntax in words or link to the file instead.
+
+### 4.2 Diagrams
+
+Public documentation embeds diagrams as committed SVG images rendered from a Mermaid source kept beside them in `docs/assets/`, never as inline Mermaid blocks: GitHub renders Mermaid, but the published site does not. Keep diagrams in this guide, not in the README.
+
+Edit the `.mmd` file, then regenerate the image with Node.js installed:
+
+```bash
+python scripts/render_diagrams.py
+```
+
+Each image records the digest of the source it was rendered from, and `tests/unit/test_public_docs.py` fails when a source changes without its image being regenerated. Give every embedded diagram alt text that states what it shows.

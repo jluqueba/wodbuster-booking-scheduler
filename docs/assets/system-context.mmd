@@ -1,0 +1,46 @@
+flowchart TB
+    operator([Operator / Athlete])
+
+    subgraph azure[Azure]
+        subgraph aca[Container App: wodbuster-worker]
+            api[FastAPI HTTP surface]
+            sched[APScheduler runtime]
+            hb[Heartbeat probe]
+            disp[Notification dispatcher]
+        end
+        pg[(PostgreSQL Flexible Server)]
+        kv[Key Vault]
+        acr[Container Registry]
+        appi[Application Insights + Log Analytics]
+        uami[Runtime managed identity]
+    end
+
+    wb[[WodBuster API]]
+    tg[[Telegram Bot API]]
+    email[[Azure Communication Services Email]]
+    oauth[[OAuth providers: Microsoft / GitHub / Google]]
+    hc[[Healthchecks.io]]
+
+    operator -->|HTTPS web UI| api
+    operator -->|OAuth sign-in| oauth
+    oauth --> api
+    operator -->|Telegram commands| tg
+    tg -->|webhook POST| api
+    api -->|sendMessage| tg
+    disp -->|sendMessage| tg
+    disp -->|managed identity send| email
+
+    api --> pg
+    sched --> pg
+    hb --> pg
+    sched -->|booking GET| wb
+    hb -->|cookie probe| wb
+    api -->|cookie validate| wb
+
+    api -.->|Entra token| uami
+    uami -.-> pg
+    api -->|read secrets| kv
+    api --> appi
+    hb --> hc
+
+    acr -.->|image pull| aca

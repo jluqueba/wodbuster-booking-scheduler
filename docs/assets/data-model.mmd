@@ -1,0 +1,12 @@
+erDiagram
+    operator_profile ||--o{ federated_identity : "OAuth logins"
+    operator_profile ||--o{ gym_account : "one per WodBuster gym"
+    operator_profile ||--o{ notification_outbox : "pending signals"
+    gym_account ||--|| cookie_credential : "active .WBAuth"
+    gym_account ||--o{ scheduler_rule : "weekly intents"
+    gym_account ||--o{ booking_outcome : "attempts"
+    gym_account ||--o{ vacation_window : "skip ranges"
+    gym_account ||--o{ heartbeat_reading : "probes"
+    gym_account ||--o{ alert : "conditions"
+    scheduler_rule ||--o{ booking_outcome : "produced by"
+    heartbeat_reading }o--o| alert : "raised"

@@ -1,0 +1,10 @@
+flowchart LR
+    dev[Developer] -->|open PR| pr{Pull request}
+    pr -->|ci.yml when code changed| ci[ruff + mypy + pytest]
+    pr -->|infra-preview.yml| preview[azd provision --preview<br/>what-if comment]
+    ci --> merge[Merge to main]
+    preview --> merge
+    merge -->|infra.yml: infra/** or azure.yaml| infra[azd provision]
+    merge -->|deploy.yml: src/** or Dockerfile| deploy[build image, push to ACR, azd deploy]
+    infra --> azure[(Azure)]
+    deploy --> azure
