@@ -32,7 +32,7 @@ You need Python 3.12 or newer and Docker Desktop (for the local Postgres contain
    ```
 
 3. Start the local database: `docker compose up -d postgres`
-4. Run the checks: `.\check.ps1` on Windows, or `make check` on Linux and macOS. This runs `ruff check`, `mypy src`, and `pytest`.
+4. Run the checks: `.\check.ps1` on Windows, or `make check` on Linux and macOS. This runs `ruff check`, `mypy src`, `djlint`, and `pytest`.
 
 The full setup, configuration, and deployment walkthrough lives in the [Developer Guide](docs/DEVELOPER_GUIDE.md).
 
@@ -66,7 +66,7 @@ The full process, including how review findings are triaged, is described in [de
 - List the invariants the change must hold and the test that proves each one. A change that acts on a WodBuster account, handles credentials or cookies, migrates or deletes data, or parses external responses gets them agreed with the maintainer before coding.
 - List every validation command that was run, with its result.
 - The CI check (`ci-gate`) must pass. It runs `ruff`, `mypy`, `djlint`, and `pytest` on every pull request, documentation included, because tests also check the published site.
-- Copilot reviews every push. A pull request is ready to merge when CI is green, the latest Copilot review examined the head commit, and no correctness or security finding from it remains open. Other findings are minor: they are answered on their thread and resolved without a commit. After three review cycles with blocking findings left, the change is split or narrowed instead.
+- Copilot reviews every push. The required `copilot-review-gate` check passes only once Copilot has reviewed the head commit, and every review conversation must be resolved. A pull request is ready to merge when both checks are green and no correctness or security finding from the latest review, inline or in its body, remains open. Other findings are minor: they are answered on their thread and resolved without a commit. After three review cycles with blocking findings left, the change is split or narrowed instead.
 
 ### Issues, Milestones and Labels
 
