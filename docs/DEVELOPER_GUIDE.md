@@ -121,6 +121,7 @@ Both provisioning and application deploys run from GitHub Actions using OIDC fed
 - Python 3.12 or newer.
 - Docker Desktop (for the local Postgres 16 container).
 - Azure CLI and the Azure Developer CLI (azd), only for infrastructure work.
+- Node.js (for `npx`), only to regenerate the documentation diagrams (see [section 4.2](#42-diagrams)).
 
 ### 2.2 Clone and set up the local environment
 
