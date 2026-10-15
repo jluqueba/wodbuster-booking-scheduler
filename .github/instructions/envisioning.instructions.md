@@ -1,9 +1,9 @@
-<!-- devsquad-template: .github/instructions/envisioning.instructions.md vunknown sha=6c5fd0e6d6c0 -->
 ---
 name: 'Envisioning Documents'
 description: 'Guidelines for creating and editing envisioning documents'
 applyTo: 'docs/envisioning/**'
 ---
+<!-- devsquad-template: .github/instructions/envisioning.instructions.md vunknown sha=6c5fd0e6d6c0 -->
 
 When editing envisioning documents, follow these rules:
 

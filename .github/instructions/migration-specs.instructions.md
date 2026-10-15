@@ -1,9 +1,9 @@
-<!-- devsquad-template: .github/instructions/migration-specs.instructions.md vunknown sha=8d83e5946cc7 -->
 ---
 name: 'Migration Specifications'
 description: 'Guidelines for creating and editing migration specs'
 applyTo: 'docs/migrations/**/spec.md'
 ---
+<!-- devsquad-template: .github/instructions/migration-specs.instructions.md vunknown sha=8d83e5946cc7 -->
 
 When editing migration specifications, follow these rules:
 

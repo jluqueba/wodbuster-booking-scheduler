@@ -157,3 +157,57 @@ def test_a_pinned_or_local_action_is_accepted(step: str) -> None:
 
 
 # Shared by the Python source rules below: what a name refers to, through any import alias.
+
+
+# Rule: every path-scoped instruction file starts with its front matter (ADR-0016). Anything
+# before the opening `---`, such as a template comment, stops the editor from reading
+# `applyTo`, and the file is then loaded for every file instead of the ones it describes.
+
+INSTRUCTIONS = REPOSITORY_ROOT / ".github" / "instructions"
+
+
+def front_matter_problem(text: str) -> str | None:
+    """Return why `text` does not start with a front matter block declaring `applyTo`."""
+    lines = text.lstrip("\ufeff").splitlines()
+    if not lines or lines[0].rstrip() != "---":
+        return "the file does not start with `---`"
+    try:
+        end = next(i for i, line in enumerate(lines[1:], start=1) if line.rstrip() == "---")
+    except StopIteration:
+        return "the front matter is never closed"
+    front_matter = yaml.safe_load("\n".join(lines[1:end]))
+    if not isinstance(front_matter, dict) or not front_matter.get("applyTo"):
+        return "the front matter declares no `applyTo`"
+    return None
+
+
+def instruction_files() -> list[Path]:
+    files = sorted(INSTRUCTIONS.glob("*.instructions.md"))
+    assert files, "no instruction file found; the front matter rule would pass on nothing"
+    return files
+
+
+@pytest.mark.parametrize("path", instruction_files(), ids=lambda path: path.name)
+def test_every_instruction_file_starts_with_its_front_matter(path: Path) -> None:
+    assert front_matter_problem(path.read_text("utf-8")) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "<!-- template -->\n---\napplyTo: 'docs/**'\n---\nBody\n",
+        "\n---\napplyTo: 'docs/**'\n---\nBody\n",
+        "---\napplyTo: 'docs/**'\nBody\n",
+        "---\nname: 'No scope'\n---\nBody\n",
+        "",
+    ],
+    ids=["comment-first", "blank-first", "never-closed", "no-apply-to", "empty"],
+)
+def test_a_misplaced_or_incomplete_front_matter_is_reported(text: str) -> None:
+    assert front_matter_problem(text) is not None
+
+
+def test_a_comment_after_the_front_matter_is_accepted() -> None:
+    text = "---\napplyTo: 'docs/**'\n---\n<!-- template -->\nBody\n"
+
+    assert front_matter_problem(text) is None
