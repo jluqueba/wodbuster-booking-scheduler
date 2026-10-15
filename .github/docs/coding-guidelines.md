@@ -25,11 +25,13 @@ Conceptual reference: [Write code that you can understand when you get paged at 
 
 ## Mandatory Rules
 
-- An **Architecture Design Record (ADR)** is mandatory for any non-trivial technical decision, including:
+- An **Architecture Decision Record (ADR)** is mandatory for a technical decision that changes an accepted ADR or sets a rule that crosses features, such as:
   - Architecture or paradigm
   - Main frameworks and libraries
-  - Data models or API contracts
+  - Data models or API contracts shared across features
   - Relevant performance or scalability strategies
+
+  Other non-trivial design decisions are recorded as an amendment to the feature spec or plan (see `development-process.md`).
 
 - **Do not finalize non-trivial technical decisions without explicit approval** from the developer when in semi-autonomous mode.
 
@@ -230,19 +232,13 @@ Additional rules for code:
 
 - A PR should be considered large if **any of these criteria are true**:
 
-  - More than 300-500 modified lines (or a team-defined limit)
-  - More than 5-10 modified files
-  - Mixes architecture changes, business logic, and UI in the same PR
+  - More than about 400 lines of production code, tests excluded
+  - Covers more than one topic
+  - Combines more than one of: session cookie and authentication custody, the booking executor, a schema migration
   - Combines bug fix, refactoring, and optimization in a single PR
 
   > Rule of thumb: a reviewer should be able to understand and test the PR in **30-60 minutes**. If that is not possible, the PR needs to be split.
 
 Reference: [Anatomy of a perfect pull request](https://opensource.com/article/18/6/anatomy-perfect-pull-request)
 
-- Before merging a PR (even after CI/`ci-gate` is green), read the automated Copilot code-review
-  comments on the PR. A green CI status alone is not sufficient grounds to merge. For each open
-  review thread:
-  1. Decide whether the comment is legitimate.
-  2. If it is, apply the change, push it, then reply on the thread referencing the fix and resolve it.
-  3. If it is not, reply on the thread with the rationale for not changing anything, then resolve it.
-  - Do not merge while a Copilot review thread is still unresolved.
+- Before merging a PR (even after CI/`ci-gate` is green), read the most recent Copilot code review of the head commit, both its inline threads and its body, and triage every finding as described in `development-process.md`. Only correctness and security findings block a merge; a minor finding is answered on its thread and resolved without a commit. A green CI status alone is not sufficient grounds to merge.
