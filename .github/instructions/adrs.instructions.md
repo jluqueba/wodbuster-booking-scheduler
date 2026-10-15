@@ -1,13 +1,14 @@
-<!-- devsquad-template: .github/instructions/adrs.instructions.md vunknown sha=539bc7acdcf2 -->
 ---
 name: 'Architecture Decision Records'
 description: 'Guidelines for creating and managing ADRs'
-applyTo: 'docs/architecture/decisions/*.md'
+applyTo: 'docs/internal/architecture/decisions/*.md'
 ---
+<!-- devsquad-template: .github/instructions/adrs.instructions.md vunknown sha=539bc7acdcf2 -->
 
 When editing Architecture Decision Records (ADRs), follow these rules:
 
-- Use the template at `docs/architecture/decisions/ADR-TEMPLATE.md`.
+- Write an ADR only for a decision that changes an accepted ADR or sets a rule that crosses features (see `.github/docs/development-process.md`). Record other design decisions as a spec or plan amendment.
+- Follow the section order of the existing ADRs, as listed in `docs/internal/README.md`: Status, Date, Related, Decision, Context, Priorities and Requirements, Options considered, Consequences.
 - File naming: `NNNN-domain.md` (use the decision domain, not the choice made).
 - ADR title = domain (e.g., "Data Persistence", not "Use PostgreSQL").
 - Required fields: Status, Date, Context, Priorities and Requirements (ranked), Options considered (evaluated against priorities), Decision.

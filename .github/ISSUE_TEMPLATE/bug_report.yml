@@ -1,0 +1,74 @@
+name: Bug report
+description: Report a reproducible problem.
+title: "fix: "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include session cookies, OAuth tokens, gym credentials, email addresses or other personal data.
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: Briefly describe the problem.
+      placeholder: A rule for Monday was not booked although the class had free places.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Deployed commit SHA, or "local" with the commit you run.
+      placeholder: commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Production (Azure)
+        - Local
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: List the exact steps needed to reproduce the problem.
+      placeholder: |
+        1. Create a rule for ...
+        2. Wait for the booking window to open ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Paste relevant log lines only after removing cookies, tokens and personal data.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: no-secrets
+    attributes:
+      label: Secret handling
+      options:
+        - label: I have not pasted cookies, tokens, credentials or personal data.
+          required: true
