@@ -286,3 +286,82 @@ def test_new_signup_notifies_admin_via_telegram(
     assert len(sent) == 1
     assert sent[0]["chat_id"] == "999"
     assert "Newbie" in sent[0]["text"]
+
+
+def _admin_email_payloads(engine: Engine) -> list[tuple[int, dict[str, Any]]]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT o.user_id, o.payload FROM notification_outbox o "
+                "JOIN operator_profile p ON p.id = o.user_id "
+                "WHERE o.kind = 'email' AND p.is_admin"
+            )
+        ).all()
+    return [(int(r.user_id), r.payload) for r in rows]
+
+
+def test_new_signup_emails_admins_with_an_address(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A new signup enqueues one email per admin with an address (ADR-0011).
+
+    Email does not depend on Telegram: no bot token is configured here.
+    """
+    admin_id, _ = seed_operator(provider="microsoft", display_name="Boss")
+    silent_admin_id, _ = seed_operator(provider="microsoft", display_name="NoMail")
+    with postgres_engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE operator_profile SET is_admin = true, email = 'boss@example.com' "
+                "WHERE id = :i"
+            ),
+            {"i": admin_id},
+        )
+        conn.execute(
+            text("UPDATE operator_profile SET is_admin = true, email = NULL WHERE id = :i"),
+            {"i": silent_admin_id},
+        )
+    app = app_factory()
+    _patch_callback(app, "microsoft", {"sub": "brand-new", "name": "Newbie"}, monkeypatch)
+
+    with TestClient(app, follow_redirects=False) as client:
+        app.state.telegram_bot_token = None
+        response = client.get("/auth/microsoft/callback?code=fake&state=fake")
+
+    assert response.status_code == 200
+    assert _admin_email_payloads(postgres_engine) == [
+        (admin_id, {"kind": "account_admin_new_request", "name": "Newbie"})
+    ]
+
+
+def test_rejected_re_request_emails_admins(
+    app_factory: Callable[..., FastAPI],
+    seed_operator: Callable[..., tuple[int, str]],
+    postgres_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rejected user re-requesting access re-notifies admins by email."""
+    admin_id, _ = seed_operator(provider="microsoft", display_name="Boss")
+    with postgres_engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE operator_profile SET is_admin = true, email = 'boss@example.com' "
+                "WHERE id = :i"
+            ),
+            {"i": admin_id},
+        )
+    operator_id, subject_id = seed_operator(provider="microsoft", display_name="Nope")
+    _set_status(postgres_engine, operator_id, "rejected")
+    app = app_factory()
+    _patch_callback(app, "microsoft", {"sub": subject_id, "name": "Nope"}, monkeypatch)
+
+    with TestClient(app, follow_redirects=False) as client:
+        response = client.get("/auth/microsoft/callback?code=fake&state=fake")
+
+    assert response.status_code == 200
+    assert _admin_email_payloads(postgres_engine) == [
+        (admin_id, {"kind": "account_admin_new_request", "name": "Nope"})
+    ]

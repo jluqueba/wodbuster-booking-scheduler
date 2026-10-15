@@ -451,3 +451,55 @@ def test_empty_outbox_tick_is_noop(postgres_engine: Engine, session_factory) -> 
     dispatcher.tick()
 
     assert sender.calls == []
+
+
+def test_admin_new_request_email_is_sent_without_unsubscribe(
+    postgres_engine: Engine, session_factory
+) -> None:
+    """The admin new-request email renders in the admin's language and, being
+    transactional account mail, carries no unsubscribe link even when the
+    unsubscribe signing is configured (ADR-0011)."""
+    with postgres_engine.begin() as conn:
+        admin_id = int(
+            conn.execute(
+                text(
+                    "INSERT INTO operator_profile "
+                    "(display_name, email, is_admin, communication_language) "
+                    "VALUES ('Boss', 'boss@example.com', true, 'es') RETURNING id"
+                )
+            ).scalar_one()
+        )
+        row_id = int(
+            conn.execute(
+                text(
+                    "INSERT INTO notification_outbox (user_id, kind, target, payload) "
+                    "VALUES (:op, 'email', 'boss@example.com', CAST(:p AS jsonb)) "
+                    "RETURNING id"
+                ),
+                {
+                    "op": admin_id,
+                    "p": _to_json({"kind": "account_admin_new_request", "name": "Newbie"}),
+                },
+            ).scalar_one()
+        )
+    calls: list[dict[str, Any]] = []
+    dispatcher = NotificationDispatcher(
+        bot_token=None,
+        session_factory=session_factory,
+        email_client=object(),
+        email_from="no-reply@example.com",
+        email_sender=lambda **kwargs: calls.append(kwargs),
+        app_base_url="https://app.example.com",
+        unsubscribe_secret="s3cret",
+    )
+
+    dispatcher.tick()
+
+    assert len(calls) == 1
+    sent = calls[0]
+    assert sent["recipient_address"] == "boss@example.com"
+    assert "solicitud" in sent["subject"].lower()
+    assert "Newbie ha solicitado acceso" in sent["plain_text"]
+    assert sent["list_unsubscribe_url"] is None
+    assert "/unsubscribe" not in sent["html"]
+    assert _fetch_row(session_factory, row_id).dispatched_at is not None

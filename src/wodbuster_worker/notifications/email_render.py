@@ -49,6 +49,12 @@ _ACCOUNT_KINDS: dict[str, tuple[str, str]] = {
     "account_received": ("email.account.received.subject", "email.account.received.body"),
     "account_approved": ("email.account.approved.subject", "email.account.approved.body"),
     "account_rejected": ("email.account.rejected.subject", "email.account.rejected.body"),
+    # Sent to admins (not the requester); the payload carries the requester's
+    # ``name`` for the body.
+    "account_admin_new_request": (
+        "email.account.admin_new_request.subject",
+        "email.account.admin_new_request.body",
+    ),
 }
 
 
@@ -74,7 +80,7 @@ def render_email(
     if account is not None:
         subject_key, body_key = account
         subject = t_lang(lang, subject_key)
-        text = t_lang(lang, body_key)
+        text = t_lang(lang, body_key, name=str((payload or {}).get("name") or ""))
         title = subject
         html_body = text
         chip = ""  # no gym on account mail
