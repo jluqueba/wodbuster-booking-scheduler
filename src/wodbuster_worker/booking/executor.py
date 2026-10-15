@@ -379,19 +379,15 @@ class BookingExecutor:
         requested_class = chain[0].class_type if chain[0].is_override_target else None
         requested_time = chain[0].class_time if chain[0].is_override_target else None
         fallback_reason: str | None = None
-        hold_anchor: float | None = None
+        # One per run, so every protected candidate shares one release
+        # instant (see ``_PriorityHold``).
+        hold = _PriorityHold(anchor=published_at)
 
         for position, candidate in enumerate(chain):
             is_last = position == len(chain) - 1
-            hold_until: float | None = None
-            if self._priority_delay_s > 0 and (
+            is_protected = self._priority_delay_s > 0 and (
                 protection_key(candidate.class_type, candidate.class_time) in protected
-            ):
-                # Anchored once per run: on the publication instant when
-                # alignment reported one, else on the first protected step.
-                if hold_anchor is None:
-                    hold_anchor = published_at if published_at is not None else self._time_source()
-                hold_until = hold_anchor + self._priority_delay_s
+            )
             result = self._attempt(
                 rule=rule,
                 target_slot=candidate.target_slot,
@@ -400,7 +396,7 @@ class BookingExecutor:
                 class_type=candidate.class_type,
                 class_time=candidate.class_time,
                 fallback_index=candidate.fallback_index,
-                hold_until=hold_until,
+                hold=hold if is_protected else None,
                 published_at=published_at,
             )
             if not is_last and (
@@ -534,7 +530,7 @@ class BookingExecutor:
         class_type: str,
         class_time: str,
         fallback_index: int,
-        hold_until: float | None = None,
+        hold: _PriorityHold | None = None,
         published_at: float | None = None,
     ) -> _AttemptResult:
         """Try to book a single class instance with retry-on-not-visible."""
@@ -557,7 +553,7 @@ class BookingExecutor:
                 ),
             )
 
-        held_s = self._hold_for_priority(hold_until, rule_id=int(rule.id))
+        held_s = self._hold_for_priority(hold, rule_id=int(rule.id))
         sent_at = self._time_source() if published_at is not None else None
         try:
             response = self._client.inscribir(cookie, class_id=slot.id, ticks=ticks)
@@ -713,16 +709,22 @@ class BookingExecutor:
             loaded.payload, slot_id=slot_id, operator_idu=self._operator_idu
         )
 
-    def _hold_for_priority(self, hold_until: float | None, *, rule_id: int) -> float:
-        """Sleep until ``hold_until`` (admin booking priority); return the wait.
+    def _hold_for_priority(self, hold: _PriorityHold | None, *, rule_id: int) -> float:
+        """Sleep until the run's release instant (admin booking priority).
 
+        Called once the class is visible, so a run without a publication
+        estimate anchors on the first sighting of a protected class, which
+        happens at publication rather than at the start of the walk.
         Never waits longer than ``priority_delay_s``, whatever the anchor:
         a publication estimate far in the future (a stuck countdown) must
-        not stall the booking.
+        not stall the booking. Returns the time waited.
         """
-        if hold_until is None:
+        if hold is None:
             return 0.0
-        wait = min(hold_until - self._time_source(), self._priority_delay_s)
+        now = self._time_source()
+        if hold.anchor is None:
+            hold.anchor = now
+        wait = min(hold.anchor + self._priority_delay_s - now, self._priority_delay_s)
         if wait <= 0:
             return 0.0
         _log.info("booking.priority.hold", rule_id=rule_id, wait_s=round(wait, 3))
@@ -905,6 +907,20 @@ class BookingExecutor:
 # ----------------------------------------------------------------------
 # Result envelopes
 # ----------------------------------------------------------------------
+
+
+@dataclass
+class _PriorityHold:
+    """Release anchor shared by the protected candidates of one run.
+
+    ``anchor`` starts as the publication estimate from alignment. Without
+    one it is set the first time a protected class is seen on the
+    schedule, which is itself a publication signal; anchoring at the start
+    of the walk instead would expire the hold ~30 s before the class
+    appears and let the request race the admin's.
+    """
+
+    anchor: float | None
 
 
 @dataclass(frozen=True)

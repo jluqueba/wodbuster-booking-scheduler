@@ -1738,17 +1738,28 @@ def test_hold_never_exceeds_the_delay(
     assert sent_at == [100.0 + _DELAY_S]
 
 
-def test_without_a_countdown_the_hold_anchors_on_the_first_protected_step(
+def test_without_a_countdown_the_hold_anchors_on_the_first_sighting_of_the_class(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """FR-005: when alignment read no countdown, the delay still applies,
-    counted from the moment the walk reaches the protected class."""
-    clock = _Clock(start=100.2)
-    ex, sent_at = _priority_executor(monkeypatch, clock=clock, published_at=None)
+    """FR-005 / INV-001: when alignment read no countdown (a failed cold
+    first poll), the walk starts well before publication. The hold must
+    count from the moment the class appears, not from the start of the
+    walk, or it expires before the class is bookable."""
+    clock = _Clock(start=100.0)
+    hidden = _load_class_payload(slots=[])
+    ex, sent_at = _priority_executor(
+        monkeypatch,
+        clock=clock,
+        published_at=None,
+        load_class_responses=[hidden, hidden, hidden, hidden, _load_class_payload()],
+    )
+    ex._retry_interval_s = 0.25
+    ex._retry_timeout_s = 120.0
 
     ex.book(rule=_rule(), target_slot=_SLOT, protected=frozenset({("wod", "21:30")}))
 
-    assert sent_at == [pytest.approx(100.2 + _DELAY_S)]
+    # Four empty polls 0.25 s apart: the class is first seen at 101.0.
+    assert sent_at == [pytest.approx(101.0 + _DELAY_S)]
 
 
 def test_zero_delay_disables_the_hold(
