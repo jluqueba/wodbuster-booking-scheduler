@@ -554,7 +554,7 @@ class BookingExecutor:
             )
 
         held_s = self._hold_for_priority(hold, rule_id=int(rule.id))
-        sent_at = self._time_source() if published_at is not None else None
+        sent_at = self._time_source()
         try:
             response = self._client.inscribir(cookie, class_id=slot.id, ticks=ticks)
         except WodBusterAuthError as exc:
@@ -580,18 +580,20 @@ class BookingExecutor:
 
         outcome = response.outcome
         raw_payload = _short_payload(response.payload, response.raw_res)
-        if sent_at is not None and published_at is not None:
-            # Admin booking priority FR-009: real request latency against
-            # publication, to tune ``priority_delay_s`` from evidence.
-            _log.info(
-                "booking.inscribir.timing",
-                rule_id=rule.id,
-                class_type=class_type,
-                class_time=class_time,
-                sent_after_publication_s=round(sent_at - published_at, 3),
-                response_s=round(self._time_source() - sent_at, 3),
-                held_s=round(held_s, 3),
-            )
+        # Admin booking priority FR-009: every request logs its latency,
+        # and its time after publication when alignment estimated one, to
+        # tune ``priority_delay_s`` from evidence.
+        _log.info(
+            "booking.inscribir.timing",
+            rule_id=rule.id,
+            class_type=class_type,
+            class_time=class_time,
+            sent_after_publication_s=(
+                round(sent_at - published_at, 3) if published_at is not None else None
+            ),
+            response_s=round(self._time_source() - sent_at, 3),
+            held_s=round(held_s, 3),
+        )
 
         # Local builders so the enrollment-based and Res-fallback paths
         # below share one definition of each terminal shape.

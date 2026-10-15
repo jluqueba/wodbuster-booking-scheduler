@@ -25,6 +25,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from structlog.testing import capture_logs
 
 from wodbuster_worker.booking.executor import (
     BookingExecutor,
@@ -1801,3 +1802,27 @@ def test_provider_hands_the_priority_delay_to_every_executor() -> None:
     gym_account = MagicMock(gym_slug="gym", idu="idu")
 
     assert provider.for_gym_account(gym_account)._priority_delay_s == 0.5
+
+
+@pytest.mark.parametrize(
+    ("published_at", "expected_offset"),
+    [(_PUBLISHED_AT, _DELAY_S), (None, None)],
+)
+def test_every_request_logs_its_timing(
+    monkeypatch: pytest.MonkeyPatch, published_at: float | None, expected_offset: float | None
+) -> None:
+    """FR-009: each request logs its latency, and its time after publication
+    when alignment estimated one, including on the no-countdown fallback."""
+    clock = _Clock(start=100.2)
+    ex, _sent_at = _priority_executor(monkeypatch, clock=clock, published_at=published_at)
+
+    with capture_logs() as logs:
+        ex.book(rule=_rule(), target_slot=_SLOT, protected=frozenset({("wod", "21:30")}))
+
+    timing = [e for e in logs if e["event"] == "booking.inscribir.timing"]
+    assert len(timing) == 1
+    assert timing[0]["sent_after_publication_s"] == (
+        pytest.approx(expected_offset) if expected_offset is not None else None
+    )
+    assert timing[0]["held_s"] == pytest.approx(_DELAY_S if published_at is None else 0.55)
+    assert timing[0]["response_s"] == 0.0
