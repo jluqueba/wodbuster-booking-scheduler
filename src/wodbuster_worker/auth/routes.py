@@ -429,25 +429,38 @@ def _create_pending_signup(
 
 
 def _notify_admins_new_request(request: Request, display_name: str) -> None:
-    """Best-effort Telegram ping to bound admins about a new signup (ADR-0010).
+    """Notify admins about a new signup by email and Telegram (ADR-0010, ADR-0011).
 
-    Sends to every admin who has bound Telegram, rendered in that admin's
-    language. Any send failure is logged and swallowed so signup never fails.
+    Email: enqueues one transactional outbox row per admin with an email
+    address; the dispatcher renders it in that admin's language.
+    Telegram: best-effort ping to every admin who has bound Telegram, rendered
+    in that admin's language. Any send failure is logged and swallowed so
+    signup never fails.
     """
+    with db_session() as session:
+        admins = session.scalars(
+            select(OperatorProfile).where(OperatorProfile.is_admin.is_(True))
+        ).all()
+        now = datetime.now(tz=UTC)
+        for admin in admins:
+            enqueue_email_row(
+                session,
+                operator=admin,
+                gym_account_id=None,
+                payload={"kind": "account_admin_new_request", "name": display_name},
+                now=now,
+            )
+        session.commit()
+        telegram_admins = [
+            (admin.telegram_chat_id, admin.communication_language)
+            for admin in admins
+            if admin.telegram_chat_id
+        ]
+
     bot_token = getattr(request.app.state, "telegram_bot_token", None)
     if not bot_token:
         return
-    with db_session() as session:
-        admins = session.execute(
-            select(
-                OperatorProfile.telegram_chat_id,
-                OperatorProfile.communication_language,
-            ).where(
-                OperatorProfile.is_admin.is_(True),
-                OperatorProfile.telegram_chat_id.is_not(None),
-            )
-        ).all()
-    for chat_id, lang in admins:
+    for chat_id, lang in telegram_admins:
         message = t_lang(lang, "admin.notify.new_request", name=display_name)
         try:
             send_message(bot_token=bot_token, chat_id=str(chat_id), text=message)

@@ -92,3 +92,25 @@ def test_render_account_email_is_localized() -> None:
     content = email_render.render_email({"kind": "account_received"}, lang="es", gym_name="")
     assert content is not None
     assert "solicitud" in content.subject.lower()
+
+
+def test_render_admin_new_request_names_the_requester() -> None:
+    content = email_render.render_email(
+        {"kind": "account_admin_new_request", "name": "Pat <b>"}, lang="en", gym_name=""
+    )
+    assert content is not None
+    assert "access request" in content.subject.lower()
+    assert "Pat <b>" in content.text
+    # The requester name is user-controlled; the HTML part must escape it.
+    assert "Pat &lt;b&gt;" in content.html
+    assert "Pat <b>" not in content.html
+    assert "border-radius:999px" not in content.html
+
+
+def test_render_admin_new_request_is_localized() -> None:
+    content = email_render.render_email(
+        {"kind": "account_admin_new_request", "name": "Pat"}, lang="es", gym_name=""
+    )
+    assert content is not None
+    assert "solicitud" in content.subject.lower()
+    assert "Pat ha solicitado acceso" in content.text

@@ -904,6 +904,11 @@ EN: dict[str, str] = {
         "Your access request was not approved this time. If you think this is a mistake, "
         "sign in again to submit a new request."
     ),
+    "email.account.admin_new_request.subject": "New access request to review",
+    "email.account.admin_new_request.body": (
+        "{name} has requested access to WodBuster Booking Scheduler. Review the request "
+        "in the admin users page to approve or reject it."
+    ),
     # -- dashboard alert banners (rendered server-side in the operator's
     #    web language; one date format via format_slot, gym timezone) --
     "banner.aria_label": "System alerts",
@@ -2047,6 +2052,11 @@ ES: dict[str, str] = {
     "email.account.rejected.body": (
         "Tu solicitud de acceso no ha sido aprobada esta vez. Si crees que es un error, "
         "inicia sesión de nuevo para enviar una nueva solicitud."
+    ),
+    "email.account.admin_new_request.subject": "Nueva solicitud de acceso para revisar",
+    "email.account.admin_new_request.body": (
+        "{name} ha solicitado acceso a WodBuster Booking Scheduler. Revisa la solicitud "
+        "en la página de administración de usuarios para aprobarla o rechazarla."
     ),
     # -- banners de alerta del panel (renderizados en el servidor en el
     #    idioma web del operador; un formato de fecha vía format_slot) --
