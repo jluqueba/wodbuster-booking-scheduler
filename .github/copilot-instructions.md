@@ -49,8 +49,8 @@ Your primary focus is to **reduce future risk**, **keep the system adaptable**, 
 9. **Autonomy limits by impact**
    - Classify changes by impact before executing:
      - **Low** (typo, log, formatting): execute directly
-     - **Medium** (new function, local refactoring): present plan and wait for confirmation
-     - **High** (new service, schema, public API, external integration): require ADR + explicit approval
+     - **Medium** (new function, local refactoring): execute when the change is not risky; when it is risky, as defined in `.github/docs/development-process.md` (acts on a WodBuster account, handles credentials or cookies, migrates or deletes data, parses external responses), present the plan and invariants and wait for confirmation
+     - **High** (new service, schema, public API, external integration): require explicit approval, plus an ADR when the decision changes an accepted ADR or sets a rule that crosses features; otherwise record it as a spec or plan amendment
    - Never execute high-impact changes without explicit developer approval.
 
 10. **Mandatory trade-off explanation**
@@ -65,14 +65,9 @@ Your primary focus is to **reduce future risk**, **keep the system adaptable**, 
     - When the user asks to commit, push, or "ship it", always verify the current branch first. If on the integration branch, ask the user whether to create a feature branch before proceeding.
     - Creating a feature branch and opening a PR is the default recommendation. Direct pushes to the integration branch require the user to explicitly override.
 
-12. **Language detection**
-    - Detect the user's language from their messages or from existing non-framework project documents (e.g., specs, READMEs, comments) and respond in that same language.
-    - Generate all artifacts (specs, ADRs, tasks, work items) in the detected language.
-    - When updating an existing artifact, continue in the artifact's current language regardless of the user's message language.
-    - Template section headings (e.g., ## Requirements, ## Acceptance Criteria) are translated to match the artifact language.
-    - If the language cannot be determined, default to English.
-    - Framework-internal files (agents, skills, instructions) are not indicators of the user's language.
-
+12. **Language**
+    - Respond to the user in the language of the user's messages.
+    - Write every repository artifact in English, whatever language the conversation uses: code, comments, commits, branches, issues, pull requests, specs, plans, tasks, ADRs and documentation.
 
 ---
 
@@ -82,13 +77,19 @@ For code rules (values, style, tests, performance, git, PRs), follow `.github/do
 
 ---
 
+## Development Process
+
+For work tracking (one issue per pull request, milestones, labels, project board), design checkpoints, pull request scope, checks before pushing, and how automated review findings are triaged before merging, follow `.github/docs/development-process.md`.
+
+---
+
 ## Documentation Style
 
 When editing or creating markdown documents:
 
 - No emojis or decorative Unicode (such as arrows, bullets, checkmarks, stars).
 - No hyphens or dashes as separators between concepts. Rewrite the sentence.
-- No `#<number>` in free text (Azure DevOps converts it to a work item link).
+- No `#<number>` in documentation free text. Issue and pull request bodies on GitHub may use it, and must use `Closes #N` to link the issue they close.
 - No contrastive framing ("not just X, it's Y", "goes beyond", "more than just"). Describe directly.
 - No rhetorical questions followed by obvious answers. State the assertion directly.
 - Prefer lists and tables over long paragraphs.

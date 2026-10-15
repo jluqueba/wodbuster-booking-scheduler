@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and discussion
+    url: https://github.com/jluqueba/wodbuster-booking-scheduler/discussions
+    about: Ask usage questions and discuss ideas in GitHub Discussions.
+  - name: Report a security vulnerability
+    url: https://github.com/jluqueba/wodbuster-booking-scheduler/security/advisories/new
+    about: Do not file public issues for vulnerabilities. Use a private GitHub Security Advisory instead.

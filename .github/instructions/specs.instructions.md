@@ -1,9 +1,9 @@
-<!-- devsquad-template: .github/instructions/specs.instructions.md vunknown sha=f62db6b4ea93 -->
 ---
 name: 'Feature Specifications'
 description: 'Guidelines for creating and editing feature specs'
-applyTo: 'docs/features/**/spec.md'
+applyTo: 'docs/internal/features/**/spec.md'
 ---
+<!-- devsquad-template: .github/instructions/specs.instructions.md vunknown sha=f62db6b4ea93 -->
 
 When editing feature specs, follow these rules:
 
@@ -21,5 +21,5 @@ When editing feature specs, follow these rules:
 - Every spec must contain a `Spec Evolution Log` section with at least one row recording the current version. Every subsequent change appends a row with version, date, change summary, trigger, and author. Valid trigger values are `new work`, `drift`, `external constraint`, one of the three `failure (<category>)` values defined in `debugging-recovery/references/failure-taxonomy.md` (`spec`, `validation`, `agent`), or `other (<short reason>)` as a transitional escape hatch.
 - When Change type is not `new surface`, the `Compatibility and Transition` section is required, and at least one compliance case (CC-C*) must cover mixed-version coexistence, delayed consumer behavior, or rollback against state written by the new version.
 - Dates (including `Created on`) default to `YYYY-MM-DD`. Other formats are allowed when the consumer repo has an established convention; once chosen, apply the format consistently across all specs in the repo.
-- Use the template at `docs/features/TEMPLATE.md` as a structure reference.
+- Use the most recent spec under `docs/internal/features/` as a structure reference.
 - Follow the formatting rules in the `documentation-style` skill.

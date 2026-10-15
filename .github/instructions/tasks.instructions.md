@@ -1,9 +1,9 @@
-<!-- devsquad-template: .github/instructions/tasks.instructions.md vunknown sha=494e6b01bfb9 -->
 ---
 name: 'Task Lists'
 description: 'Guidelines for creating and editing task decomposition files'
-applyTo: 'docs/features/**/tasks.md'
+applyTo: 'docs/internal/features/**/tasks.md'
 ---
+<!-- devsquad-template: .github/instructions/tasks.instructions.md vunknown sha=494e6b01bfb9 -->
 
 When editing task lists, follow these rules:
 
@@ -16,3 +16,4 @@ When editing task lists, follow these rules:
 - DO NOT generate separate test tasks. Tests are part of each task's acceptance criteria — the implement agent verifies coverage upon completion.
 - Missing ADRs must be blocking tasks in the Foundational phase.
 - When creating work items on the board, apply the checklist from the `work-item-creation` skill.
+- A task list is the design breakdown. Before work starts, each pull-request-sized group of tasks becomes a GitHub issue; the issues and the project board are the source of truth for order and status (see `.github/docs/development-process.md`).

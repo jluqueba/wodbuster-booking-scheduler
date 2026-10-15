@@ -1,0 +1,60 @@
+name: Feature request
+description: Suggest an improvement or a new capability.
+title: "feat: "
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What user problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed behaviour
+      description: Describe the behaviour you would like, not the files to change.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: >-
+        Which part of the scheduler does this concern? Each choice matches one `area:` label,
+        so triage can apply it as reported.
+      multiple: true
+      options:
+        - Booking rules and scheduler
+        - WodBuster client and session cookie
+        - Login and user access
+        - Admin and user lifecycle
+        - Gym accounts and discovery
+        - Notifications and alerts
+        - Attendance statistics
+        - Web interface and translations
+        - Database and migrations
+        - Logging and monitoring
+        - Azure infrastructure and deployment
+        - CI and merge checks
+        - Developer tooling
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Observable results that show the behaviour is delivered.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds or different designs you considered.
+    validations:
+      required: false
