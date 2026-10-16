@@ -21,7 +21,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AnyHttpUrl, model_validator
+from pydantic import AnyHttpUrl, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 WodBusterEnv = Literal["local", "prod"]
@@ -128,6 +128,14 @@ class Settings(BaseSettings):
     # single-user deployment (Spain); override via ``WORKER_TIMEZONE``
     # env var when the app is used from another zone.
     worker_timezone: str = "Europe/Madrid"
+
+    # Admin booking priority: seconds after the publication instant
+    # WodBuster reports before a regular user's request for a class an
+    # admin also targets is sent. It must exceed the admin's own request
+    # latency (one slot retry interval plus about one and a half round
+    # trips); the ``booking.inscribir.timing`` log measures it. Zero
+    # disables the feature. Capped so a typo cannot stall bookings.
+    admin_priority_delay_s: float = Field(default=0.75, ge=0.0, le=5.0)
 
     # Attendance statistics (ADR-0013, ADR-0015).
     #

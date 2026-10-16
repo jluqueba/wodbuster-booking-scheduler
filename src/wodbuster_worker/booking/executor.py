@@ -122,6 +122,19 @@ class _BookingClientProtocol(Protocol):
 # heartbeat wiring (persistence.engine.get_session).
 SessionFactory = Callable[[], AbstractContextManager[Any]]
 
+# Admin booking priority: the classes an admin also targets on a run's
+# date, as ``protection_key`` pairs. Computed by ``booking.priority``.
+ProtectedClasses = frozenset[tuple[str, str]]
+NO_PROTECTION: ProtectedClasses = frozenset()
+
+
+def protection_key(class_type: str, class_time: str) -> tuple[str, str]:
+    """Key identifying a class for protection, matched like the schedule.
+
+    Mirrors :func:`find_matching_slot`: case-insensitive type, exact time.
+    """
+    return class_type.strip().lower(), class_time.strip()
+
 
 @dataclass(frozen=True)
 class BookingResult:
@@ -153,6 +166,7 @@ class BookingExecutor:
         alignment_poll_interval_s: float = 0.2,
         alignment_threshold_s: float = 0.25,
         alignment_deadline_s: float = 60.0,
+        priority_delay_s: float = 0.0,
         sleep: Callable[[float], None] = time.sleep,
         time_source: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -183,6 +197,9 @@ class BookingExecutor:
         self._alignment_poll_interval_s = alignment_poll_interval_s
         self._alignment_threshold_s = alignment_threshold_s
         self._alignment_deadline_s = alignment_deadline_s
+        # Admin booking priority: how long after publication a request for
+        # a class an admin also targets is held back. Zero disables it.
+        self._priority_delay_s = priority_delay_s
         self._sleep = sleep
         self._time_source = time_source
 
@@ -196,12 +213,18 @@ class BookingExecutor:
         rule: SchedulerRule,
         target_slot: datetime,
         override: OverridePlan | None = None,
+        protected: ProtectedClasses = NO_PROTECTION,
     ) -> BookingResult:
         """Attempt to book ``rule`` for the class starting at ``target_slot``.
 
         ``override`` is the single-day plan the scheduler read for this
         date (ADR-0012); ``None`` is the ordinary case and takes the
         exact code path it took before the feature existed.
+
+        ``protected`` holds the classes an admin also targets that day
+        (admin booking priority). A request for one of them is held back
+        until ``priority_delay_s`` after publication; every other request
+        keeps its timing. Empty for admin-owned rules.
 
         Returns the persisted :class:`BookingResult`. Never raises for
         expected failure modes (missing cookie, full class, unknown
@@ -216,7 +239,9 @@ class BookingExecutor:
         start = time.monotonic()
         result: BookingResult | None = None
         try:
-            result = self._book_inner(rule=rule, target_slot=target_slot, override=override)
+            result = self._book_inner(
+                rule=rule, target_slot=target_slot, override=override, protected=protected
+            )
             return result
         finally:
             elapsed_ms = (time.monotonic() - start) * 1000.0
@@ -236,6 +261,7 @@ class BookingExecutor:
         rule: SchedulerRule,
         target_slot: datetime,
         override: OverridePlan | None = None,
+        protected: ProtectedClasses = NO_PROTECTION,
     ) -> BookingResult:
         """Body of :meth:`book`; wrapped by ``book`` for latency timing."""
         if target_slot.tzinfo is None:
@@ -245,7 +271,7 @@ class BookingExecutor:
         # The override is prepended to the rule's own walk; a run without
         # one yields the same two candidates the executor had before
         # ADR-0012, so the attempt sequence is byte-for-byte unchanged.
-        chain = _build_chain(rule=rule, target_slot=target_slot, override=override)
+        chain = build_attempt_chain(rule=rule, target_slot=target_slot, override=override)
         _log.info(
             "booking.start",
             rule_id=rule.id,
@@ -312,9 +338,15 @@ class BookingExecutor:
         # server-side, not when our wall clock says ``booking_opens_at``.
         # Also pre-warms the httpx keep-alive pool for the ``inscribir``
         # call that follows.
-        self._align_to_publication(cookie=cookie, ticks=ticks, rule_id=int(rule.id))
+        published_at = self._align_to_publication(cookie=cookie, ticks=ticks, rule_id=int(rule.id))
 
-        return self._walk_chain(rule=rule, chain=chain, cookie=cookie)
+        return self._walk_chain(
+            rule=rule,
+            chain=chain,
+            cookie=cookie,
+            published_at=published_at,
+            protected=protected,
+        )
 
     def _walk_chain(
         self,
@@ -322,6 +354,8 @@ class BookingExecutor:
         rule: SchedulerRule,
         chain: list[_Candidate],
         cookie: str,
+        published_at: float | None = None,
+        protected: ProtectedClasses = NO_PROTECTION,
     ) -> BookingResult:
         """Contest each candidate in order until one produces a terminal row.
 
@@ -345,9 +379,15 @@ class BookingExecutor:
         requested_class = chain[0].class_type if chain[0].is_override_target else None
         requested_time = chain[0].class_time if chain[0].is_override_target else None
         fallback_reason: str | None = None
+        # One per run, so every protected candidate shares one release
+        # instant (see ``_PriorityHold``).
+        hold = _PriorityHold(anchor=published_at)
 
         for position, candidate in enumerate(chain):
             is_last = position == len(chain) - 1
+            is_protected = self._priority_delay_s > 0 and (
+                protection_key(candidate.class_type, candidate.class_time) in protected
+            )
             result = self._attempt(
                 rule=rule,
                 target_slot=candidate.target_slot,
@@ -356,6 +396,8 @@ class BookingExecutor:
                 class_type=candidate.class_type,
                 class_time=candidate.class_time,
                 fallback_index=candidate.fallback_index,
+                hold=hold if is_protected else None,
+                published_at=published_at,
             )
             if not is_last and (
                 not result.done
@@ -398,8 +440,13 @@ class BookingExecutor:
                 target_slot=target_slot,
             )
 
-    def _align_to_publication(self, *, cookie: str, ticks: int, rule_id: int) -> None:
+    def _align_to_publication(self, *, cookie: str, ticks: int, rule_id: int) -> float | None:
         """Poll ``LoadClass`` until the server reports the window is open.
+
+        Returns the estimated publication instant on the
+        ``time_source`` clock (the time the last response arrived plus
+        the countdown it reported), or ``None`` when no countdown was
+        read. Admin booking priority anchors its hold on that instant.
 
         Reads ``SegundosHastaPublicacion`` off each response and sleeps
         (coarse steps far out, fine steps near the window) until the
@@ -431,7 +478,7 @@ class BookingExecutor:
                 # Let the primary attempt below surface the real
                 # terminal status; alignment does not persist outcomes.
                 _log.warning("booking.align.upstream_error", rule_id=rule_id, polls=polls)
-                return
+                return None
             polls += 1
             countdown = extract_seconds_until_publication(response.payload)
             if countdown is None:
@@ -440,7 +487,9 @@ class BookingExecutor:
                     rule_id=rule_id,
                     polls=polls,
                 )
-                return
+                return None
+            now = self._time_source()
+            published_at = now + max(countdown, 0.0)
             if countdown <= self._alignment_threshold_s:
                 _log.info(
                     "booking.align.aligned",
@@ -448,8 +497,7 @@ class BookingExecutor:
                     polls=polls,
                     countdown=countdown,
                 )
-                return
-            now = self._time_source()
+                return published_at
             if now >= deadline:
                 _log.warning(
                     "booking.align.deadline_hit",
@@ -457,7 +505,7 @@ class BookingExecutor:
                     polls=polls,
                     countdown=countdown,
                 )
-                return
+                return published_at
             # Adaptive back-off: sleep roughly half the remaining
             # countdown so we take coarse steps while publication is far
             # off and fine steps (down to the poll-interval floor) as it
@@ -482,6 +530,8 @@ class BookingExecutor:
         class_type: str,
         class_time: str,
         fallback_index: int,
+        hold: _PriorityHold | None = None,
+        published_at: float | None = None,
     ) -> _AttemptResult:
         """Try to book a single class instance with retry-on-not-visible."""
         slot = self._find_slot_with_retry(
@@ -503,6 +553,8 @@ class BookingExecutor:
                 ),
             )
 
+        held_s = self._hold_for_priority(hold, rule_id=int(rule.id))
+        sent_at = self._time_source()
         try:
             response = self._client.inscribir(cookie, class_id=slot.id, ticks=ticks)
         except WodBusterAuthError as exc:
@@ -528,6 +580,20 @@ class BookingExecutor:
 
         outcome = response.outcome
         raw_payload = _short_payload(response.payload, response.raw_res)
+        # Admin booking priority FR-009: every request logs its latency,
+        # and its time after publication when alignment estimated one, to
+        # tune ``priority_delay_s`` from evidence.
+        _log.info(
+            "booking.inscribir.timing",
+            rule_id=rule.id,
+            class_type=class_type,
+            class_time=class_time,
+            sent_after_publication_s=(
+                round(sent_at - published_at, 3) if published_at is not None else None
+            ),
+            response_s=round(self._time_source() - sent_at, 3),
+            held_s=round(held_s, 3),
+        )
 
         # Local builders so the enrollment-based and Res-fallback paths
         # below share one definition of each terminal shape.
@@ -644,6 +710,28 @@ class BookingExecutor:
         return read_target_enrollment(
             loaded.payload, slot_id=slot_id, operator_idu=self._operator_idu
         )
+
+    def _hold_for_priority(self, hold: _PriorityHold | None, *, rule_id: int) -> float:
+        """Sleep until the run's release instant (admin booking priority).
+
+        Called once the class is visible, so a run without a publication
+        estimate anchors on the first sighting of a protected class, which
+        happens at publication rather than at the start of the walk.
+        Never waits longer than ``priority_delay_s``, whatever the anchor:
+        a publication estimate far in the future (a stuck countdown) must
+        not stall the booking. Returns the time waited.
+        """
+        if hold is None:
+            return 0.0
+        now = self._time_source()
+        if hold.anchor is None:
+            hold.anchor = now
+        wait = min(hold.anchor + self._priority_delay_s - now, self._priority_delay_s)
+        if wait <= 0:
+            return 0.0
+        _log.info("booking.priority.hold", rule_id=rule_id, wait_s=round(wait, 3))
+        self._sleep(wait)
+        return wait
 
     def _find_slot_with_retry(
         self,
@@ -823,6 +911,20 @@ class BookingExecutor:
 # ----------------------------------------------------------------------
 
 
+@dataclass
+class _PriorityHold:
+    """Release anchor shared by the protected candidates of one run.
+
+    ``anchor`` starts as the publication estimate from alignment. Without
+    one it is set the first time a protected class is seen on the
+    schedule, which is itself a publication signal; anchoring at the start
+    of the walk instead would expire the hold ~30 s before the class
+    appears and let the request race the admin's.
+    """
+
+    anchor: float | None
+
+
 @dataclass(frozen=True)
 class _Candidate:
     """One step of the trigger-time attempt chain (ADR-0012 Decision 6).
@@ -840,7 +942,7 @@ class _Candidate:
     is_override_target: bool = False
 
 
-def _build_chain(
+def build_attempt_chain(
     *,
     rule: SchedulerRule,
     target_slot: datetime,
@@ -852,6 +954,9 @@ def _build_chain(
     (FR-012). The override is prepended; the rule's own walk is neither
     reordered nor re-targeted, so an ``override`` of ``None`` yields the
     exact two candidates the executor contested before ADR-0012.
+
+    Public so admin booking priority protects exactly the classes an
+    admin's run will contest.
     """
     contests_override = override is not None and not override.skip_day and override.changes_target
     rule_source = "override_fallback" if contests_override else "rule"
@@ -977,7 +1082,13 @@ class BookingExecutorProvider:
     a way that races a concurrent read for a different key.
     """
 
-    __slots__ = ("_cache", "_client_factory", "_cookie_store", "_session_factory")
+    __slots__ = (
+        "_cache",
+        "_client_factory",
+        "_cookie_store",
+        "_priority_delay_s",
+        "_session_factory",
+    )
 
     def __init__(
         self,
@@ -985,10 +1096,12 @@ class BookingExecutorProvider:
         client_factory: WodBusterClientFactory,
         session_factory: SessionFactory,
         cookie_store: CookieStore,
+        priority_delay_s: float = 0.0,
     ) -> None:
         self._client_factory = client_factory
         self._session_factory = session_factory
         self._cookie_store = cookie_store
+        self._priority_delay_s = priority_delay_s
         self._cache: dict[tuple[str, str], BookingExecutor] = {}
 
     def for_gym_account(self, gym_account: GymAccountLike) -> BookingExecutor:
@@ -1001,14 +1114,19 @@ class BookingExecutorProvider:
                 session_factory=self._session_factory,
                 cookie_store=self._cookie_store,
                 operator_idu=gym_account.idu,
+                priority_delay_s=self._priority_delay_s,
             )
             self._cache[key] = executor
         return executor
 
 
 __all__ = [
+    "NO_PROTECTION",
     "BookingExecutor",
     "BookingExecutorProvider",
     "BookingResult",
+    "ProtectedClasses",
     "SessionFactory",
+    "build_attempt_chain",
+    "protection_key",
 ]

@@ -99,3 +99,16 @@ def test_prod_mode_constructs_without_touching_keyvault(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="APP_BASE_URL"):
         settings.require_app_base_url()
+
+
+def test_admin_priority_delay_defaults_and_is_bounded(tmp_path: Path) -> None:
+    """Admin booking priority FR-007: 0.75 s by default, zero allowed to
+    disable it, and capped so a typo cannot stall every booking."""
+    env_file = tmp_path / ".env"
+    env_file.write_text("", encoding="utf-8")
+
+    assert Settings(_env_file=str(env_file)).admin_priority_delay_s == 0.75  # type: ignore[call-arg]
+    assert Settings(_env_file=str(env_file), admin_priority_delay_s=0).admin_priority_delay_s == 0  # type: ignore[call-arg]
+    for invalid in (-0.1, 5.1):
+        with pytest.raises(ValueError):
+            Settings(_env_file=str(env_file), admin_priority_delay_s=invalid)  # type: ignore[call-arg]
