@@ -33,6 +33,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import structlog
+from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -43,7 +44,7 @@ from ..observability.healthchecks import ping as healthchecks_ping
 from ..persistence.models import SchedulerRule
 from .anomaly_tick import run_anomaly_tick
 from .heartbeat_tick import SessionFactory, run_heartbeat_tick
-from .rule_jobs import register_rule_job
+from .rule_jobs import BOOKING_EXECUTOR, register_rule_job
 
 _log = structlog.get_logger(__name__)
 
@@ -52,14 +53,36 @@ DISPATCHER_JOB_ID = "notification_dispatcher"
 ANOMALY_JOB_ID = "anomaly_detector"
 HEALTHCHECKS_JOB_ID = "healthchecks_ping"
 
+# Periodic jobs (heartbeat, dispatcher, anomaly, healthchecks) keep
+# APScheduler's default pool size.
+DEFAULT_POOL_MAX_WORKERS = 10
+# Upper bound on booking attempts running at once. Sized well above the
+# number of rules expected to share one window; a job that still has to
+# wait for a worker runs late rather than being dropped (see
+# ``rule_jobs.register_rule_job``).
+BOOKING_POOL_MAX_WORKERS = 64
+
 
 def build_scheduler() -> BackgroundScheduler:
     """Return an unstarted :class:`BackgroundScheduler`.
 
     Extracted from :func:`register_heartbeat_job` so tests that only
     want to check job registration can operate on a stopped scheduler.
+
+    Booking jobs get their own pool (:data:`BOOKING_EXECUTOR`). Each one
+    holds a worker for the whole pre-warm lead and alignment poll (about
+    30 seconds), and every rule opening at the same instant fires at the
+    same time, so on the shared default pool they would starve each
+    other and the periodic jobs. Threads are created on demand, so an
+    idle pool costs nothing.
     """
-    return BackgroundScheduler(timezone="UTC")
+    return BackgroundScheduler(
+        timezone="UTC",
+        executors={
+            "default": ThreadPoolExecutor(DEFAULT_POOL_MAX_WORKERS),
+            BOOKING_EXECUTOR: ThreadPoolExecutor(BOOKING_POOL_MAX_WORKERS),
+        },
+    )
 
 
 def register_heartbeat_job(
@@ -278,6 +301,8 @@ def register_rule_bootstrap_jobs(
 
 __all__ = [
     "ANOMALY_JOB_ID",
+    "BOOKING_POOL_MAX_WORKERS",
+    "DEFAULT_POOL_MAX_WORKERS",
     "DISPATCHER_JOB_ID",
     "HEALTHCHECKS_JOB_ID",
     "HEARTBEAT_JOB_ID",

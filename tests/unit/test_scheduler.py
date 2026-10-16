@@ -16,7 +16,10 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from wodbuster_worker.heartbeat.probe import HeartbeatProbe
 from wodbuster_worker.notifications.dispatcher import NotificationDispatcher
+from wodbuster_worker.scheduler.rule_jobs import BOOKING_EXECUTOR
 from wodbuster_worker.scheduler.scheduler import (
+    BOOKING_POOL_MAX_WORKERS,
+    DEFAULT_POOL_MAX_WORKERS,
     DISPATCHER_JOB_ID,
     HEALTHCHECKS_JOB_ID,
     HEARTBEAT_JOB_ID,
@@ -48,6 +51,20 @@ def test_build_scheduler_returns_utc_background_scheduler() -> None:
     assert str(scheduler.timezone) == "UTC"
     # Not started yet — pass to register_heartbeat_job first.
     assert not scheduler.running
+
+
+def test_build_scheduler_gives_booking_jobs_their_own_larger_pool() -> None:
+    """Booking jobs hold a worker for ~30s each and fire together, so they
+    must not run on the pool the periodic jobs use (issue #143)."""
+    scheduler = build_scheduler()
+
+    booking = scheduler._lookup_executor(BOOKING_EXECUTOR)
+    default = scheduler._lookup_executor("default")
+
+    assert booking is not default
+    assert booking._pool._max_workers == BOOKING_POOL_MAX_WORKERS
+    assert default._pool._max_workers == DEFAULT_POOL_MAX_WORKERS
+    assert BOOKING_POOL_MAX_WORKERS > DEFAULT_POOL_MAX_WORKERS
 
 
 def test_register_heartbeat_job_adds_expected_job() -> None:
