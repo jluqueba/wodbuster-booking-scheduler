@@ -590,6 +590,56 @@ def test_book_rule_swallows_executor_exception_and_still_reschedules() -> None:
     assert job is not None
 
 
+@pytest.mark.parametrize("raises", [False, True], ids=["completed", "executor_error"])
+@pytest.mark.parametrize(
+    ("completion_offset", "next_offset"),
+    [
+        (timedelta(seconds=-30), timedelta(days=7)),
+        (timedelta(seconds=10), timedelta(days=7)),
+        (timedelta(days=7, seconds=10), timedelta(days=14)),
+    ],
+    ids=["during_prewarm", "after_open", "week_late"],
+)
+def test_book_rule_reschedules_after_processed_window_and_current_time(
+    monkeypatch: pytest.MonkeyPatch,
+    raises: bool,
+    completion_offset: timedelta,
+    next_offset: timedelta,
+) -> None:
+    rule = _rule()
+    window_open = datetime(2026, 7, 13, 21, 30, tzinfo=UTC)
+    completed_at = window_open + completion_offset
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> datetime:
+            return completed_at.astimezone(tz)
+
+    monkeypatch.setattr("wodbuster_worker.scheduler.rule_jobs.datetime", FixedDatetime)
+    executor = MagicMock()
+    executor.for_gym_account.return_value = executor
+    if raises:
+        executor.book.side_effect = RuntimeError("early failure")
+    scheduler = _fresh_scheduler()
+
+    book_rule(
+        rule.id,
+        executor_provider=executor,
+        session_factory=_session_factory_returning(rule),
+        scheduler=scheduler,
+        window_open=window_open,
+    )
+
+    executor.book.assert_called_once()
+    assert executor.book.call_args.kwargs["target_slot"] == target_slot_for_window(rule, window_open)
+    job = scheduler.get_job(f"{BOOKING_JOB_ID_PREFIX}{rule.id}")
+    assert job is not None
+    next_open = window_open + next_offset
+    assert job.kwargs["window_open"] == next_open
+    assert job.trigger.run_date == next_open - timedelta(seconds=DEFAULT_PREWARM_LEAD_S)
+    assert job.max_instances == 1
+
+
 # ---------------------------------------------------------------------------
 # book_rule single-day override read (T-BDO-009, ADR-0012 Decision 3)
 # ---------------------------------------------------------------------------

@@ -264,6 +264,7 @@ def book_rule(
                 rule=rule_snapshot,
                 executor_provider=executor_provider,
                 session_factory=session_factory,
+                window_open=window_open,
             )
 
 
@@ -389,17 +390,20 @@ def _schedule_next(
     rule: SchedulerRule,
     executor_provider: BookingExecutorProvider,
     session_factory: SessionFactory,
+    window_open: datetime,
 ) -> None:
-    """Re-register the rule's job for the following window."""
+    """Re-register after both the processed window and the current time.
+
+    Vacation and other early exits finish during pre-warm. Advancing past
+    their window prevents re-registering the same already-fired trigger.
+    """
     try:
         register_rule_job(
             scheduler,
             rule,
             executor_provider=executor_provider,
             session_factory=session_factory,
-            # Small offset so ``next_window_open_for_rule`` rolls
-            # forward past the window that just fired.
-            now=datetime.now(tz=UTC) + timedelta(seconds=1),
+            now=max(datetime.now(tz=UTC), window_open) + timedelta(seconds=1),
         )
     except Exception:  # pragma: no cover - logged and swallowed
         _log.exception("scheduler.booking.reschedule_failed", rule_id=rule.id)
